@@ -107,6 +107,14 @@ class GamingBot(commands.Bot):
             'avatar': str(member.display_avatar.url),
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
+        self._broadcast('audit', {
+            'guild_id': member.guild.id,
+            'type': 'join',
+            'icon': '👋',
+            'title': f'{member.display_name} joined',
+            'desc': f'Total: {member.guild.member_count} members',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
 
     async def on_member_remove(self, member: discord.Member):
         self._broadcast('member_leave', {
@@ -115,9 +123,19 @@ class GamingBot(commands.Bot):
             'name': member.display_name,
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
+        self._broadcast('audit', {
+            'guild_id': member.guild.id,
+            'type': 'leave',
+            'icon': '👋',
+            'title': f'{member.display_name} left',
+            'desc': f'Total: {member.guild.member_count} members',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
 
     async def on_member_update(self, before: discord.Member, after: discord.Member):
         if before.roles != after.roles or before.nick != after.nick:
+            added = [r.name for r in after.roles if r not in before.roles]
+            removed = [r.name for r in before.roles if r not in after.roles]
             self._broadcast('member_update', {
                 'guild_id': after.guild.id,
                 'user_id': after.id,
@@ -125,6 +143,18 @@ class GamingBot(commands.Bot):
                 'roles': [r.name for r in after.roles if r.name != '@everyone'],
                 'timestamp': datetime.now(timezone.utc).isoformat()
             })
+            if added or removed:
+                desc = ''
+                if added: desc += f'Got: {", ".join(added)}'
+                if removed: desc += (' • ' if desc else '') + f'Lost: {", ".join(removed)}'
+                self._broadcast('audit', {
+                    'guild_id': after.guild.id,
+                    'type': 'role',
+                    'icon': '🎭',
+                    'title': f'{after.display_name} roles changed',
+                    'desc': desc,
+                    'timestamp': datetime.now(timezone.utc).isoformat()
+                })
 
     async def on_guild_channel_create(self, channel):
         self._broadcast('channel_create', {
@@ -158,6 +188,96 @@ class GamingBot(commands.Bot):
             'name': role.name,
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
+
+    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
+        if before.name != after.name or before.permissions != after.permissions:
+            self._broadcast('audit', {
+                'guild_id': after.guild.id,
+                'type': 'role',
+                'icon': '🎭',
+                'title': 'Role Updated',
+                'desc': f'{before.name} → {after.name}' if before.name != after.name else f'{after.name} permissions changed',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
+    async def on_guild_channel_update(self, before, after):
+        if before.name != after.name:
+            self._broadcast('audit', {
+                'guild_id': after.guild.id,
+                'type': 'channel',
+                'icon': '📝',
+                'title': 'Channel Renamed',
+                'desc': f'#{before.name} → #{after.name}',
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+
+    async def on_member_ban(self, guild: discord.Guild, user: discord.User):
+        self._broadcast('audit', {
+            'guild_id': guild.id,
+            'type': 'mod',
+            'icon': '🔨',
+            'title': 'Member Banned',
+            'desc': f'{user.name} was banned',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+
+    async def on_member_unban(self, guild: discord.Guild, user: discord.User):
+        self._broadcast('audit', {
+            'guild_id': guild.id,
+            'type': 'mod',
+            'icon': '✅',
+            'title': 'Member Unbanned',
+            'desc': f'{user.name} was unbanned',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+
+    async def on_guild_join(self, guild: discord.Guild):
+        """Auto-setup when bot joins a new server"""
+        logger.info(f'📥 Joined new guild: {guild.name} ({guild.id})')
+        self._broadcast('audit', {
+            'guild_id': guild.id,
+            'type': 'join',
+            'icon': '🎉',
+            'title': 'Bot Joined Server',
+            'desc': guild.name,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        try:
+            await self._auto_setup(guild)
+        except Exception as e:
+            logger.error(f'Auto-setup failed for {guild.name}: {e}')
+
+    async def _auto_setup(self, guild: discord.Guild):
+        """Create default channels and send welcome embed on guild join"""
+        # Find or create a general/bot channel to send welcome
+        target = discord.utils.get(guild.text_channels, name='general') or \
+                 discord.utils.get(guild.text_channels, name='bot-commands') or \
+                 (guild.text_channels[0] if guild.text_channels else None)
+
+        if not target:
+            return
+
+        embed = discord.Embed(
+            title="👋 Thanks for adding WAN Bot!",
+            description=(
+                "WAN Bot is now ready to power your community.\n\n"
+                "**Quick Start:**\n"
+                "• `/web` — Open the web dashboard\n"
+                "• `/backend` — Get the dashboard link\n"
+                "• `/help` — See all commands\n"
+                "• `/badge-setup` — Configure clan branding\n\n"
+                "**Dashboard:** Set up your server from the web at any time."
+            ),
+            color=0x7c3aed
+        )
+        embed.add_field(name="📊 Server Stats", value=f"**{guild.member_count}** members • **{len(guild.text_channels)}** channels • **{len(guild.roles)}** roles", inline=False)
+        embed.set_thumbnail(url=self.user.display_avatar.url)
+        embed.set_footer(text="WAN Bot • Type /help to get started")
+
+        try:
+            await target.send(embed=embed)
+        except Exception:
+            pass
 
     async def on_ready(self):
         logger.info(f'🤖 {self.user} is now online!')

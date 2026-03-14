@@ -420,6 +420,13 @@ def health_check():
     status = 'healthy' if checks['bot'] else 'degraded'
     return jsonify({'status': status, 'checks': checks})
 
+@app.route('/api/server/<int:server_id>/audit')
+@require_auth
+def get_audit_log(server_id):
+    """Get recent audit log events for a server"""
+    audit_log = dashboard_cache.get('audit_log', {}).get(str(server_id), [])
+    return jsonify({'events': audit_log[:50]})
+
 # ===== Roblox Integration API Endpoints =====
 
 @app.route('/api/roblox/linked-members')
@@ -640,6 +647,16 @@ def handle_unsubscribe(data):
 def broadcast_update(event_type: str, data: dict, room: str = None):
     """Broadcast update to all connected clients or specific room"""
     try:
+        # Store audit events in memory for late-joining clients
+        if event_type == 'audit':
+            guild_id = str(data.get('guild_id', ''))
+            if guild_id not in dashboard_cache.get('audit_log', {}):
+                if 'audit_log' not in dashboard_cache:
+                    dashboard_cache['audit_log'] = {}
+                dashboard_cache['audit_log'][guild_id] = []
+            dashboard_cache['audit_log'][guild_id].insert(0, data)
+            dashboard_cache['audit_log'][guild_id] = dashboard_cache['audit_log'][guild_id][:100]
+
         if room:
             socketio.emit(event_type, data, room=room)
         else:
