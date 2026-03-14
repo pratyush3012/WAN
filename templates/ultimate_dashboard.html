@@ -517,17 +517,12 @@ socket.on('audit',function(ev){
     if(['mod','leave'].includes(ev.type))notify(ev.title,ev.type==='mod'?'warning':'info');
 });
 (async function init(){
-    // Debug: check health endpoint first
+    // Verify session is active
     try{
-        var h=await fetch('/api/health');
+        var h=await fetch('/api/health',{credentials:'include'});
         var hd=await h.json();
-        console.log('Health check:',hd);
-        if(!hd.checks.session_active){
-            console.warn('Session not active - redirecting to login');
-            window.location.href='/login';
-            return;
-        }
-    }catch(he){console.error('Health check failed:',he);}
+        console.log('Health:',hd);
+    }catch(he){console.warn('Health check failed:',he);}
     var userRole='{{ session.get("role", "admin") }}';
     var isAdmin=['admin','manager','owner'].includes(userRole)||userRole==='admin';
     if(!isAdmin)document.querySelectorAll('.admin-only').forEach(function(el){el.style.display='none';});
@@ -535,6 +530,8 @@ socket.on('audit',function(ev){
     setInterval(loadBotStatus,15000);
     setInterval(function(){if(currentServer)loadMusicStatus();},10000);
     async function apiFetch(url,opts){
+        opts=opts||{};
+        opts.credentials='include';  // always send session cookie
         var r=await fetch(url,opts);
         if(r.status===401){window.location.href='/login';throw new Error('Session expired');}
         return r;
