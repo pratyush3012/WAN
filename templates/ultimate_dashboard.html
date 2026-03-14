@@ -523,12 +523,26 @@ socket.on('audit',function(ev){
     loadBotStatus();
     setInterval(loadBotStatus,15000);
     setInterval(function(){if(currentServer)loadMusicStatus();},10000);
-    try{
-        var data=await(await fetch('/api/servers')).json();
-        var sel=document.getElementById('serverSelector');
-        (data.servers||[]).forEach(function(s){var opt=document.createElement('option');opt.value=s.id;opt.textContent=s.name+' ('+s.member_count+' members)';sel.appendChild(opt);});
-        if(data.servers&&data.servers.length>0){sel.value=data.servers[0].id;await selectServer(data.servers[0].id);}
-    }catch(e){notify('Failed to load servers','danger');}
+    async function loadServers(retries){
+        retries=retries||0;
+        try{
+            var srvRes=await fetch('/api/servers');
+            var data=await srvRes.json();
+            if(srvRes.status===503&&retries<5){
+                // Bot not ready yet - retry after delay
+                setTimeout(function(){loadServers(retries+1);},3000);
+                if(retries===0)notify('Bot is starting up, retrying...','info');
+                return;
+            }
+            if(!srvRes.ok){notify('Failed to load servers: '+(data.error||srvRes.status),'danger');console.error('Servers error:',data);return;}
+            var sel=document.getElementById('serverSelector');
+            sel.innerHTML='<option value="">Select a server...</option>';
+            (data.servers||[]).forEach(function(s){var opt=document.createElement('option');opt.value=s.id;opt.textContent=s.name+' ('+s.member_count+' members)';sel.appendChild(opt);});
+            if(data.servers&&data.servers.length>0){sel.value=data.servers[0].id;await selectServer(data.servers[0].id);}
+            else{notify('No servers found. Make sure the bot is in at least one server.','warning');}
+        }catch(e){notify('Failed to load servers: '+e.message,'danger');console.error('Servers error:',e);}
+    }
+    await loadServers();
 })();
 </script>
 </body>

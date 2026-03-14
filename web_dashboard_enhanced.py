@@ -245,9 +245,8 @@ def logout():
 
 @app.route('/api/bot/status')
 @require_auth
-@cache.cached(timeout=10, key_prefix='bot_status')
 def bot_status():
-    """Get bot status with caching"""
+    """Get bot status"""
     try:
         if bot_instance and bot_instance.is_ready():
             # Fix timezone issue - make both timezone-aware
@@ -275,17 +274,16 @@ def bot_status():
 
 @app.route('/api/servers')
 @require_auth
-@cache.cached(timeout=60, key_prefix='servers_list')
 def get_servers():
-    """Get all servers with caching"""
+    """Get all servers"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
-        
+
         servers = []
         for guild in bot_instance.guilds:
             servers.append({
-                'id': str(guild.id),  # string to preserve 64-bit snowflake precision in JS
+                'id': str(guild.id),
                 'name': guild.name,
                 'icon': str(guild.icon.url) if guild.icon else None,
                 'member_count': guild.member_count,
@@ -295,11 +293,11 @@ def get_servers():
                 'boost_level': guild.premium_tier,
                 'boost_count': guild.premium_subscription_count or 0
             })
-        
+
         return jsonify({'servers': servers, 'total': len(servers)})
     except Exception as e:
-        logger.error(f"Error getting servers: {e}")
-        return jsonify({'error': 'Failed to get servers'}), 500
+        logger.error(f"Error getting servers: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/server/<server_id>')
 @require_auth
