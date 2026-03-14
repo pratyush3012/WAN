@@ -665,6 +665,199 @@ if __name__ == '__main__':
     print("The enhanced web dashboard will start automatically with the bot.")
 
 
+# ===== MUSIC API ENDPOINTS =====
+
+@app.route('/api/server/<int:server_id>/music/play', methods=['POST'])
+@require_auth
+def music_play(server_id):
+    """Play a song via dashboard"""
+    try:
+        query = request.json.get('query', '').strip()
+        channel_id = request.json.get('channel_id')
+        if not query:
+            return jsonify({'error': 'No query provided'}), 400
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        music_cog = bot_instance.get_cog('Music')
+        if not music_cog:
+            return jsonify({'error': 'Music cog not loaded'}), 503
+
+        async def _play():
+            vc = guild.voice_client
+            if not vc:
+                if channel_id:
+                    ch = guild.get_channel(int(channel_id))
+                else:
+                    ch = next((c for c in guild.voice_channels), None)
+                if not ch:
+                    return {'error': 'No voice channel found'}
+                vc = await ch.connect()
+
+            from cogs.music import YTDLSource
+            player = await YTDLSource.from_query(query, loop=bot_instance.loop)
+            player.requester = guild.me
+            queue = music_cog.get_queue(guild.id)
+
+            if vc.is_playing() or vc.is_paused():
+                queue.add(player)
+                return {'status': 'queued', 'title': player.title, 'queue_size': len(queue.queue)}
+            else:
+                queue.current = player
+                def after(err):
+                    music_cog._play_next(guild)
+                vc.play(player, after=after)
+                broadcast_update('music_update', {
+                    'guild_id': server_id,
+                    'action': 'now_playing',
+                    'title': player.title,
+                    'thumbnail': player.thumbnail,
+                    'queue_size': len(queue.queue)
+                })
+                return {'status': 'playing', 'title': player.title}
+
+        future = asyncio.run_coroutine_threadsafe(_play(), bot_instance.loop)
+        result = future.result(timeout=35)
+        if 'error' in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Music play error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<int:server_id>/music/control', methods=['POST'])
+@require_auth
+def music_control(server_id):
+    """Pause/resume/skip/stop"""
+    try:
+        action = request.json.get('action')
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        vc = guild.voice_client
+        music_cog = bot_instance.get_cog('Music')
+
+        if action == 'pause' and vc and vc.is_playing():
+            vc.pause()
+        elif action == 'resume' and vc and vc.is_paused():
+            vc.resume()
+        elif action == 'skip' and vc and vc.is_playing():
+            vc.stop()
+        elif action == 'stop':
+            future = asyncio.run_coroutine_threadsafe(music_cog.cleanup(server_id), bot_instance.loop)
+            future.result(timeout=10)
+        else:
+            return jsonify({'error': f'Cannot perform {action}'}), 400
+
+        broadcast_update('music_update', {'guild_id': server_id, 'action': action})
+        return jsonify({'status': action})
+    except Exception as e:
+        logger.error(f"Music control error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<int:server_id>/music/status')
+@require_auth
+def music_status(server_id):
+    """Get current music status"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        music_cog = bot_instance.get_cog('Music')
+        vc = guild.voice_client
+        queue = music_cog.get_queue(server_id) if music_cog else None
+
+        return jsonify({
+            'connected': vc is not None and vc.is_connected(),
+            'playing': vc.is_playing() if vc else False,
+            'paused': vc.is_paused() if vc else False,
+            'channel': vc.channel.name if vc else None,
+            'current': {
+                'title': queue.current.title if queue and queue.current else None,
+                'thumbnail': queue.current.thumbnail if queue and queue.current else None,
+            },
+            'queue': [s.title for s in list(queue.queue)] if queue else [],
+            'loop': queue.loop if queue else False,
+            'voice_channels': [{'id': c.id, 'name': c.name} for c in guild.voice_channels]
+        })
+    except Exception as e:
+        logger.error(f"Music status error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ===== ANNOUNCEMENTS API =====
+
+@app.route('/api/server/<int:server_id>/announce', methods=['POST'])
+@require_auth
+def send_announcement(server_id):
+    """Send an announcement to a channel"""
+    try:
+        data = request.json
+        channel_id = data.get('channel_id')
+        message = data.get('message', '').strip()
+        title = data.get('title', '').strip()
+        color = data.get('color', '#5865f2')
+        ping_everyone = data.get('ping_everyone', False)
+
+        if not message:
+            return jsonify({'error': 'Message is required'}), 400
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        async def _send():
+            channel = guild.get_channel(int(channel_id)) if channel_id else \
+                next((c for c in guild.text_channels if 'announce' in c.name.lower()), guild.text_channels[0])
+            if not channel:
+                return {'error': 'Channel not found'}
+
+            color_int = int(color.lstrip('#'), 16)
+            embed = discord.Embed(color=color_int)
+            if title:
+                embed.title = title
+            embed.description = message
+            embed.set_footer(text=f"Announcement from {session.get('username', 'Dashboard')}")
+
+            content = '@everyone' if ping_everyone else None
+            await channel.send(content=content, embed=embed)
+            return {'status': 'sent', 'channel': channel.name}
+
+        future = asyncio.run_coroutine_threadsafe(_send(), bot_instance.loop)
+        result = future.result(timeout=10)
+        if 'error' in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Announcement error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<int:server_id>/channels/text')
+@require_auth
+def get_text_channels(server_id):
+    """Get text channels for announcement target selector"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+        channels = [{'id': c.id, 'name': c.name} for c in guild.text_channels]
+        return jsonify({'channels': channels})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ===== MANAGEMENT API ENDPOINTS =====
 # Import management functions
 from web_dashboard_management import (
