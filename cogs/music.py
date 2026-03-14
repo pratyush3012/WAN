@@ -436,18 +436,6 @@ class Music(commands.Cog):
             logger.error(f"Playlist error: {e}")
             await interaction.followup.send(f"❌ Could not load playlist: {e}", ephemeral=True)
 
-    @app_commands.command(name="search", description="🔍 Search YouTube and pick a result")
-    async def search(self, interaction: discord.Interaction, query: str):
-        await interaction.response.defer()
-        results = await YTDLSource.search_results(query, loop=self.bot.loop)
-        if not results:
-            return await interaction.followup.send("❌ No results found.", ephemeral=True)
-        embed = discord.Embed(title=f"🔍 Results for: {query}", color=0x5865f2)
-        for i, r in enumerate(results):
-            embed.add_field(name=f"{i+1}. {(r.get('title') or '?')[:60]}",
-                value=f"`{_fmt(r.get('duration', 0))}`", inline=False)
-        await interaction.followup.send(embed=embed, view=SearchView(results, self, interaction))
-
     @app_commands.command(name="247", description="🔴 Toggle 24/7 mode — bot stays in VC forever")
     async def cmd_247(self, interaction: discord.Interaction):
         if not interaction.user.guild_permissions.manage_guild:
@@ -483,18 +471,6 @@ class Music(commands.Cog):
             f"{'🟢' if not current else '🔴'} Autoplay **{state}**. "
             f"{'Bot will keep playing related songs when queue ends.' if not current else 'Bot will wait silently when queue ends.'}"
         )
-
-    @app_commands.command(name="join", description="📥 Join your voice channel")
-    async def join(self, interaction: discord.Interaction):
-        if not interaction.user.voice:
-            return await interaction.response.send_message("❌ Join a voice channel first.", ephemeral=True)
-        ch = interaction.user.voice.channel
-        vc = interaction.guild.voice_client
-        if vc:
-            await vc.move_to(ch)
-        else:
-            await ch.connect()
-        await interaction.response.send_message(f"📥 Joined **{ch.name}**.")
 
     @app_commands.command(name="leave", description="📤 Leave voice channel (disables 24/7 for this session)")
     async def leave(self, interaction: discord.Interaction):
@@ -624,30 +600,6 @@ class Music(commands.Cog):
             return await interaction.response.send_message("❌ Queue is empty.", ephemeral=True)
         queue.shuffle()
         await interaction.response.send_message(f"🔀 Shuffled {len(queue.queue)} songs.")
-
-    @app_commands.command(name="remove", description="🗑 Remove a song from the queue by position")
-    async def remove(self, interaction: discord.Interaction, position: app_commands.Range[int, 1, 100]):
-        title = self.get_queue(interaction.guild.id).remove(position)
-        if title:
-            await interaction.response.send_message(f"🗑 Removed **{title}**.")
-        else:
-            await interaction.response.send_message("❌ Invalid position.", ephemeral=True)
-
-    @app_commands.command(name="move", description="↕️ Move a song to a different queue position")
-    async def move(self, interaction: discord.Interaction,
-                   from_position: app_commands.Range[int, 1, 100],
-                   to_position: app_commands.Range[int, 1, 100]):
-        if self.get_queue(interaction.guild.id).move(from_position, to_position):
-            await interaction.response.send_message(f"↕️ Moved #{from_position} → #{to_position}.")
-        else:
-            await interaction.response.send_message("❌ Invalid positions.", ephemeral=True)
-
-    @app_commands.command(name="clearqueue", description="🗑 Clear the queue (keeps current song playing)")
-    async def clearqueue(self, interaction: discord.Interaction):
-        queue = self.get_queue(interaction.guild.id)
-        count = len(queue.queue)
-        queue.queue.clear()
-        await interaction.response.send_message(f"🗑 Cleared {count} song(s) from queue.")
 
     # ── No auto-disconnect listener — bot stays forever ───────────────────
     # The only way to remove the bot is /leave (requires Manage Server)
