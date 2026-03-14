@@ -738,7 +738,7 @@ def music_play(server_id):
                 vc = await ch.connect()
 
             from cogs.music import YTDLSource
-            player = await YTDLSource.from_query(query, loop=bot_instance.loop, stream=True)
+            player = await YTDLSource.from_query(query, loop=bot_instance.loop)
             player.requester = guild.me
             queue = music_cog.get_queue(guild.id)
 
