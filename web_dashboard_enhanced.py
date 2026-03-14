@@ -428,6 +428,13 @@ def export_data(format):
         logger.error(f"Error exporting data: {e}")
         return jsonify({'error': 'Export failed'}), 500
 
+def _check_nacl():
+    try:
+        import nacl
+        return nacl.__version__
+    except ImportError:
+        return False
+
 @app.route('/api/health')
 @limiter.exempt
 def health_check():
@@ -441,6 +448,7 @@ def health_check():
         'cogs': cogs_loaded,
         'music_loaded': 'Music' in cogs_loaded,
         'cog_errors': getattr(bot_instance, 'cog_errors', {}),
+        'nacl_installed': _check_nacl(),
         'timestamp': datetime.utcnow().isoformat()
     }
     status = 'healthy' if checks['bot'] else 'degraded'
