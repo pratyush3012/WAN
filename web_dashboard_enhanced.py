@@ -747,10 +747,21 @@ def music_play(server_id):
                     ch = next((c for c in guild.voice_channels), None)
                 if not ch:
                     return {'error': 'No voice channel found'}
-                vc = await ch.connect()
+                try:
+                    vc = await ch.connect()
+                except Exception as e:
+                    return {'error': f'Could not join voice channel: {e}'}
 
             from cogs.music import YTDLSource
-            player = await YTDLSource.from_query(query, loop=bot_instance.loop)
+            try:
+                player = await YTDLSource.from_query(query, loop=bot_instance.loop)
+            except asyncio.TimeoutError:
+                return {'error': 'Search timed out — try a more specific query or YouTube URL'}
+            except ValueError as e:
+                return {'error': str(e)}
+            except Exception as e:
+                return {'error': f'Could not load audio: {e}'}
+
             player.requester = guild.me
             queue = music_cog.get_queue(guild.id)
 

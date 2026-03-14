@@ -120,8 +120,16 @@ class YTDLSource(discord.PCMVolumeTransformer):
             loop.run_in_executor(None, lambda: _ytdl_extract(query, single=True)),
             timeout=30.0,
         )
+        if not data:
+            raise ValueError(f"No results found for: {query}")
         if 'entries' in data:
-            data = data['entries'][0]
+            # filter out None entries
+            entries = [e for e in data['entries'] if e]
+            if not entries:
+                raise ValueError(f"No playable results for: {query}")
+            data = entries[0]
+        if not data.get('url'):
+            raise ValueError(f"Could not extract audio URL for: {query}")
         src = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTS)
         return cls(src, data=data, volume=volume)
 
@@ -146,10 +154,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
             loop.run_in_executor(None, lambda: _ytdl_extract(url, single=False)),
             timeout=60.0,
         )
+        if not data:
+            return []
         entries = data.get('entries', [data]) if 'entries' in data else [data]
         sources = []
         for entry in entries:
-            if not entry:
+            if not entry or not entry.get('url'):
                 continue
             try:
                 src = discord.FFmpegPCMAudio(entry['url'], **FFMPEG_OPTS)
