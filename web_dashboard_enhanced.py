@@ -415,7 +415,7 @@ def export_data(format):
                 },
                 'servers': [
                     {
-                        'id': g.id,
+                        'id': str(g.id),
                         'name': g.name,
                         'members': g.member_count,
                         'owner': str(g.owner)
@@ -823,10 +823,14 @@ def music_status(server_id):
             'current': {
                 'title': queue.current.title if queue and queue.current else None,
                 'thumbnail': queue.current.thumbnail if queue and queue.current else None,
+                'duration': queue.current.duration if queue and queue.current else None,
+                'url': queue.current.url if queue and queue.current else None,
             },
-            'queue': [s.title for s in list(queue.queue)] if queue else [],
+            'queue': [s.title for s in list(queue.queue)[:20]] if queue else [],
+            'queue_size': len(queue.queue) if queue else 0,
             'loop': queue.loop if queue else False,
-            'voice_channels': [{'id': c.id, 'name': c.name} for c in guild.voice_channels]
+            'loop_queue': queue.loop_queue if queue else False,
+            'voice_channels': [{'id': str(c.id), 'name': c.name} for c in guild.voice_channels]
         })
     except Exception as e:
         logger.error(f"Music status error: {e}")
@@ -891,7 +895,7 @@ def get_text_channels(server_id):
         guild = bot_instance.get_guild(int(server_id))
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
-        channels = [{'id': c.id, 'name': c.name} for c in guild.text_channels]
+        channels = [{'id': str(c.id), 'name': c.name} for c in guild.text_channels]
         return jsonify({'channels': channels})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1048,7 +1052,7 @@ def get_server_members(server_id):
                 'avatar': str(member.avatar.url) if member.avatar else None,
                 'bot': member.bot,
                 'status': str(member.status),
-                'roles': [{'id': r.id, 'name': r.name, 'color': str(r.color)} for r in member.roles if r.name != '@everyone'],
+                'roles': [{'id': str(r.id), 'name': r.name, 'color': str(r.color)} for r in member.roles if r.name != '@everyone'],
                 'joined_at': member.joined_at.isoformat() if member.joined_at else None
             })
         

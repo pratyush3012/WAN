@@ -59,7 +59,7 @@ async def create_role_action(server_id, role_data):
     return jsonify({
         'success': True,
         'role': {
-            'id': role.id,
+            'id': str(role.id),
             'name': role.name,
             'color': str(role.color),
             'position': role.position
@@ -178,7 +178,7 @@ async def create_channel_action(server_id, channel_data):
     return jsonify({
         'success': True,
         'channel': {
-            'id': channel.id,
+            'id': str(channel.id),
             'name': channel.name,
             'type': str(channel.type)
         }
@@ -309,7 +309,7 @@ async def create_emoji_action(server_id, emoji_data):
     return jsonify({
         'success': True,
         'emoji': {
-            'id': emoji.id,
+            'id': str(emoji.id),
             'name': emoji.name,
             'url': str(emoji.url)
         }

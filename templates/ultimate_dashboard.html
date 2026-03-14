@@ -129,6 +129,10 @@
                 <button class="btn btn-primary btn-sm" onclick="musicControl('skip')"><i class="fas fa-forward"></i> Skip</button>
                 <button class="btn btn-danger btn-sm" onclick="musicControl('stop')"><i class="fas fa-stop"></i> Stop</button>
             </div>
+            <div style="margin-top:16px;">
+                <div style="font-weight:600;margin-bottom:8px;color:var(--text-muted);font-size:13px;">UP NEXT</div>
+                <div id="musicQueueList" style="max-height:200px;overflow-y:auto;"><p style="color:var(--text-muted);font-size:13px;">Queue is empty</p></div>
+            </div>
         </div>
         <div class="card">
             <div class="card-header"><h3 class="card-title">Play a Song</h3></div>
@@ -265,7 +269,7 @@ async function loadBotStatus(){
 function renderRoles(roles){
     var c=document.getElementById('rolesContainer');
     if(!roles.length){c.innerHTML='<p style="color:var(--text-muted);">No roles found.</p>';return;}
-    c.innerHTML=roles.filter(r=>r.name!=='@everyone').map(r=>'<div class="role-item"><div class="role-info"><div style="width:20px;height:20px;border-radius:5px;background:'+(r.color==='#000000'?'#99aab5':r.color)+';flex-shrink:0;"></div><div><div class="role-name">'+escHtml(r.name)+'</div><div class="role-members">'+r.members+' members</div></div></div><div style="display:flex;gap:8px;"><button class="btn btn-sm btn-primary" onclick="openEditRole('+r.id+',\''+escHtml(r.name)+'\',\''+r.color+'\')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteRole('+r.id+',\''+escHtml(r.name)+'\')"><i class="fas fa-trash"></i></button></div></div>').join('');
+    c.innerHTML=roles.filter(r=>r.name!=='@everyone').map(r=>'<div class="role-item"><div class="role-info"><div style="width:20px;height:20px;border-radius:5px;background:'+(r.color==='#000000'?'#99aab5':r.color)+';flex-shrink:0;"></div><div><div class="role-name">'+escHtml(r.name)+'</div><div class="role-members">'+r.members+' members</div></div></div><div style="display:flex;gap:8px;"><button class="btn btn-sm btn-primary" onclick="openEditRole('\''+r.id+'\'',\''+escHtml(r.name)+'\',\''+r.color+'\')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteRole('\''+r.id+'\'',\''+escHtml(r.name)+'\')"><i class="fas fa-trash"></i></button></div></div>').join('');
 }
 function openCreateRole(){
     if(!currentServer){notify('Select a server first','warning');return;}
@@ -289,8 +293,8 @@ async function deleteRole(id,name){
 }
 function renderChannels(channels){
     var c=document.getElementById('channelsContainer'),html='';
-    if(channels.text.length){html+='<h4 style="margin:0 0 12px;color:var(--text);">📝 Text Channels</h4>';html+=channels.text.map(ch=>'<div class="channel-item"><span style="font-weight:500;"># '+escHtml(ch.name)+'</span><div style="display:flex;gap:8px;"><button class="btn btn-sm btn-primary" onclick="openEditChannel('+ch.id+',\''+escHtml(ch.name)+'\')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteChannel('+ch.id+',\''+escHtml(ch.name)+'\')"><i class="fas fa-trash"></i></button></div></div>').join('');}
-    if(channels.voice.length){html+='<h4 style="margin:20px 0 12px;color:var(--text);">🔊 Voice Channels</h4>';html+=channels.voice.map(ch=>'<div class="channel-item"><span style="font-weight:500;">🔊 '+escHtml(ch.name)+'</span><div style="display:flex;gap:8px;"><button class="btn btn-sm btn-primary" onclick="openEditChannel('+ch.id+',\''+escHtml(ch.name)+'\')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteChannel('+ch.id+',\''+escHtml(ch.name)+'\')"><i class="fas fa-trash"></i></button></div></div>').join('');}
+    if(channels.text.length){html+='<h4 style="margin:0 0 12px;color:var(--text);">📝 Text Channels</h4>';html+=channels.text.map(ch=>'<div class="channel-item"><span style="font-weight:500;"># '+escHtml(ch.name)+'</span><div style="display:flex;gap:8px;"><button class="btn btn-sm btn-primary" onclick="openEditChannel('\''+ch.id+'\'',\''+escHtml(ch.name)+'\')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteChannel('\''+ch.id+'\'',\''+escHtml(ch.name)+'\')"><i class="fas fa-trash"></i></button></div></div>').join('');}
+    if(channels.voice.length){html+='<h4 style="margin:20px 0 12px;color:var(--text);">🔊 Voice Channels</h4>';html+=channels.voice.map(ch=>'<div class="channel-item"><span style="font-weight:500;">🔊 '+escHtml(ch.name)+'</span><div style="display:flex;gap:8px;"><button class="btn btn-sm btn-primary" onclick="openEditChannel('\''+ch.id+'\'',\''+escHtml(ch.name)+'\')"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteChannel('\''+ch.id+'\'',\''+escHtml(ch.name)+'\')"><i class="fas fa-trash"></i></button></div></div>').join('');}
     c.innerHTML=html||'<p style="color:var(--text-muted);">No channels found.</p>';
 }
 function openCreateChannel(){
@@ -316,7 +320,7 @@ async function deleteChannel(id,name){
 function renderMembers(members){
     var c=document.getElementById('membersContainer'),humans=members.filter(m=>!m.bot);
     if(!humans.length){c.innerHTML='<p style="color:var(--text-muted);">No members found.</p>';return;}
-    c.innerHTML='<table class="table"><thead><tr><th>Member</th><th>Status</th><th>Roles</th><th>Actions</th></tr></thead><tbody>'+humans.map(m=>'<tr><td><div style="display:flex;align-items:center;gap:10px;">'+(m.avatar?'<img src="'+m.avatar+'" style="width:32px;height:32px;border-radius:50%;">'  :'<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;">👤</div>')+'<div><div style="font-weight:600;">'+escHtml(m.display_name)+'</div><div style="color:var(--text-muted);font-size:12px;">'+escHtml(m.name)+'</div></div></div></td><td><span class="badge badge-'+(m.status==='online'?'success':m.status==='idle'?'warning':'secondary')+'">'+m.status+'</span></td><td>'+m.roles.slice(0,3).map(r=>'<span class="badge badge-primary" style="margin:2px;">'+escHtml(r.name)+'</span>').join('')+(m.roles.length>3?'<span style="color:var(--text-muted);font-size:12px;"> +'+( m.roles.length-3)+'</span>':'')+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-sm btn-primary" onclick="openManageRoles('+m.id+',\''+escHtml(m.display_name)+'\')">Roles</button><button class="btn btn-sm btn-success" onclick="openAssignBadgeTo('+m.id+',\''+escHtml(m.display_name)+'\')">Badge</button><button class="btn btn-sm btn-danger" onclick="kickMember('+m.id+',\''+escHtml(m.display_name)+'\')">Kick</button><button class="btn btn-sm" style="background:#7c3aed;color:white;" onclick="timeoutMember('+m.id+',\''+escHtml(m.display_name)+'\')">Timeout</button></div></td></tr>').join('')+'</tbody></table>';
+    c.innerHTML='<table class="table"><thead><tr><th>Member</th><th>Status</th><th>Roles</th><th>Actions</th></tr></thead><tbody>'+humans.map(m=>'<tr><td><div style="display:flex;align-items:center;gap:10px;">'+(m.avatar?'<img src="'+m.avatar+'" style="width:32px;height:32px;border-radius:50%;">'  :'<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;">👤</div>')+'<div><div style="font-weight:600;">'+escHtml(m.display_name)+'</div><div style="color:var(--text-muted);font-size:12px;">'+escHtml(m.name)+'</div></div></div></td><td><span class="badge badge-'+(m.status==='online'?'success':m.status==='idle'?'warning':'secondary')+'">'+m.status+'</span></td><td>'+m.roles.slice(0,3).map(r=>'<span class="badge badge-primary" style="margin:2px;">'+escHtml(r.name)+'</span>').join('')+(m.roles.length>3?'<span style="color:var(--text-muted);font-size:12px;"> +'+( m.roles.length-3)+'</span>':'')+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-sm btn-primary" onclick="openManageRoles('\''+m.id+'\'',\''+escHtml(m.display_name)+'\')">Roles</button><button class="btn btn-sm btn-success" onclick="openAssignBadgeTo('\''+m.id+'\'',\''+escHtml(m.display_name)+'\')">Badge</button><button class="btn btn-sm btn-danger" onclick="kickMember('\''+m.id+'\'',\''+escHtml(m.display_name)+'\')">Kick</button><button class="btn btn-sm" style="background:#7c3aed;color:white;" onclick="timeoutMember('\''+m.id+'\'',\''+escHtml(m.display_name)+'\')">Timeout</button></div></td></tr>').join('')+'</tbody></table>';
 }
 function filterMembers(q){renderMembers(q?allMembers.filter(m=>m.display_name.toLowerCase().includes(q.toLowerCase())||m.name.toLowerCase().includes(q.toLowerCase())):allMembers);}
 function openManageRoles(memberId,memberName){
@@ -382,7 +386,11 @@ function updateMusicUI(d){
     else{s.textContent='Idle';s.className='badge badge-secondary';}
     if(d.current&&d.current.title){t.textContent=d.current.title;if(d.current.thumbnail){th.src=d.current.thumbnail;th.style.display='block';}else th.style.display='none';}
     else{t.textContent='Nothing playing';th.style.display='none';}
-    q.textContent=d.queue&&d.queue.length?d.queue.length+' song(s) in queue':'Queue empty';
+    q.textContent=(d.queue_size||0)>0?(d.queue_size)+' song(s) in queue':'Queue empty';
+    // Show queue list if available
+    var ql=document.getElementById('musicQueueList');
+    if(ql&&d.queue&&d.queue.length){ql.innerHTML=d.queue.map((t,i)=>'<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;"><span style="color:var(--text-muted);margin-right:8px;">'+(i+1)+'.</span>'+escHtml(t)+'</div>').join('');}
+    else if(ql){ql.innerHTML='<p style="color:var(--text-muted);font-size:13px;">Queue is empty</p>';}
 }
 async function playMusic(){
     if(!currentServer){notify('Select a server first','warning');return;}

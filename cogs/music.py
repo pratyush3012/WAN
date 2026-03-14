@@ -95,6 +95,10 @@ class MusicQueue:
         if not (0 < fr <= len(lst) and 0 < to <= len(lst)): return False
         song = lst.pop(fr - 1); lst.insert(to - 1, song); self.queue = deque(lst); return True
 
+    def clear(self):
+        self.queue.clear()
+        self.current = None
+
 
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
@@ -230,6 +234,19 @@ class Music(commands.Cog):
     def get_volume(self, guild_id: int) -> float:
         return self._volumes.get(guild_id, 0.5)
 
+    async def cleanup(self, guild_id: int):
+        """Stop music and disconnect (used by dashboard stop action)."""
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return
+        queue = self.get_queue(guild_id)
+        queue.clear()
+        if guild_id in self.queues:
+            del self.queues[guild_id]
+        vc = guild.voice_client
+        if vc:
+            await vc.disconnect(force=True)
+
     async def _ensure_voice(self, interaction: discord.Interaction):
         if not interaction.user.voice:
             await interaction.followup.send("❌ Join a voice channel first.", ephemeral=True)
@@ -286,8 +303,11 @@ class Music(commands.Cog):
         vc.play(player, after=after)
         self._broadcast(guild, player, queue)
 
-    async def _autoplay_next(self, guild: discord.Guild):
+    async def _autoplay_next(self, guild: discord.Guild, _retries: int = 0):
         """Pick a related/random song and play it automatically."""
+        if _retries >= 3:
+            logger.warning(f"Autoplay gave up after 3 retries in {guild.name}")
+            return
         queue = self.get_queue(guild.id)
         vc = guild.voice_client
         if not vc or not vc.is_connected():
@@ -312,10 +332,9 @@ class Music(commands.Cog):
             self._start_playing(guild, player, queue)
             logger.info(f"Autoplay: {player.title} in {guild.name}")
         except Exception as e:
-            logger.warning(f"Autoplay failed: {e}")
-            # Retry with a random seed after 5s
+            logger.warning(f"Autoplay failed (attempt {_retries+1}/3): {e}")
             await asyncio.sleep(5)
-            await self._autoplay_next(guild)
+            await self._autoplay_next(guild, _retries + 1)
 
     async def _play_entry(self, interaction: discord.Interaction, entry: dict):
         vc = await self._ensure_voice(interaction)
