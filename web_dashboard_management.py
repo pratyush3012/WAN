@@ -25,11 +25,11 @@ def async_action(f):
         
         try:
             future = asyncio.run_coroutine_threadsafe(f(*args, **kwargs), loop)
-            result = future.result(timeout=15)
+            result = future.result(timeout=30)
             return result
         except TimeoutError:
             logger.error(f"Timeout in async action {f.__name__}")
-            return jsonify({'error': 'Action timed out'}), 504
+            return jsonify({'error': 'Action timed out — try again'}), 504
         except Exception as e:
             logger.error(f"Error in async action {f.__name__}: {e}")
             return jsonify({'error': str(e)}), 500
@@ -379,36 +379,53 @@ async def timeout_member_action(server_id, member_id, duration, reason=''):
 
 @async_action
 async def assign_badge_action(server_id, member_id, badge_name):
-    """Assign badge to member"""
+    """Assign badge to member — creates role if needed"""
     from web_dashboard_enhanced import bot_instance
-    
+
     guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
-    
-    # Get badges cog
-    badges_cog = bot_instance.get_cog('BadgeSystem')
-    if not badges_cog:
-        return jsonify({'error': 'Badge system not loaded'}), 503
-    
+
     member = guild.get_member(int(member_id))
     if not member:
-        return jsonify({'error': 'Member not found'}), 404
-    
-    # Find or create badge role
-    badge_role = discord.utils.get(guild.roles, name=f"🏅 {badge_name}")
+        # Try fetching from API in case member isn't cached
+        try:
+            member = await guild.fetch_member(int(member_id))
+        except Exception:
+            return jsonify({'error': 'Member not found'}), 404
+
+    # Badge emoji map
+    badge_emojis = {
+        'Owner': '👑', 'Admin': '⚡', 'Manager': '🛡️',
+        'Moderator': '🔨', 'Helper': '💚', 'VIP': '⭐',
+        'Booster': '💎', 'Member': '✅',
+    }
+    badge_colors = {
+        'Owner': 0xFF0000, 'Admin': 0xFF4444, 'Manager': 0xFF8800,
+        'Moderator': 0x00CC44, 'Helper': 0x00FFFF, 'VIP': 0xFFD700,
+        'Booster': 0xFF69B4, 'Member': 0x0099FF,
+    }
+
+    emoji = badge_emojis.get(badge_name, '🏅')
+    color = badge_colors.get(badge_name, 0xFFD700)
+    role_name = f"{emoji} {badge_name}"
+
+    # Find or create the badge role
+    badge_role = discord.utils.get(guild.roles, name=role_name)
     if not badge_role:
-        # Create badge role
         badge_role = await guild.create_role(
-            name=f"🏅 {badge_name}",
-            color=discord.Color.gold(),
+            name=role_name,
+            color=discord.Color(color),
             hoist=True,
-            reason=f"Badge role created via dashboard"
+            mentionable=False,
+            reason="Badge role created via dashboard"
         )
-    
-    await member.add_roles(badge_role, reason=f"Badge assigned via dashboard")
-    
-    return jsonify({'success': True, 'message': f'Badge {badge_name} assigned to {member.name}'})
+
+    if badge_role in member.roles:
+        return jsonify({'success': True, 'message': f'{member.display_name} already has the {badge_name} badge'})
+
+    await member.add_roles(badge_role, reason="Badge assigned via dashboard")
+    return jsonify({'success': True, 'message': f'Badge {badge_name} assigned to {member.display_name}'})
 
 # ===== SERVER SETTINGS =====
 
