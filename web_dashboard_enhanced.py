@@ -432,11 +432,14 @@ def export_data(format):
 @limiter.exempt
 def health_check():
     """Health check endpoint - no auth required"""
+    cogs_loaded = list(bot_instance.cogs.keys()) if bot_instance and bot_instance.is_ready() else []
     checks = {
         'bot': bot_instance.is_ready() if bot_instance else False,
         'bot_guilds': len(bot_instance.guilds) if bot_instance and bot_instance.is_ready() else 0,
         'session_active': 'user_id' in session,
         'cache': cache.cache is not None,
+        'cogs': cogs_loaded,
+        'music_loaded': 'Music' in cogs_loaded,
         'timestamp': datetime.utcnow().isoformat()
     }
     status = 'healthy' if checks['bot'] else 'degraded'
