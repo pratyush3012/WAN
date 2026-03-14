@@ -440,6 +440,7 @@ def health_check():
         'cache': cache.cache is not None,
         'cogs': cogs_loaded,
         'music_loaded': 'Music' in cogs_loaded,
+        'cog_errors': getattr(bot_instance, 'cog_errors', {}),
         'timestamp': datetime.utcnow().isoformat()
     }
     status = 'healthy' if checks['bot'] else 'degraded'

@@ -83,12 +83,16 @@ class GamingBot(commands.Bot):
             # gaming(3), youtube(3)
         ]
         
+        self.cog_errors = {}  # store load errors for /api/health
         for cog in cogs:
             try:
                 await self.load_extension(cog)
                 logger.info(f'✅ Loaded {cog}')
             except Exception as e:
-                logger.error(f'❌ Failed to load {cog}: {e}', exc_info=True)
+                import traceback
+                err = traceback.format_exc()
+                logger.error(f'❌ Failed to load {cog}: {e}\n{err}')
+                self.cog_errors[cog] = str(e)
         
         # Set up global error handler
         self.tree.error(self.on_app_command_error)
