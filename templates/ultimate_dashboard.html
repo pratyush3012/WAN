@@ -237,7 +237,7 @@ async function selectServer(id){
 }
 async function loadServerDetails(id){
     try{
-        var r1=await fetch('/api/server/'+id),r2=await fetch('/api/server/'+id+'/members');
+        var r1=await apiFetch('/api/server/'+id),r2=await apiFetch('/api/server/'+id+'/members');
         if(!r1.ok){r1.json().catch(()=>({})).then(function(e){notify('Failed to load server data: '+(e.error||r1.status),'danger');console.error('Server API error:',e);});return;}
         var d=await r1.json(),md=await r2.json();
         allMembers=md.members||[];
@@ -257,7 +257,7 @@ async function loadServerDetails(id){
 }
 async function loadBotStatus(){
     try{
-        var d=await(await fetch('/api/bot/status')).json();
+        var d=await(await apiFetch('/api/bot/status')).json();
         if(d.status==='online'){
             document.getElementById('statLatency').textContent=d.latency+'ms';
             document.getElementById('botUptime').textContent='Uptime: '+d.uptime;
@@ -276,19 +276,19 @@ function openCreateRole(){
     showModal('Create Role','<div class="form-group"><label class="form-label">Role Name</label><input id="mRoleName" class="form-control" placeholder="Role name"></div><div class="form-group"><label class="form-label">Color</label><input type="color" id="mRoleColor" class="form-control" value="#99aab5" style="height:44px;"></div>',async()=>{
         var name=document.getElementById('mRoleName').value.trim();
         if(!name){notify('Enter a role name','warning');return;}
-        var d=await(await fetch('/api/server/'+currentServer+'/roles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,color:document.getElementById('mRoleColor').value})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/roles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,color:document.getElementById('mRoleColor').value})})).json();
         if(d.success){notify('Role created!','success');closeModal();loadServerDetails(currentServer);}else notify(d.error||'Failed','danger');
     });
 }
 function openEditRole(id,name,color){
     showModal('Edit Role','<div class="form-group"><label class="form-label">Role Name</label><input id="mRoleName" class="form-control" value="'+escHtml(name)+'"></div><div class="form-group"><label class="form-label">Color</label><input type="color" id="mRoleColor" class="form-control" value="'+color+'" style="height:44px;"></div>',async()=>{
-        var d=await(await fetch('/api/server/'+currentServer+'/roles/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('mRoleName').value,color:document.getElementById('mRoleColor').value})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/roles/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('mRoleName').value,color:document.getElementById('mRoleColor').value})})).json();
         if(d.success){notify('Role updated!','success');closeModal();loadServerDetails(currentServer);}else notify(d.error||'Failed','danger');
     });
 }
 async function deleteRole(id,name){
     if(!confirm('Delete role "'+name+'"?'))return;
-    var d=await(await fetch('/api/server/'+currentServer+'/roles/'+id,{method:'DELETE'})).json();
+    var d=await(await apiFetch('/api/server/'+currentServer+'/roles/'+id,{method:'DELETE'})).json();
     if(d.success){notify('Role deleted','success');loadServerDetails(currentServer);}else notify(d.error||'Failed','danger');
 }
 function renderChannels(channels){
@@ -302,19 +302,19 @@ function openCreateChannel(){
     showModal('Create Channel','<div class="form-group"><label class="form-label">Channel Name</label><input id="mChName" class="form-control" placeholder="channel-name"></div><div class="form-group"><label class="form-label">Type</label><select id="mChType" class="form-control"><option value="text">Text Channel</option><option value="voice">Voice Channel</option><option value="category">Category</option></select></div>',async()=>{
         var name=document.getElementById('mChName').value.trim();
         if(!name){notify('Enter a channel name','warning');return;}
-        var d=await(await fetch('/api/server/'+currentServer+'/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,type:document.getElementById('mChType').value})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/channels',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,type:document.getElementById('mChType').value})})).json();
         if(d.success){notify('Channel created!','success');closeModal();loadServerDetails(currentServer);}else notify(d.error||'Failed','danger');
     });
 }
 function openEditChannel(id,name){
     showModal('Edit Channel','<div class="form-group"><label class="form-label">Channel Name</label><input id="mChName" class="form-control" value="'+escHtml(name)+'"></div>',async()=>{
-        var d=await(await fetch('/api/server/'+currentServer+'/channels/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('mChName').value})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/channels/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('mChName').value})})).json();
         if(d.success){notify('Channel updated!','success');closeModal();loadServerDetails(currentServer);}else notify(d.error||'Failed','danger');
     });
 }
 async function deleteChannel(id,name){
     if(!confirm('Delete channel "'+name+'"?'))return;
-    var d=await(await fetch('/api/server/'+currentServer+'/channels/'+id,{method:'DELETE'})).json();
+    var d=await(await apiFetch('/api/server/'+currentServer+'/channels/'+id,{method:'DELETE'})).json();
     if(d.success){notify('Channel deleted','success');loadServerDetails(currentServer);}else notify(d.error||'Failed','danger');
 }
 function renderMembers(members){
@@ -325,10 +325,10 @@ function renderMembers(members){
 function filterMembers(q){renderMembers(q?allMembers.filter(m=>m.display_name.toLowerCase().includes(q.toLowerCase())||m.name.toLowerCase().includes(q.toLowerCase())):allMembers);}
 function openManageRoles(memberId,memberName){
     if(!currentServer)return;
-    fetch('/api/server/'+currentServer).then(r=>r.json()).then(d=>{
+    apiFetch('/api/server/'+currentServer).then(r=>r.json()).then(d=>{
         var roles=d.roles.filter(r=>r.name!=='@everyone');
         showModal('Manage Roles — '+memberName,'<div class="form-group"><label class="form-label">Role</label><select id="mRoleId" class="form-control">'+roles.map(r=>'<option value="'+r.id+'">'+escHtml(r.name)+'</option>').join('')+'</select></div><div class="form-group"><label class="form-label">Action</label><select id="mRoleAction" class="form-control"><option value="add">Add Role</option><option value="remove">Remove Role</option></select></div>',async()=>{
-            var d2=await(await fetch('/api/server/'+currentServer+'/members/'+memberId+'/roles/'+document.getElementById('mRoleId').value,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:document.getElementById('mRoleAction').value})})).json();
+            var d2=await(await apiFetch('/api/server/'+currentServer+'/members/'+memberId+'/roles/'+document.getElementById('mRoleId').value,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:document.getElementById('mRoleAction').value})})).json();
             if(d2.success){notify(d2.message,'success');closeModal();loadServerDetails(currentServer);}else notify(d2.error||'Failed','danger');
         });
     });
@@ -336,12 +336,12 @@ function openManageRoles(memberId,memberName){
 async function kickMember(id,name){
     var reason=prompt('Reason for kicking '+name+'? (optional)');
     if(reason===null)return;
-    var d=await(await fetch('/api/server/'+currentServer+'/members/'+id+'/kick',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason})})).json();
+    var d=await(await apiFetch('/api/server/'+currentServer+'/members/'+id+'/kick',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason})})).json();
     if(d.success){notify(d.message,'success');loadServerDetails(currentServer);}else notify(d.error||'Failed','danger');
 }
 function timeoutMember(id,name){
     showModal('Timeout '+name,'<div class="form-group"><label class="form-label">Duration (minutes)</label><input id="mTimeout" type="number" class="form-control" value="10" min="1" max="40320"></div><div class="form-group"><label class="form-label">Reason</label><input id="mTimeoutReason" class="form-control" placeholder="Optional reason"></div>',async()=>{
-        var d=await(await fetch('/api/server/'+currentServer+'/members/'+id+'/timeout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({duration:parseInt(document.getElementById('mTimeout').value),reason:document.getElementById('mTimeoutReason').value})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/members/'+id+'/timeout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({duration:parseInt(document.getElementById('mTimeout').value),reason:document.getElementById('mTimeoutReason').value})})).json();
         if(d.success){notify(d.message,'success');closeModal();}else notify(d.error||'Failed','danger');
     });
 }
@@ -357,7 +357,7 @@ async function loadLeaderboard(category){
     var c=document.getElementById('leaderboardContainer');
     c.innerHTML='<p style="color:var(--text-muted);">Loading...</p>';
     try{
-        var data=await(await fetch('/api/leaderboard/'+category)).json();
+        var data=await(await apiFetch('/api/leaderboard/'+category)).json();
         if(data.error){c.innerHTML='<p style="color:#ef4444;">'+data.error+'</p>';return;}
         if(!data.leaderboard.length){c.innerHTML='<p style="color:var(--text-muted);">No activity tracked yet.</p>';return;}
         var fmt=function(e){
@@ -377,7 +377,7 @@ function loadMusicVoiceChannels(voiceChannels){
 }
 async function loadMusicStatus(){
     if(!currentServer)return;
-    try{var d=await(await fetch('/api/server/'+currentServer+'/music/status')).json();updateMusicUI(d);}catch(e){}
+    try{var d=await(await apiFetch('/api/server/'+currentServer+'/music/status')).json();updateMusicUI(d);}catch(e){}
 }
 function updateMusicUI(d){
     var s=document.getElementById('musicStatus'),t=document.getElementById('musicTitle'),th=document.getElementById('musicThumb'),q=document.getElementById('musicQueue');
@@ -399,7 +399,7 @@ async function playMusic(){
     var channelId=document.getElementById('musicChannel').value;
     notify('Loading...','info');
     try{
-        var d=await(await fetch('/api/server/'+currentServer+'/music/play',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,channel_id:channelId||null})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/music/play',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,channel_id:channelId||null})})).json();
         if(d.error){notify(d.error,'danger');return;}
         notify(d.status==='playing'?'▶ Now playing: '+d.title:'📋 Queued: '+d.title,'success');
         document.getElementById('musicQuery').value='';
@@ -409,7 +409,7 @@ async function playMusic(){
 async function musicControl(action){
     if(!currentServer)return;
     try{
-        var d=await(await fetch('/api/server/'+currentServer+'/music/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/music/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})})).json();
         if(d.error){notify(d.error,'danger');return;}
         notify('Music: '+action,'success');
         setTimeout(()=>loadMusicStatus(),500);
@@ -418,7 +418,7 @@ async function musicControl(action){
 async function loadTextChannels(){
     if(!currentServer)return;
     try{
-        var d=await(await fetch('/api/server/'+currentServer+'/channels/text')).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/channels/text')).json();
         var sel=document.getElementById('announceChannel');
         sel.innerHTML='<option value="">Select channel...</option>';
         (d.channels||[]).forEach(ch=>{var opt=document.createElement('option');opt.value=ch.id;opt.textContent='# '+ch.name;sel.appendChild(opt);});
@@ -429,7 +429,7 @@ async function sendAnnouncement(){
     var message=document.getElementById('announceMessage').value.trim();
     if(!message){notify('Enter a message','warning');return;}
     try{
-        var d=await(await fetch('/api/server/'+currentServer+'/announce',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel_id:document.getElementById('announceChannel').value||null,title:document.getElementById('announceTitle').value.trim(),message,color:document.getElementById('announceColor').value,ping_everyone:document.getElementById('announcePing').checked})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/announce',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel_id:document.getElementById('announceChannel').value||null,title:document.getElementById('announceTitle').value.trim(),message,color:document.getElementById('announceColor').value,ping_everyone:document.getElementById('announcePing').checked})})).json();
         if(d.error){notify(d.error,'danger');return;}
         notify('Announcement sent to #'+d.channel,'success');
         document.getElementById('announceMessage').value='';
@@ -441,7 +441,7 @@ async function loadAuditLog(){
     var feed=document.getElementById('auditFeed');
     feed.innerHTML='<p style="color:var(--text-muted);">Loading...</p>';
     try{
-        var d=await(await fetch('/api/server/'+currentServer+'/audit')).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/audit')).json();
         renderAuditEvents(d.events||[]);
     }catch(e){feed.innerHTML='<p style="color:#ef4444;">Failed to load audit log</p>';}
 }
@@ -467,19 +467,19 @@ function openAssignBadge(){
     if(!currentServer){notify('Select a server first','warning');return;}
     var humans=allMembers.filter(m=>!m.bot);
     showModal('Assign Badge','<div class="form-group"><label class="form-label">Member</label><select id="mBadgeMember" class="form-control">'+humans.map(m=>'<option value="'+m.id+'">'+escHtml(m.display_name)+'</option>').join('')+'</select></div><div class="form-group"><label class="form-label">Badge</label><select id="mBadgeType" class="form-control"><option value="Owner">👑 Owner</option><option value="Admin">⚡ Admin</option><option value="Manager">🛡️ Manager</option><option value="Moderator">🔨 Moderator</option><option value="Helper">💚 Helper</option><option value="VIP">⭐ VIP</option><option value="Booster">💎 Booster</option><option value="Member">✅ Member</option></select></div>',async()=>{
-        var d=await(await fetch('/api/server/'+currentServer+'/members/'+document.getElementById('mBadgeMember').value+'/badge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({badge_name:document.getElementById('mBadgeType').value})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/members/'+document.getElementById('mBadgeMember').value+'/badge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({badge_name:document.getElementById('mBadgeType').value})})).json();
         if(d.success){notify(d.message,'success');closeModal();}else notify(d.error||'Failed','danger');
     });
 }
 function openAssignBadgeTo(memberId,memberName){
     showModal('Assign Badge to '+memberName,'<div class="form-group"><label class="form-label">Badge</label><select id="mBadgeType" class="form-control"><option value="Owner">👑 Owner</option><option value="Admin">⚡ Admin</option><option value="Manager">🛡️ Manager</option><option value="Moderator">🔨 Moderator</option><option value="Helper">💚 Helper</option><option value="VIP">⭐ VIP</option><option value="Booster">💎 Booster</option><option value="Member">✅ Member</option></select></div>',async()=>{
-        var d=await(await fetch('/api/server/'+currentServer+'/members/'+memberId+'/badge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({badge_name:document.getElementById('mBadgeType').value})})).json();
+        var d=await(await apiFetch('/api/server/'+currentServer+'/members/'+memberId+'/badge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({badge_name:document.getElementById('mBadgeType').value})})).json();
         if(d.success){notify(d.message,'success');closeModal();}else notify(d.error||'Failed','danger');
     });
 }
 async function saveSettings(){
     if(!currentServer){notify('Select a server first','warning');return;}
-    var d=await(await fetch('/api/server/'+currentServer+'/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('settingName').value.trim(),description:document.getElementById('settingDesc').value.trim(),icon_url:document.getElementById('settingIcon').value.trim()})})).json();
+    var d=await(await apiFetch('/api/server/'+currentServer+'/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('settingName').value.trim(),description:document.getElementById('settingDesc').value.trim(),icon_url:document.getElementById('settingIcon').value.trim()})})).json();
     if(d.success)notify('Settings saved!','success');else notify(d.error||'Failed to save settings','danger');
 }
 function showModal(title,body,onConfirm){
@@ -517,21 +517,36 @@ socket.on('audit',function(ev){
     if(['mod','leave'].includes(ev.type))notify(ev.title,ev.type==='mod'?'warning':'info');
 });
 (async function init(){
+    // Debug: check health endpoint first
+    try{
+        var h=await fetch('/api/health');
+        var hd=await h.json();
+        console.log('Health check:',hd);
+        if(!hd.checks.session_active){
+            console.warn('Session not active - redirecting to login');
+            window.location.href='/login';
+            return;
+        }
+    }catch(he){console.error('Health check failed:',he);}
     var userRole='{{ session.get("role", "admin") }}';
     var isAdmin=['admin','manager','owner'].includes(userRole)||userRole==='admin';
     if(!isAdmin)document.querySelectorAll('.admin-only').forEach(function(el){el.style.display='none';});
     loadBotStatus();
     setInterval(loadBotStatus,15000);
     setInterval(function(){if(currentServer)loadMusicStatus();},10000);
+    async function apiFetch(url,opts){
+        var r=await fetch(url,opts);
+        if(r.status===401){window.location.href='/login';throw new Error('Session expired');}
+        return r;
+    }
     async function loadServers(retries){
         retries=retries||0;
         try{
-            var srvRes=await fetch('/api/servers');
+            var srvRes=await apiFetch('/api/servers');
             var data=await srvRes.json();
-            if(srvRes.status===503&&retries<5){
-                // Bot not ready yet - retry after delay
+            if(srvRes.status===503&&retries<8){
                 setTimeout(function(){loadServers(retries+1);},3000);
-                if(retries===0)notify('Bot is starting up, retrying...','info');
+                if(retries===0)notify('Bot is starting up, please wait...','info');
                 return;
             }
             if(!srvRes.ok){notify('Failed to load servers: '+(data.error||srvRes.status),'danger');console.error('Servers error:',data);return;}
@@ -539,7 +554,7 @@ socket.on('audit',function(ev){
             sel.innerHTML='<option value="">Select a server...</option>';
             (data.servers||[]).forEach(function(s){var opt=document.createElement('option');opt.value=s.id;opt.textContent=s.name+' ('+s.member_count+' members)';sel.appendChild(opt);});
             if(data.servers&&data.servers.length>0){sel.value=data.servers[0].id;await selectServer(data.servers[0].id);}
-            else{notify('No servers found. Make sure the bot is in at least one server.','warning');}
+            else{notify('No servers found — make sure the bot is in at least one server.','warning');}
         }catch(e){notify('Failed to load servers: '+e.message,'danger');console.error('Servers error:',e);}
     }
     await loadServers();

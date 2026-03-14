@@ -35,8 +35,8 @@ logger = logging.getLogger('dashboard')
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('DASHBOARD_SECRET_KEY', secrets.token_hex(32))
-app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV', 'development') == 'production'
+app.config['SECRET_KEY'] = os.getenv('DASHBOARD_SECRET_KEY', 'wan-bot-dashboard-secret-key-change-me-in-env')
+app.config['SESSION_COOKIE_SECURE'] = False  # Render handles HTTPS termination; cookies work on HTTP internally
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
@@ -92,8 +92,9 @@ def require_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            if request.is_json:
-                return jsonify({'error': 'Authentication required'}), 401
+            # Always return JSON for /api/ routes
+            if request.path.startswith('/api/') or request.is_json:
+                return jsonify({'error': 'Authentication required', 'redirect': '/login'}), 401
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -429,13 +430,14 @@ def export_data(format):
 
 @app.route('/api/health')
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - no auth required"""
     checks = {
         'bot': bot_instance.is_ready() if bot_instance else False,
+        'bot_guilds': len(bot_instance.guilds) if bot_instance and bot_instance.is_ready() else 0,
+        'session_active': 'user_id' in session,
         'cache': cache.cache is not None,
         'timestamp': datetime.utcnow().isoformat()
     }
-    
     status = 'healthy' if checks['bot'] else 'degraded'
     return jsonify({'status': status, 'checks': checks})
 
