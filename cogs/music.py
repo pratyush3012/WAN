@@ -6,7 +6,10 @@ auto-rejoins on restart. No auto-disconnect.
 import discord
 from discord import app_commands
 from discord.ext import commands
-import yt_dlp
+try:
+    import yt_dlp
+except ImportError as e:
+    raise ImportError(f"yt-dlp not installed — run: pip install yt-dlp>=2024.1.0 (original error: {e})")
 import asyncio
 import logging
 import random
