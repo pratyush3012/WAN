@@ -1,22 +1,19 @@
 services:
   - type: web
-    name: wan-bot
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    name: WAN
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: ENABLE_DASHBOARD
-        value: "true"
-      - key: DASHBOARD_HOST
-        value: "0.0.0.0"
       - key: DISCORD_TOKEN
         sync: false
       - key: OWNER_ID
         sync: false
       - key: CLAN_URL
         sync: false
+      - key: ENABLE_DASHBOARD
+        value: "true"
+      - key: DASHBOARD_HOST
+        value: "0.0.0.0"
       - key: DASHBOARD_SECRET_KEY
         sync: false
       - key: DASHBOARD_URL
