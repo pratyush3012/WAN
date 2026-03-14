@@ -1,6 +1,7 @@
 """
 WAN Bot - Music Cog
-Plays audio from YouTube via yt-dlp with queue, shuffle, seek, and volume support.
+24/7 mode: bot stays in voice forever, queue never ends (autoplay from history),
+auto-rejoins on restart. No auto-disconnect.
 """
 import discord
 from discord import app_commands
@@ -9,48 +10,69 @@ import yt_dlp
 import asyncio
 import logging
 import random
+import json
+import os
 from collections import deque
 
 logger = logging.getLogger('discord_bot.music')
 
-YTDL_OPTIONS = {
+PERSIST_FILE = 'music_247.json'
+
+YTDL_OPTS = {
     'format': 'bestaudio/best',
-    'noplaylist': True,
+    'noplaylist': False,
     'nocheckcertificate': True,
-    'ignoreerrors': False,
+    'ignoreerrors': True,
     'quiet': True,
     'no_warnings': True,
-    'default_search': 'ytsearch5',   # return 5 results for /search
+    'default_search': 'ytsearch5',
     'source_address': '0.0.0.0',
+    'playlistend': 50,
 }
 
-FFMPEG_OPTIONS = {
+YTDL_SINGLE = {**YTDL_OPTS, 'noplaylist': True, 'default_search': 'ytsearch'}
+
+FFMPEG_OPTS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
 }
 
+AUTOPLAY_SEEDS = [
+    "top hits 2024", "best pop songs", "chill vibes playlist",
+    "hip hop hits", "lofi hip hop", "trending music 2024",
+    "best rap songs", "workout music", "party hits",
+]
 
-def _run_ytdl(query: str) -> dict:
-    with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ydl:
+
+def _ytdl_extract(query: str, single: bool = True) -> dict:
+    opts = YTDL_SINGLE if single else YTDL_OPTS
+    with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(query, download=False)
+
+
+def _fmt(seconds) -> str:
+    if not seconds:
+        return "?"
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
 class MusicQueue:
     def __init__(self):
         self.queue: deque = deque()
         self.current = None
-        self.loop = False          # loop current song
-        self.loop_queue = False    # loop entire queue
-        self._history: deque = deque(maxlen=20)
+        self.loop = False        # repeat current song
+        self.loop_queue = False  # repeat whole queue
+        self.history: deque = deque(maxlen=50)  # used for autoplay
 
-    def add(self, song):
-        self.queue.append(song)
+    def add(self, song): self.queue.append(song)
 
     def next(self):
         if self.loop and self.current:
             return self.current
         if self.current:
-            self._history.append(self.current)
+            self.history.append(self.current)
         if self.loop_queue and self.current:
             self.queue.append(self.current)
         if self.queue:
@@ -60,31 +82,18 @@ class MusicQueue:
         return None
 
     def shuffle(self):
-        lst = list(self.queue)
-        random.shuffle(lst)
-        self.queue = deque(lst)
+        lst = list(self.queue); random.shuffle(lst); self.queue = deque(lst)
 
-    def clear(self):
-        self.queue.clear()
-        self.current = None
-
-    def remove(self, index: int) -> str | None:
-        """Remove song at 1-based index from queue. Returns title or None."""
+    def remove(self, idx: int):
         lst = list(self.queue)
-        if 0 < index <= len(lst):
-            removed = lst.pop(index - 1)
-            self.queue = deque(lst)
-            return removed.title
+        if 0 < idx <= len(lst):
+            removed = lst.pop(idx - 1); self.queue = deque(lst); return removed.title
         return None
 
-    def move(self, from_idx: int, to_idx: int) -> bool:
+    def move(self, fr: int, to: int) -> bool:
         lst = list(self.queue)
-        if not (0 < from_idx <= len(lst) and 0 < to_idx <= len(lst)):
-            return False
-        song = lst.pop(from_idx - 1)
-        lst.insert(to_idx - 1, song)
-        self.queue = deque(lst)
-        return True
+        if not (0 < fr <= len(lst) and 0 < to <= len(lst)): return False
+        song = lst.pop(fr - 1); lst.insert(to - 1, song); self.queue = deque(lst); return True
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -100,63 +109,60 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_query(cls, query: str, *, loop=None, volume=0.5):
         loop = loop or asyncio.get_event_loop()
-        try:
-            data = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: _run_ytdl(query)),
-                timeout=30.0,
-            )
-        except asyncio.TimeoutError:
-            raise Exception("Search timed out — try a more specific query")
-
+        data = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: _ytdl_extract(query, single=True)),
+            timeout=30.0,
+        )
         if 'entries' in data:
             data = data['entries'][0]
-
-        source = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTIONS)
-        return cls(source, data=data, volume=volume)
+        src = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTS)
+        return cls(src, data=data, volume=volume)
 
     @classmethod
-    async def search(cls, query: str, *, loop=None):
-        """Return up to 5 search results without creating a source."""
+    async def search_results(cls, query: str, *, loop=None):
         loop = loop or asyncio.get_event_loop()
         try:
             data = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: _run_ytdl(query)),
+                loop.run_in_executor(None, lambda: _ytdl_extract(query, single=False)),
                 timeout=20.0,
             )
-        except asyncio.TimeoutError:
+        except Exception:
             return []
         entries = data.get('entries', [data]) if 'entries' in data else [data]
-        return entries[:5]
+        return [e for e in entries if e][:5]
 
-    def cleanup(self):
-        try:
-            self.original.cleanup()
-        except Exception:
-            pass
-
-
-def _fmt_duration(seconds: int) -> str:
-    if not seconds:
-        return "?"
-    m, s = divmod(int(seconds), 60)
-    h, m = divmod(m, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+    @classmethod
+    async def from_playlist(cls, url: str, *, loop=None, volume=0.5):
+        """Return list of YTDLSource objects from a playlist URL (up to 50)."""
+        loop = loop or asyncio.get_event_loop()
+        data = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: _ytdl_extract(url, single=False)),
+            timeout=60.0,
+        )
+        entries = data.get('entries', [data]) if 'entries' in data else [data]
+        sources = []
+        for entry in entries:
+            if not entry:
+                continue
+            try:
+                src = discord.FFmpegPCMAudio(entry['url'], **FFMPEG_OPTS)
+                sources.append(cls(src, data=entry, volume=volume))
+            except Exception:
+                continue
+        return sources
 
 
 class SearchView(discord.ui.View):
-    """Shows up to 5 search results as buttons."""
-    def __init__(self, results: list, cog, interaction: discord.Interaction):
+    def __init__(self, results, cog, interaction):
         super().__init__(timeout=60)
-        self.results = results
-        self.cog = cog
-        self.original_interaction = interaction
+        self.results = results; self.cog = cog
         for i, entry in enumerate(results[:5]):
-            title = entry.get('title', 'Unknown')[:50]
-            btn = discord.ui.Button(label=f"{i+1}. {title}", style=discord.ButtonStyle.secondary, row=i)
-            btn.callback = self._make_callback(entry)
+            title = (entry.get('title') or 'Unknown')[:50]
+            btn = discord.ui.Button(label=f"{i+1}. {title}", style=discord.ButtonStyle.secondary, row=min(i, 4))
+            btn.callback = self._cb(entry)
             self.add_item(btn)
 
-    def _make_callback(self, entry):
+    def _cb(self, entry):
         async def callback(interaction: discord.Interaction):
             self.stop()
             await interaction.response.defer()
@@ -168,7 +174,53 @@ class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.queues: dict[int, MusicQueue] = {}
-        self._volumes: dict[int, float] = {}   # per-guild volume
+        self._volumes: dict[int, float] = {}
+        self._247: dict[int, int] = self._load_247()   # guild_id -> channel_id
+        self._autoplay: dict[int, bool] = {}           # guild_id -> bool
+        self._reconnect_task = bot.loop.create_task(self._reconnect_loop())
+
+    # ── Persistence ───────────────────────────────────────────────────────
+
+    def _load_247(self) -> dict:
+        try:
+            if os.path.exists(PERSIST_FILE):
+                with open(PERSIST_FILE) as f:
+                    return {int(k): int(v) for k, v in json.load(f).items()}
+        except Exception:
+            pass
+        return {}
+
+    def _save_247(self):
+        try:
+            with open(PERSIST_FILE, 'w') as f:
+                json.dump(self._247, f)
+        except Exception as e:
+            logger.error(f"Save 24/7 failed: {e}")
+
+    # ── 24/7 reconnect loop ───────────────────────────────────────────────
+
+    async def _reconnect_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            for guild_id, channel_id in list(self._247.items()):
+                try:
+                    guild = self.bot.get_guild(guild_id)
+                    if not guild:
+                        continue
+                    channel = guild.get_channel(channel_id)
+                    if not channel:
+                        continue
+                    vc = guild.voice_client
+                    if not vc or not vc.is_connected():
+                        logger.info(f"24/7 reconnect → {channel.name} ({guild.name})")
+                        await channel.connect()
+                    elif vc.channel.id != channel_id:
+                        await vc.move_to(channel)
+                except Exception as e:
+                    logger.warning(f"24/7 reconnect error guild {guild_id}: {e}")
+            await asyncio.sleep(30)
+
+    # ── Helpers ───────────────────────────────────────────────────────────
 
     def get_queue(self, guild_id: int) -> MusicQueue:
         if guild_id not in self.queues:
@@ -178,41 +230,7 @@ class Music(commands.Cog):
     def get_volume(self, guild_id: int) -> float:
         return self._volumes.get(guild_id, 0.5)
 
-    async def cleanup(self, guild_id: int):
-        if guild_id in self.queues:
-            del self.queues[guild_id]
-        guild = self.bot.get_guild(guild_id)
-        if guild and guild.voice_client:
-            await guild.voice_client.disconnect(force=True)
-
-    def _play_next(self, guild: discord.Guild):
-        queue = self.get_queue(guild.id)
-        next_song = queue.next()
-        if next_song and guild.voice_client and guild.voice_client.is_connected():
-            def after(err):
-                if err:
-                    logger.error(f"Playback error: {err}")
-                self._play_next(guild)
-            guild.voice_client.play(next_song, after=after)
-            self._broadcast_now_playing(guild, next_song, queue)
-
-    def _broadcast_now_playing(self, guild, player, queue):
-        try:
-            from web_dashboard_enhanced import broadcast_update
-            broadcast_update('music_update', {
-                'guild_id': guild.id,
-                'action': 'now_playing',
-                'title': player.title,
-                'thumbnail': player.thumbnail,
-                'duration': player.duration,
-                'requester': getattr(player.requester, 'display_name', 'Dashboard'),
-                'queue_size': len(queue.queue),
-            })
-        except Exception:
-            pass
-
     async def _ensure_voice(self, interaction: discord.Interaction):
-        """Connect to user's voice channel or return existing vc. Returns None on failure."""
         if not interaction.user.voice:
             await interaction.followup.send("❌ Join a voice channel first.", ephemeral=True)
             return None
@@ -227,52 +245,115 @@ class Music(commands.Cog):
             await vc.move_to(interaction.user.voice.channel)
         return vc
 
+    def _broadcast(self, guild, player, queue):
+        try:
+            from web_dashboard_enhanced import broadcast_update
+            broadcast_update('music_update', {
+                'guild_id': guild.id,
+                'action': 'now_playing',
+                'title': player.title,
+                'thumbnail': player.thumbnail,
+                'duration': player.duration,
+                'requester': getattr(player.requester, 'display_name', 'Autoplay'),
+                'queue_size': len(queue.queue),
+            })
+        except Exception:
+            pass
+
+    def _play_next(self, guild: discord.Guild):
+        """Called after each song ends. Handles autoplay when queue is empty."""
+        queue = self.get_queue(guild.id)
+        next_song = queue.next()
+
+        if next_song:
+            self._start_playing(guild, next_song, queue)
+            return
+
+        # Queue is empty — trigger autoplay if enabled
+        if self._autoplay.get(guild.id, True):
+            asyncio.run_coroutine_threadsafe(
+                self._autoplay_next(guild), self.bot.loop
+            )
+
+    def _start_playing(self, guild: discord.Guild, player, queue):
+        vc = guild.voice_client
+        if not vc or not vc.is_connected():
+            return
+        def after(err):
+            if err:
+                logger.error(f"Playback error: {err}")
+            self._play_next(guild)
+        vc.play(player, after=after)
+        self._broadcast(guild, player, queue)
+
+    async def _autoplay_next(self, guild: discord.Guild):
+        """Pick a related/random song and play it automatically."""
+        queue = self.get_queue(guild.id)
+        vc = guild.voice_client
+        if not vc or not vc.is_connected():
+            return
+        if vc.is_playing():
+            return  # something started already
+
+        # Use last played song title as seed, else random seed
+        seed = None
+        if queue.history:
+            seed = queue.history[-1].title
+        if not seed:
+            seed = random.choice(AUTOPLAY_SEEDS)
+
+        try:
+            vol = self.get_volume(guild.id)
+            player = await YTDLSource.from_query(
+                f"ytsearch:{seed} mix", loop=self.bot.loop, volume=vol
+            )
+            player.requester = None  # autoplay
+            queue.current = player
+            self._start_playing(guild, player, queue)
+            logger.info(f"Autoplay: {player.title} in {guild.name}")
+        except Exception as e:
+            logger.warning(f"Autoplay failed: {e}")
+            # Retry with a random seed after 5s
+            await asyncio.sleep(5)
+            await self._autoplay_next(guild)
+
     async def _play_entry(self, interaction: discord.Interaction, entry: dict):
-        """Play a pre-fetched yt-dlp entry dict."""
         vc = await self._ensure_voice(interaction)
         if not vc:
             return
         try:
             vol = self.get_volume(interaction.guild.id)
-            source = discord.FFmpegPCMAudio(entry['url'], **FFMPEG_OPTIONS)
-            player = YTDLSource(source, data=entry, volume=vol)
+            src = discord.FFmpegPCMAudio(entry['url'], **FFMPEG_OPTS)
+            player = YTDLSource(src, data=entry, volume=vol)
             player.requester = interaction.user
             queue = self.get_queue(interaction.guild.id)
 
             if vc.is_playing() or vc.is_paused():
                 queue.add(player)
-                embed = discord.Embed(
-                    title="➕ Added to Queue",
-                    description=f"**[{player.title}]({player.url})**",
-                    color=0x5865f2,
-                )
-                embed.set_footer(text=f"Position #{len(queue.queue)} • {_fmt_duration(player.duration)}")
+                embed = discord.Embed(title="➕ Added to Queue",
+                    description=f"**[{player.title}]({player.url})**", color=0x5865f2)
+                embed.set_footer(text=f"Position #{len(queue.queue)} • {_fmt(player.duration)}")
             else:
                 queue.current = player
-                def after(err):
-                    if err:
-                        logger.error(f"Playback error: {err}")
-                    self._play_next(interaction.guild)
-                vc.play(player, after=after)
-                embed = discord.Embed(
-                    title="🎵 Now Playing",
-                    description=f"**[{player.title}]({player.url})**",
-                    color=0x57f287,
-                )
+                self._start_playing(interaction.guild, player, queue)
+                embed = discord.Embed(title="🎵 Now Playing",
+                    description=f"**[{player.title}]({player.url})**", color=0x57f287)
                 if player.thumbnail:
                     embed.set_thumbnail(url=player.thumbnail)
-                embed.add_field(name="Duration", value=_fmt_duration(player.duration), inline=True)
+                embed.add_field(name="Duration", value=_fmt(player.duration), inline=True)
                 embed.add_field(name="Requested by", value=interaction.user.mention, inline=True)
-                self._broadcast_now_playing(interaction.guild, player, queue)
 
             await interaction.followup.send(embed=embed)
         except Exception as e:
-            logger.error(f"Play entry error: {e}")
+            logger.error(f"_play_entry error: {e}")
             await interaction.followup.send(f"❌ Could not play: {e}", ephemeral=True)
 
-    # ── Commands ──────────────────────────────────────────────────────────
 
-    @app_commands.command(name="play", description="🎵 Play a song from YouTube (name or URL)")
+    # ═══════════════════════════════════════════════════════════════════════
+    # COMMANDS
+    # ═══════════════════════════════════════════════════════════════════════
+
+    @app_commands.command(name="play", description="🎵 Play a song or YouTube URL")
     async def play(self, interaction: discord.Interaction, query: str):
         await interaction.response.defer()
         vc = await self._ensure_voice(interaction)
@@ -286,50 +367,134 @@ class Music(commands.Cog):
 
             if vc.is_playing() or vc.is_paused():
                 queue.add(player)
-                embed = discord.Embed(
-                    title="➕ Added to Queue",
-                    description=f"**[{player.title}]({player.url})**",
-                    color=0x5865f2,
-                )
-                embed.set_footer(text=f"Position #{len(queue.queue)} • {_fmt_duration(player.duration)}")
+                embed = discord.Embed(title="➕ Added to Queue",
+                    description=f"**[{player.title}]({player.url})**", color=0x5865f2)
+                embed.set_footer(text=f"Position #{len(queue.queue)} • {_fmt(player.duration)}")
             else:
                 queue.current = player
-                def after(err):
-                    if err:
-                        logger.error(f"Playback error: {err}")
-                    self._play_next(interaction.guild)
-                vc.play(player, after=after)
-                embed = discord.Embed(
-                    title="🎵 Now Playing",
-                    description=f"**[{player.title}]({player.url})**",
-                    color=0x57f287,
-                )
+                self._start_playing(interaction.guild, player, queue)
+                embed = discord.Embed(title="🎵 Now Playing",
+                    description=f"**[{player.title}]({player.url})**", color=0x57f287)
                 if player.thumbnail:
                     embed.set_thumbnail(url=player.thumbnail)
-                embed.add_field(name="Duration", value=_fmt_duration(player.duration), inline=True)
+                embed.add_field(name="Duration", value=_fmt(player.duration), inline=True)
                 embed.add_field(name="Requested by", value=interaction.user.mention, inline=True)
-                self._broadcast_now_playing(interaction.guild, player, queue)
 
             await interaction.followup.send(embed=embed)
         except Exception as e:
             logger.error(f"Play error: {e}")
             await interaction.followup.send(f"❌ Could not play: {e}", ephemeral=True)
 
+    @app_commands.command(name="playlist", description="📋 Queue an entire YouTube playlist")
+    async def playlist(self, interaction: discord.Interaction, url: str):
+        await interaction.response.defer()
+        vc = await self._ensure_voice(interaction)
+        if not vc:
+            return
+        try:
+            vol = self.get_volume(interaction.guild.id)
+            songs = await YTDLSource.from_playlist(url, loop=self.bot.loop, volume=vol)
+            if not songs:
+                return await interaction.followup.send("❌ No songs found in that playlist.", ephemeral=True)
+            queue = self.get_queue(interaction.guild.id)
+            for s in songs:
+                s.requester = interaction.user
+            if not vc.is_playing() and not vc.is_paused():
+                first = songs.pop(0)
+                queue.current = first
+                self._start_playing(interaction.guild, first, queue)
+            for s in songs:
+                queue.add(s)
+            embed = discord.Embed(title="📋 Playlist Queued",
+                description=f"Added **{len(songs) + (1 if not vc.is_playing() else 0)}** songs to the queue.",
+                color=0x5865f2)
+            embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+            await interaction.followup.send(embed=embed)
+        except Exception as e:
+            logger.error(f"Playlist error: {e}")
+            await interaction.followup.send(f"❌ Could not load playlist: {e}", ephemeral=True)
+
     @app_commands.command(name="search", description="🔍 Search YouTube and pick a result")
     async def search(self, interaction: discord.Interaction, query: str):
         await interaction.response.defer()
-        results = await YTDLSource.search(query, loop=self.bot.loop)
+        results = await YTDLSource.search_results(query, loop=self.bot.loop)
         if not results:
             return await interaction.followup.send("❌ No results found.", ephemeral=True)
-        embed = discord.Embed(title=f"🔍 Search: {query}", color=0x5865f2)
+        embed = discord.Embed(title=f"🔍 Results for: {query}", color=0x5865f2)
         for i, r in enumerate(results):
-            embed.add_field(
-                name=f"{i+1}. {r.get('title','?')[:60]}",
-                value=f"`{_fmt_duration(r.get('duration',0))}`",
-                inline=False,
+            embed.add_field(name=f"{i+1}. {(r.get('title') or '?')[:60]}",
+                value=f"`{_fmt(r.get('duration', 0))}`", inline=False)
+        await interaction.followup.send(embed=embed, view=SearchView(results, self, interaction))
+
+    @app_commands.command(name="247", description="🔴 Toggle 24/7 mode — bot stays in VC forever")
+    async def cmd_247(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.manage_guild:
+            return await interaction.response.send_message("❌ You need Manage Server permission.", ephemeral=True)
+        gid = interaction.guild.id
+        if gid in self._247:
+            del self._247[gid]
+            self._save_247()
+            await interaction.response.send_message("🔴 24/7 mode **disabled**. Bot will leave when queue ends.")
+        else:
+            if not interaction.user.voice:
+                return await interaction.response.send_message("❌ Join a voice channel first.", ephemeral=True)
+            ch = interaction.user.voice.channel
+            self._247[gid] = ch.id
+            self._save_247()
+            vc = interaction.guild.voice_client
+            if not vc:
+                await ch.connect()
+            elif vc.channel != ch:
+                await vc.move_to(ch)
+            await interaction.response.send_message(
+                f"🟢 24/7 mode **enabled** in **{ch.name}**.\n"
+                f"Bot will stay here forever and autoplay music when the queue ends."
             )
-        view = SearchView(results, self, interaction)
-        await interaction.followup.send(embed=embed, view=view)
+
+    @app_commands.command(name="autoplay", description="🔀 Toggle autoplay when queue ends")
+    async def autoplay(self, interaction: discord.Interaction):
+        gid = interaction.guild.id
+        current = self._autoplay.get(gid, True)
+        self._autoplay[gid] = not current
+        state = "enabled" if not current else "disabled"
+        await interaction.response.send_message(
+            f"{'🟢' if not current else '🔴'} Autoplay **{state}**. "
+            f"{'Bot will keep playing related songs when queue ends.' if not current else 'Bot will wait silently when queue ends.'}"
+        )
+
+    @app_commands.command(name="join", description="📥 Join your voice channel")
+    async def join(self, interaction: discord.Interaction):
+        if not interaction.user.voice:
+            return await interaction.response.send_message("❌ Join a voice channel first.", ephemeral=True)
+        ch = interaction.user.voice.channel
+        vc = interaction.guild.voice_client
+        if vc:
+            await vc.move_to(ch)
+        else:
+            await ch.connect()
+        await interaction.response.send_message(f"📥 Joined **{ch.name}**.")
+
+    @app_commands.command(name="leave", description="📤 Leave voice channel (disables 24/7 for this session)")
+    async def leave(self, interaction: discord.Interaction):
+        if not interaction.user.guild_permissions.manage_guild:
+            return await interaction.response.send_message("❌ You need Manage Server permission.", ephemeral=True)
+        gid = interaction.guild.id
+        # Temporarily remove from 24/7 so cleanup disconnects
+        was_247 = gid in self._247
+        if was_247:
+            del self._247[gid]
+            self._save_247()
+        queue = self.get_queue(gid)
+        queue.clear()
+        if gid in self.queues:
+            del self.queues[gid]
+        vc = interaction.guild.voice_client
+        if vc:
+            await vc.disconnect(force=True)
+        msg = "📤 Left voice channel."
+        if was_247:
+            msg += " 24/7 mode disabled — use `/247` to re-enable."
+        await interaction.response.send_message(msg)
 
     @app_commands.command(name="pause", description="⏸ Pause music")
     async def pause(self, interaction: discord.Interaction):
@@ -353,56 +518,60 @@ class Music(commands.Cog):
     async def skip(self, interaction: discord.Interaction):
         vc = interaction.guild.voice_client
         if vc and (vc.is_playing() or vc.is_paused()):
-            vc.stop()
+            vc.stop()  # triggers after() → _play_next
             await interaction.response.send_message("⏭ Skipped.")
         else:
             await interaction.response.send_message("❌ Nothing playing.", ephemeral=True)
 
-    @app_commands.command(name="stop", description="⏹ Stop music and clear queue")
+    @app_commands.command(name="stop", description="⏹ Stop music and clear queue (bot stays in VC)")
     async def stop(self, interaction: discord.Interaction):
-        await self.cleanup(interaction.guild.id)
-        await interaction.response.send_message("⏹ Stopped and cleared queue.")
+        gid = interaction.guild.id
+        queue = self.get_queue(gid)
+        queue.clear()
+        vc = interaction.guild.voice_client
+        if vc and vc.is_playing():
+            vc.stop()
+        await interaction.response.send_message("⏹ Stopped and cleared queue. Bot stays in VC.")
+
+    @app_commands.command(name="nowplaying", description="🎵 Show current song")
+    async def nowplaying(self, interaction: discord.Interaction):
+        queue = self.get_queue(interaction.guild.id)
+        if not queue.current:
+            return await interaction.response.send_message("❌ Nothing playing.", ephemeral=True)
+        p = queue.current
+        embed = discord.Embed(title="🎵 Now Playing",
+            description=f"**[{p.title}]({p.url})**", color=0x57f287)
+        if p.thumbnail:
+            embed.set_thumbnail(url=p.thumbnail)
+        embed.add_field(name="Duration", value=_fmt(p.duration), inline=True)
+        embed.add_field(name="Requested by",
+            value=getattr(p.requester, 'mention', '🤖 Autoplay'), inline=True)
+        embed.add_field(name="Queue", value=f"{len(queue.queue)} song(s) up next", inline=True)
+        is_247 = interaction.guild.id in self._247
+        embed.set_footer(text=f"{'🟢 24/7 ON' if is_247 else '🔴 24/7 OFF'} • Autoplay: {'ON' if self._autoplay.get(interaction.guild.id, True) else 'OFF'}")
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="queue", description="📋 Show the music queue")
     async def queue_cmd(self, interaction: discord.Interaction):
         queue = self.get_queue(interaction.guild.id)
         embed = discord.Embed(title="📋 Music Queue", color=0x5865f2)
         if queue.current:
-            embed.add_field(
-                name="🎵 Now Playing",
-                value=f"**{queue.current.title}** `{_fmt_duration(queue.current.duration)}`",
-                inline=False,
-            )
+            embed.add_field(name="🎵 Now Playing",
+                value=f"**{queue.current.title}** `{_fmt(queue.current.duration)}`", inline=False)
         if queue.queue:
-            lines = [
-                f"`{i+1}.` {s.title} `{_fmt_duration(s.duration)}`"
-                for i, s in enumerate(list(queue.queue)[:15])
-            ]
+            lines = [f"`{i+1}.` {s.title} `{_fmt(s.duration)}`"
+                     for i, s in enumerate(list(queue.queue)[:15])]
             if len(queue.queue) > 15:
                 lines.append(f"*...and {len(queue.queue)-15} more*")
             embed.add_field(name=f"Up Next ({len(queue.queue)} songs)", value="\n".join(lines), inline=False)
         else:
-            embed.description = "Queue is empty."
-        loop_status = "🔁 Song" if queue.loop else ("🔁 Queue" if queue.loop_queue else "Off")
-        embed.set_footer(text=f"Loop: {loop_status}")
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="nowplaying", description="🎵 Show current song info")
-    async def nowplaying(self, interaction: discord.Interaction):
-        queue = self.get_queue(interaction.guild.id)
-        if not queue.current:
-            return await interaction.response.send_message("❌ Nothing playing.", ephemeral=True)
-        p = queue.current
-        embed = discord.Embed(
-            title="🎵 Now Playing",
-            description=f"**[{p.title}]({p.url})**",
-            color=0x57f287,
-        )
-        if p.thumbnail:
-            embed.set_thumbnail(url=p.thumbnail)
-        embed.add_field(name="Duration", value=_fmt_duration(p.duration), inline=True)
-        embed.add_field(name="Requested by", value=getattr(p.requester, 'mention', 'Unknown'), inline=True)
-        embed.add_field(name="Queue", value=f"{len(queue.queue)} song(s) up next", inline=True)
+            ap = self._autoplay.get(interaction.guild.id, True)
+            embed.add_field(name="Queue Empty",
+                value="🤖 Autoplay will pick the next song." if ap else "Add songs with `/play`.",
+                inline=False)
+        loop_s = "🔁 Song" if queue.loop else ("🔁 Queue" if queue.loop_queue else "Off")
+        is_247 = interaction.guild.id in self._247
+        embed.set_footer(text=f"Loop: {loop_s} • {'🟢 24/7 ON' if is_247 else '🔴 24/7 OFF'}")
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="volume", description="🔊 Set volume (0–100)")
@@ -413,7 +582,7 @@ class Music(commands.Cog):
             vc.source.volume = level / 100
         await interaction.response.send_message(f"🔊 Volume set to **{level}%**")
 
-    @app_commands.command(name="loop", description="🔁 Toggle loop mode (song / queue / off)")
+    @app_commands.command(name="loop", description="🔁 Set loop mode")
     @app_commands.choices(mode=[
         app_commands.Choice(name="Song — repeat current song", value="song"),
         app_commands.Choice(name="Queue — loop entire queue",  value="queue"),
@@ -436,10 +605,9 @@ class Music(commands.Cog):
 
     @app_commands.command(name="remove", description="🗑 Remove a song from the queue by position")
     async def remove(self, interaction: discord.Interaction, position: app_commands.Range[int, 1, 100]):
-        queue = self.get_queue(interaction.guild.id)
-        title = queue.remove(position)
+        title = self.get_queue(interaction.guild.id).remove(position)
         if title:
-            await interaction.response.send_message(f"🗑 Removed **{title}** from queue.")
+            await interaction.response.send_message(f"🗑 Removed **{title}**.")
         else:
             await interaction.response.send_message("❌ Invalid position.", ephemeral=True)
 
@@ -447,36 +615,20 @@ class Music(commands.Cog):
     async def move(self, interaction: discord.Interaction,
                    from_position: app_commands.Range[int, 1, 100],
                    to_position: app_commands.Range[int, 1, 100]):
-        queue = self.get_queue(interaction.guild.id)
-        if queue.move(from_position, to_position):
-            await interaction.response.send_message(f"↕️ Moved song from position {from_position} to {to_position}.")
+        if self.get_queue(interaction.guild.id).move(from_position, to_position):
+            await interaction.response.send_message(f"↕️ Moved #{from_position} → #{to_position}.")
         else:
             await interaction.response.send_message("❌ Invalid positions.", ephemeral=True)
 
-    @app_commands.command(name="clearqueue", description="🗑 Clear the entire queue (keeps current song)")
+    @app_commands.command(name="clearqueue", description="🗑 Clear the queue (keeps current song playing)")
     async def clearqueue(self, interaction: discord.Interaction):
         queue = self.get_queue(interaction.guild.id)
         count = len(queue.queue)
         queue.queue.clear()
         await interaction.response.send_message(f"🗑 Cleared {count} song(s) from queue.")
 
-    @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before, after):
-        """Auto-disconnect when bot is alone in voice channel for 60 seconds."""
-        if member.bot:
-            return
-        guild = member.guild
-        vc = guild.voice_client
-        if not vc:
-            return
-        # Check if bot is now alone
-        humans = [m for m in vc.channel.members if not m.bot]
-        if not humans:
-            await asyncio.sleep(60)
-            # Re-check after sleep
-            vc = guild.voice_client
-            if vc and not any(not m.bot for m in vc.channel.members):
-                await self.cleanup(guild.id)
+    # ── No auto-disconnect listener — bot stays forever ───────────────────
+    # The only way to remove the bot is /leave (requires Manage Server)
 
 
 async def setup(bot):

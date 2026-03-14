@@ -73,9 +73,9 @@ class GamingBot(commands.Bot):
             'cogs.webdashboard',  # 3 commands - Web Dashboard (CRITICAL)
             'cogs.leaderboard',   # 2 commands - Real activity leaderboard
             'cogs.roblox',        # 6 commands - Roblox Integration (CRITICAL)
-            'cogs.music',         # 12 commands - Music player
+            'cogs.music',         # 16 commands - Music (24/7, autoplay, playlist, search)
             'cogs.translation',   # 2 commands + 1 context menu - Translation
-            # Total: ~87 commands (under 100 limit)
+            # Total: ~91 commands (under 100 limit)
             # Disabled to stay under limit: games(7), minigames(6), ai(9),
             # server(7), advanced(5), customcmds(5), automation(4), rewards(4),
             # tempvoice(5), starboard(3), voicestats(3), bump(3), dashboard(3),
