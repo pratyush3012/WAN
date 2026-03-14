@@ -42,7 +42,7 @@ async def create_role_action(server_id, role_data):
     """Create a new role in the server"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -71,7 +71,7 @@ async def edit_role_action(server_id, role_id, role_data):
     """Edit an existing role"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -96,7 +96,7 @@ async def delete_role_action(server_id, role_id):
     """Delete a role"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -113,7 +113,7 @@ async def assign_role_action(server_id, member_id, role_id, action='add'):
     """Assign or remove role from member"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -141,7 +141,7 @@ async def create_channel_action(server_id, channel_data):
     """Create a new channel"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -189,7 +189,7 @@ async def edit_channel_action(server_id, channel_id, channel_data):
     """Edit a channel"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -221,7 +221,7 @@ async def delete_channel_action(server_id, channel_id):
     """Delete a channel"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -241,7 +241,7 @@ async def update_server_icon_action(server_id, icon_url):
     from web_dashboard_enhanced import bot_instance
     import aiohttp
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -262,7 +262,7 @@ async def update_server_banner_action(server_id, banner_url):
     from web_dashboard_enhanced import bot_instance
     import aiohttp
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -284,7 +284,7 @@ async def create_emoji_action(server_id, emoji_data):
     import aiohttp
     import base64
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -322,7 +322,7 @@ async def kick_member_action(server_id, member_id, reason=''):
     """Kick a member"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -339,7 +339,7 @@ async def ban_member_action(server_id, member_id, reason='', delete_days=0):
     """Ban a member"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -360,7 +360,7 @@ async def timeout_member_action(server_id, member_id, duration, reason=''):
     from web_dashboard_enhanced import bot_instance
     from datetime import timedelta
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -382,7 +382,7 @@ async def assign_badge_action(server_id, member_id, badge_name):
     """Assign badge to member"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
@@ -417,7 +417,7 @@ async def update_server_settings_action(server_id, settings):
     """Update server settings"""
     from web_dashboard_enhanced import bot_instance
     
-    guild = bot_instance.get_guild(server_id)
+    guild = bot_instance.get_guild(int(server_id))
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     

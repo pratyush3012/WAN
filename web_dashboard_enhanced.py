@@ -285,12 +285,12 @@ def get_servers():
         servers = []
         for guild in bot_instance.guilds:
             servers.append({
-                'id': guild.id,
+                'id': str(guild.id),  # string to preserve 64-bit snowflake precision in JS
                 'name': guild.name,
                 'icon': str(guild.icon.url) if guild.icon else None,
                 'member_count': guild.member_count,
                 'owner': str(guild.owner) if guild.owner else f"User {guild.owner_id}",
-                'owner_id': guild.owner_id,
+                'owner_id': str(guild.owner_id),
                 'created_at': guild.created_at.isoformat(),
                 'boost_level': guild.premium_tier,
                 'boost_count': guild.premium_subscription_count or 0
@@ -301,7 +301,7 @@ def get_servers():
         logger.error(f"Error getting servers: {e}")
         return jsonify({'error': 'Failed to get servers'}), 500
 
-@app.route('/api/server/<int:server_id>')
+@app.route('/api/server/<server_id>')
 @require_auth
 def get_server_details(server_id):
     """Get detailed server information"""
@@ -309,9 +309,17 @@ def get_server_details(server_id):
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
 
-        guild = bot_instance.get_guild(server_id)
+        try:
+            guild_id_int = int(server_id)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid server ID'}), 400
+
+        guild = bot_instance.get_guild(guild_id_int)
         if not guild:
-            return jsonify({'error': 'Server not found'}), 404
+            # Log all known guild IDs to help debug
+            known = [str(g.id) for g in bot_instance.guilds]
+            logger.warning(f"Guild {server_id} not found. Known guilds: {known}")
+            return jsonify({'error': 'Server not found', 'known_guilds': known}), 404
 
         # Chunk members if not already cached (needed for accurate member stats)
         if not guild.chunked:
@@ -346,12 +354,12 @@ def get_server_details(server_id):
         owner_name = str(guild.owner) if guild.owner else f"User {owner_id}"
 
         return jsonify({
-            'id': guild.id,
+            'id': str(guild.id),
             'name': guild.name,
             'icon': str(guild.icon.url) if guild.icon else None,
             'banner': str(guild.banner.url) if guild.banner else None,
             'description': guild.description,
-            'owner': {'id': owner_id, 'name': owner_name},
+            'owner': {'id': str(owner_id), 'name': owner_name},
             'channels': channels,
             'roles': roles,
             'members': members,
@@ -433,7 +441,7 @@ def health_check():
     status = 'healthy' if checks['bot'] else 'degraded'
     return jsonify({'status': status, 'checks': checks})
 
-@app.route('/api/server/<int:server_id>/audit')
+@app.route('/api/server/<server_id>/audit')
 @require_auth
 def get_audit_log(server_id):
     """Get recent audit log events for a server"""
@@ -697,7 +705,7 @@ if __name__ == '__main__':
 
 # ===== MUSIC API ENDPOINTS =====
 
-@app.route('/api/server/<int:server_id>/music/play', methods=['POST'])
+@app.route('/api/server/<server_id>/music/play', methods=['POST'])
 @require_auth
 def music_play(server_id):
     """Play a song via dashboard"""
@@ -709,7 +717,7 @@ def music_play(server_id):
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
 
-        guild = bot_instance.get_guild(server_id)
+        guild = bot_instance.get_guild(int(server_id))
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
 
@@ -759,7 +767,7 @@ def music_play(server_id):
         logger.error(f"Music play error: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/server/<int:server_id>/music/control', methods=['POST'])
+@app.route('/api/server/<server_id>/music/control', methods=['POST'])
 @require_auth
 def music_control(server_id):
     """Pause/resume/skip/stop"""
@@ -767,7 +775,7 @@ def music_control(server_id):
         action = request.json.get('action')
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(server_id)
+        guild = bot_instance.get_guild(int(server_id))
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
 
@@ -781,7 +789,7 @@ def music_control(server_id):
         elif action == 'skip' and vc and vc.is_playing():
             vc.stop()
         elif action == 'stop':
-            future = asyncio.run_coroutine_threadsafe(music_cog.cleanup(server_id), bot_instance.loop)
+            future = asyncio.run_coroutine_threadsafe(music_cog.cleanup(int(server_id)), bot_instance.loop)
             future.result(timeout=10)
         else:
             return jsonify({'error': f'Cannot perform {action}'}), 400
@@ -792,20 +800,20 @@ def music_control(server_id):
         logger.error(f"Music control error: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/server/<int:server_id>/music/status')
+@app.route('/api/server/<server_id>/music/status')
 @require_auth
 def music_status(server_id):
     """Get current music status"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(server_id)
+        guild = bot_instance.get_guild(int(server_id))
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
 
         music_cog = bot_instance.get_cog('Music')
         vc = guild.voice_client
-        queue = music_cog.get_queue(server_id) if music_cog else None
+        queue = music_cog.get_queue(int(server_id)) if music_cog else None
 
         return jsonify({
             'connected': vc is not None and vc.is_connected(),
@@ -826,7 +834,7 @@ def music_status(server_id):
 
 # ===== ANNOUNCEMENTS API =====
 
-@app.route('/api/server/<int:server_id>/announce', methods=['POST'])
+@app.route('/api/server/<server_id>/announce', methods=['POST'])
 @require_auth
 def send_announcement(server_id):
     """Send an announcement to a channel"""
@@ -843,7 +851,7 @@ def send_announcement(server_id):
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
 
-        guild = bot_instance.get_guild(server_id)
+        guild = bot_instance.get_guild(int(server_id))
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
 
@@ -873,14 +881,14 @@ def send_announcement(server_id):
         logger.error(f"Announcement error: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/server/<int:server_id>/channels/text')
+@app.route('/api/server/<server_id>/channels/text')
 @require_auth
 def get_text_channels(server_id):
     """Get text channels for announcement target selector"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(server_id)
+        guild = bot_instance.get_guild(int(server_id))
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
         channels = [{'id': c.id, 'name': c.name} for c in guild.text_channels]
@@ -899,28 +907,28 @@ from web_dashboard_management import (
 )
 
 # Role Management
-@app.route('/api/server/<int:server_id>/roles', methods=['POST'])
+@app.route('/api/server/<server_id>/roles', methods=['POST'])
 @require_auth
 @limiter.limit("10 per minute")
 def create_role(server_id):
     """Create a new role"""
     return create_role_action(server_id, request.json)
 
-@app.route('/api/server/<int:server_id>/roles/<int:role_id>', methods=['PUT'])
+@app.route('/api/server/<server_id>/roles/<int:role_id>', methods=['PUT'])
 @require_auth
 @limiter.limit("10 per minute")
 def edit_role(server_id, role_id):
     """Edit a role"""
     return edit_role_action(server_id, role_id, request.json)
 
-@app.route('/api/server/<int:server_id>/roles/<int:role_id>', methods=['DELETE'])
+@app.route('/api/server/<server_id>/roles/<int:role_id>', methods=['DELETE'])
 @require_auth
 @limiter.limit("10 per minute")
 def delete_role(server_id, role_id):
     """Delete a role"""
     return delete_role_action(server_id, role_id)
 
-@app.route('/api/server/<int:server_id>/members/<int:member_id>/roles/<int:role_id>', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<int:member_id>/roles/<int:role_id>', methods=['POST'])
 @require_auth
 @limiter.limit("20 per minute")
 def assign_role(server_id, member_id, role_id):
@@ -929,21 +937,21 @@ def assign_role(server_id, member_id, role_id):
     return assign_role_action(server_id, member_id, role_id, action)
 
 # Channel Management
-@app.route('/api/server/<int:server_id>/channels', methods=['POST'])
+@app.route('/api/server/<server_id>/channels', methods=['POST'])
 @require_auth
 @limiter.limit("10 per minute")
 def create_channel(server_id):
     """Create a new channel"""
     return create_channel_action(server_id, request.json)
 
-@app.route('/api/server/<int:server_id>/channels/<int:channel_id>', methods=['PUT'])
+@app.route('/api/server/<server_id>/channels/<int:channel_id>', methods=['PUT'])
 @require_auth
 @limiter.limit("10 per minute")
 def edit_channel(server_id, channel_id):
     """Edit a channel"""
     return edit_channel_action(server_id, channel_id, request.json)
 
-@app.route('/api/server/<int:server_id>/channels/<int:channel_id>', methods=['DELETE'])
+@app.route('/api/server/<server_id>/channels/<int:channel_id>', methods=['DELETE'])
 @require_auth
 @limiter.limit("10 per minute")
 def delete_channel(server_id, channel_id):
@@ -951,7 +959,7 @@ def delete_channel(server_id, channel_id):
     return delete_channel_action(server_id, channel_id)
 
 # Server Decoration
-@app.route('/api/server/<int:server_id>/icon', methods=['POST'])
+@app.route('/api/server/<server_id>/icon', methods=['POST'])
 @require_auth
 @limiter.limit("5 per hour")
 def update_server_icon(server_id):
@@ -959,7 +967,7 @@ def update_server_icon(server_id):
     icon_url = request.json.get('icon_url')
     return update_server_icon_action(server_id, icon_url)
 
-@app.route('/api/server/<int:server_id>/banner', methods=['POST'])
+@app.route('/api/server/<server_id>/banner', methods=['POST'])
 @require_auth
 @limiter.limit("5 per hour")
 def update_server_banner(server_id):
@@ -967,7 +975,7 @@ def update_server_banner(server_id):
     banner_url = request.json.get('banner_url')
     return update_server_banner_action(server_id, banner_url)
 
-@app.route('/api/server/<int:server_id>/emojis', methods=['POST'])
+@app.route('/api/server/<server_id>/emojis', methods=['POST'])
 @require_auth
 @limiter.limit("10 per hour")
 def create_emoji(server_id):
@@ -975,7 +983,7 @@ def create_emoji(server_id):
     return create_emoji_action(server_id, request.json)
 
 # Member Management
-@app.route('/api/server/<int:server_id>/members/<int:member_id>/kick', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<int:member_id>/kick', methods=['POST'])
 @require_auth
 @limiter.limit("10 per minute")
 def kick_member(server_id, member_id):
@@ -983,7 +991,7 @@ def kick_member(server_id, member_id):
     reason = request.json.get('reason', '')
     return kick_member_action(server_id, member_id, reason)
 
-@app.route('/api/server/<int:server_id>/members/<int:member_id>/ban', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<int:member_id>/ban', methods=['POST'])
 @require_auth
 @limiter.limit("10 per minute")
 def ban_member(server_id, member_id):
@@ -992,7 +1000,7 @@ def ban_member(server_id, member_id):
     delete_days = request.json.get('delete_days', 0)
     return ban_member_action(server_id, member_id, reason, delete_days)
 
-@app.route('/api/server/<int:server_id>/members/<int:member_id>/timeout', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<int:member_id>/timeout', methods=['POST'])
 @require_auth
 @limiter.limit("20 per minute")
 def timeout_member(server_id, member_id):
@@ -1002,7 +1010,7 @@ def timeout_member(server_id, member_id):
     return timeout_member_action(server_id, member_id, duration, reason)
 
 # Badge Management
-@app.route('/api/server/<int:server_id>/members/<int:member_id>/badge', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<int:member_id>/badge', methods=['POST'])
 @require_auth
 @limiter.limit("20 per minute")
 def assign_badge(server_id, member_id):
@@ -1011,7 +1019,7 @@ def assign_badge(server_id, member_id):
     return assign_badge_action(server_id, member_id, badge_name)
 
 # Server Settings
-@app.route('/api/server/<int:server_id>/settings', methods=['PUT'])
+@app.route('/api/server/<server_id>/settings', methods=['PUT'])
 @require_auth
 @limiter.limit("5 per minute")
 def update_server_settings(server_id):
@@ -1019,7 +1027,7 @@ def update_server_settings(server_id):
     return update_server_settings_action(server_id, request.json)
 
 # Get server members list
-@app.route('/api/server/<int:server_id>/members')
+@app.route('/api/server/<server_id>/members')
 @require_auth
 def get_server_members(server_id):
     """Get list of server members"""
@@ -1027,7 +1035,7 @@ def get_server_members(server_id):
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
         
-        guild = bot_instance.get_guild(server_id)
+        guild = bot_instance.get_guild(int(server_id))
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
         
