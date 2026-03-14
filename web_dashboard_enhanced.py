@@ -289,7 +289,7 @@ def get_servers():
                 'name': guild.name,
                 'icon': str(guild.icon.url) if guild.icon else None,
                 'member_count': guild.member_count,
-                'owner': str(guild.owner),
+                'owner': str(guild.owner) if guild.owner else f"User {guild.owner_id}",
                 'owner_id': guild.owner_id,
                 'created_at': guild.created_at.isoformat(),
                 'boost_level': guild.premium_tier,
@@ -308,37 +308,50 @@ def get_server_details(server_id):
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
-        
+
         guild = bot_instance.get_guild(server_id)
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
-        
+
+        # Chunk members if not already cached (needed for accurate member stats)
+        if not guild.chunked:
+            try:
+                future = asyncio.run_coroutine_threadsafe(guild.chunk(), bot_instance.loop)
+                future.result(timeout=10)
+            except Exception as chunk_err:
+                logger.warning(f"Could not chunk guild {guild.id}: {chunk_err}")
+
         # Detailed server info
         channels = {
-            'text': [{'id': c.id, 'name': c.name, 'category': c.category.name if c.category else None} 
+            'text': [{'id': c.id, 'name': c.name, 'category': c.category.name if c.category else None}
                      for c in guild.text_channels],
-            'voice': [{'id': c.id, 'name': c.name, 'category': c.category.name if c.category else None} 
+            'voice': [{'id': c.id, 'name': c.name, 'category': c.category.name if c.category else None}
                       for c in guild.voice_channels],
             'categories': [{'id': c.id, 'name': c.name} for c in guild.categories]
         }
-        
-        roles = [{'id': r.id, 'name': r.name, 'color': str(r.color), 'members': len(r.members), 
+
+        roles = [{'id': r.id, 'name': r.name, 'color': str(r.color), 'members': len(r.members),
                   'position': r.position} for r in guild.roles]
-        
+
+        cached_members = guild.members
         members = {
             'total': guild.member_count,
-            'online': len([m for m in guild.members if m.status != discord.Status.offline]),
-            'bots': len([m for m in guild.members if m.bot]),
-            'humans': len([m for m in guild.members if not m.bot])
+            'online': len([m for m in cached_members if m.status != discord.Status.offline]),
+            'bots': len([m for m in cached_members if m.bot]),
+            'humans': len([m for m in cached_members if not m.bot])
         }
-        
+
+        # owner may be None if not cached — fetch safely
+        owner_id = guild.owner_id
+        owner_name = str(guild.owner) if guild.owner else f"User {owner_id}"
+
         return jsonify({
             'id': guild.id,
             'name': guild.name,
             'icon': str(guild.icon.url) if guild.icon else None,
             'banner': str(guild.banner.url) if guild.banner else None,
             'description': guild.description,
-            'owner': {'id': guild.owner.id, 'name': str(guild.owner)},
+            'owner': {'id': owner_id, 'name': owner_name},
             'channels': channels,
             'roles': roles,
             'members': members,
@@ -346,11 +359,11 @@ def get_server_details(server_id):
             'boost_count': guild.premium_subscription_count or 0,
             'verification_level': str(guild.verification_level),
             'created_at': guild.created_at.isoformat(),
-            'features': guild.features
+            'features': list(guild.features)
         })
     except Exception as e:
-        logger.error(f"Error getting server details: {e}")
-        return jsonify({'error': 'Failed to get server details'}), 500
+        logger.error(f"Error getting server details for {server_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to get server details: {str(e)}'}), 500
 
 @app.route('/api/export/<format>')
 @require_auth

@@ -234,7 +234,7 @@ async function selectServer(id){
 async function loadServerDetails(id){
     try{
         var r1=await fetch('/api/server/'+id),r2=await fetch('/api/server/'+id+'/members');
-        if(!r1.ok){notify('Failed to load server data','danger');return;}
+        if(!r1.ok){r1.json().catch(()=>({})).then(function(e){notify('Failed to load server data: '+(e.error||r1.status),'danger');console.error('Server API error:',e);});return;}
         var d=await r1.json(),md=await r2.json();
         allMembers=md.members||[];
         document.getElementById('statMembers').textContent=d.members.total;
@@ -249,7 +249,7 @@ async function loadServerDetails(id){
         document.getElementById('ovBots').textContent=d.members.bots;
         renderRoles(d.roles);renderChannels(d.channels);renderMembers(allMembers);
         loadMusicVoiceChannels(d.channels.voice);
-    }catch(e){notify('Failed to load server details','danger');}
+    }catch(e){notify('Failed to load server details: '+e.message,'danger');console.error('loadServerDetails error:',e);}
 }
 async function loadBotStatus(){
     try{

@@ -39,7 +39,8 @@ class GamingBot(commands.Bot):
         super().__init__(
             command_prefix='!',
             intents=intents,
-            help_command=None
+            help_command=None,
+            chunk_guilds_at_startup=True
         )
         self.db = None
         self.start_time = datetime.now(timezone.utc)  # Track bot start time for uptime
