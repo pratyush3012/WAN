@@ -21,15 +21,16 @@ DEFAULT_BRAND = {
 }
 
 # Badge definitions — emoji, label, color, priority (lower = higher rank)
+# Role names are kept SHORT so they display as compact tags next to usernames
 BADGE_DEFS = {
-    "owner":     {"emoji": "👑", "label": "Owner",     "color": 0xE74C3C, "priority": 0},
-    "admin":     {"emoji": "⚡", "label": "Admin",     "color": 0xE67E22, "priority": 1},
-    "manager":   {"emoji": "🛡️","label": "Manager",   "color": 0xF1C40F, "priority": 2},
-    "moderator": {"emoji": "🔨", "label": "Moderator", "color": 0x2ECC71, "priority": 3},
-    "helper":    {"emoji": "💚", "label": "Helper",    "color": 0x1ABC9C, "priority": 4},
-    "vip":       {"emoji": "⭐", "label": "VIP",       "color": 0xFFD700, "priority": 5},
-    "booster":   {"emoji": "💎", "label": "Booster",   "color": 0xFF69B4, "priority": 6},
-    "member":    {"emoji": "✅", "label": "Member",    "color": 0x3498DB, "priority": 7},
+    "owner":     {"emoji": "👑", "label": "Owner",     "color": 0xE74C3C, "priority": 0, "tag": "👑"},
+    "admin":     {"emoji": "⚔️", "label": "Admin",     "color": 0xE67E22, "priority": 1, "tag": "⚔️"},
+    "manager":   {"emoji": "🛡️", "label": "Manager",   "color": 0xF1C40F, "priority": 2, "tag": "🛡️"},
+    "moderator": {"emoji": "🔨", "label": "Mod",       "color": 0x2ECC71, "priority": 3, "tag": "🔨"},
+    "helper":    {"emoji": "💚", "label": "Helper",    "color": 0x1ABC9C, "priority": 4, "tag": "💚"},
+    "vip":       {"emoji": "⭐", "label": "VIP",       "color": 0xFFD700, "priority": 5, "tag": "⭐"},
+    "booster":   {"emoji": "💎", "label": "Booster",   "color": 0xFF69B4, "priority": 6, "tag": "💎"},
+    "member":    {"emoji": "✅", "label": "Member",    "color": 0x3498DB, "priority": 7, "tag": "✅"},
 }
 
 ROLE_KEYWORDS = {
@@ -70,9 +71,13 @@ class BadgeSystem(commands.Cog):
         return self.configs.get(str(guild_id), DEFAULT_BRAND)
 
     def role_name(self, guild_id: int, badge_type: str) -> str:
+        """Short clan tag role — e.g. ⚔️ VAMP, 🛡️ VAMP, 👑 VAMP"""
         brand = self.get_brand(guild_id)
         info = BADGE_DEFS[badge_type]
-        return f"{info['emoji']} {brand['name']} {info['label']}"
+        return f"{info['tag']} {brand['name']}"
+
+    def all_badge_role_names(self, guild_id: int) -> set:
+        return {self.role_name(guild_id, k) for k in BADGE_DEFS}
 
     # ── Badge detection ──────────────────────────────────────────────────────
 
@@ -124,7 +129,7 @@ class BadgeSystem(commands.Cog):
         if member.bot:
             return
         bt = self.get_badge_type(member)
-        all_badge_names = {self.role_name(member.guild.id, k) for k in BADGE_DEFS}
+        all_badge_names = self.all_badge_role_names(member.guild.id)
 
         # Remove stale badge roles
         stale = [r for r in member.roles if r.name in all_badge_names]

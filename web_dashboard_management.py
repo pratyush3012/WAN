@@ -8,6 +8,7 @@ from functools import wraps
 import discord
 import asyncio
 import logging
+import os
 
 logger = logging.getLogger('dashboard')
 
@@ -394,21 +395,22 @@ async def assign_badge_action(server_id, member_id, badge_name):
         except Exception:
             return jsonify({'error': 'Member not found'}), 404
 
-    # Badge emoji map
+    # Badge emoji map — short clan tag style (e.g. 👑 VAMP, ⚔️ VAMP)
     badge_emojis = {
-        'Owner': '👑', 'Admin': '⚡', 'Manager': '🛡️',
+        'Owner': '👑', 'Admin': '⚔️', 'Manager': '🛡️',
         'Moderator': '🔨', 'Helper': '💚', 'VIP': '⭐',
         'Booster': '💎', 'Member': '✅',
     }
     badge_colors = {
-        'Owner': 0xFF0000, 'Admin': 0xFF4444, 'Manager': 0xFF8800,
-        'Moderator': 0x00CC44, 'Helper': 0x00FFFF, 'VIP': 0xFFD700,
-        'Booster': 0xFF69B4, 'Member': 0x0099FF,
+        'Owner': 0xE74C3C, 'Admin': 0xE67E22, 'Manager': 0xF1C40F,
+        'Moderator': 0x2ECC71, 'Helper': 0x1ABC9C, 'VIP': 0xFFD700,
+        'Booster': 0xFF69B4, 'Member': 0x3498DB,
     }
 
+    clan_name = os.getenv('CLAN_NAME', 'VAMP')
     emoji = badge_emojis.get(badge_name, '🏅')
     color = badge_colors.get(badge_name, 0xFFD700)
-    role_name = f"{emoji} {badge_name}"
+    role_name = f"{emoji} {clan_name}"
 
     # Find or create the badge role
     badge_role = discord.utils.get(guild.roles, name=role_name)
