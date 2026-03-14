@@ -27,6 +27,12 @@ class Dashboard {
                 option.textContent = `${server.name} (${server.member_count} members)`;
                 selector.appendChild(option);
             });
+
+            // Auto-select first server
+            if (data.servers.length > 0) {
+                selector.value = data.servers[0].id;
+                await this.selectServer(data.servers[0].id);
+            }
         } catch (error) {
             this.showNotification('Failed to load servers', 'danger');
         }
@@ -48,12 +54,18 @@ class Dashboard {
     async loadServerDetails(serverId) {
         try {
             const response = await fetch(`/api/server/${serverId}`);
+            if (!response.ok) {
+                const err = await response.json();
+                console.error('Server details error:', err);
+                this.showNotification(`Failed to load server details: ${err.error || response.status}`, 'danger');
+                return;
+            }
             const data = await response.json();
-            
             this.displayServerInfo(data);
             this.displayRoles(data.roles);
             this.displayChannels(data.channels);
         } catch (error) {
+            console.error('loadServerDetails error:', error);
             this.showNotification('Failed to load server details', 'danger');
         }
     }
