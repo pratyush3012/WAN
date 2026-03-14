@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Management - WAN Bot</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/liquid-glass.css') }}">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .server-selector {
+            padding: 12px 20px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            font-size: 16px;
+            background: white;
+            cursor: pointer;
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        .tab {
+            padding: 12px 24px;
+            background: #f5f5f5;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .tab:hover {
+            background: #e0e0e0;
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .action-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+        .action-card:hover {
+            transform: translateY(-5px);
+        }
+        .action-card i {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        .action-card h3 {
+            margin: 0 0 10px 0;
+        }
+        .action-card p {
+            margin: 0;
+            opacity: 0.9;
+        }
+        .btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .btn:hover {
+            opacity: 0.9;
+        }
+        .list-item {
+            background: #f9f9f9;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .list-item-actions button {
+            margin-left: 10px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎮 Server Management</h1>
+            <select id="serverSelector" class="server-selector" onchange="selectServer(this.value)">
+                <option value="">Select a server...</option>
+            </select>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('overview')">📊 Overview</button>
+            <button class="tab" onclick="showTab('roles')">🎭 Roles</button>
+            <button class="tab" onclick="showTab('channels')">📢 Channels</button>
+            <button class="tab" onclick="showTab('members')">👥 Members</button>
+            <button class="tab" onclick="showTab('badges')">🏅 Badges</button>
+            <button class="tab" onclick="showTab('decoration')">🎨 Decoration</button>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="overview" class="content-section active">
+            <h2>Quick Actions</h2>
+            <div class="action-grid">
+                <div class="action-card" onclick="showTab('roles'); createRole();">
+                    <i class="fas fa-plus-circle"></i>
+                    <h3>Create Role</h3>
+                    <p>Add a new role to your server</p>
+                </div>
+                <div class="action-card" onclick="showTab('channels'); createChannel();">
+                    <i class="fas fa-hashtag"></i>
+                    <h3>Create Channel</h3>
+                    <p>Add text, voice, or category</p>
+                </div>
+                <div class="action-card" onclick="showTab('badges');">
+                    <i class="fas fa-award"></i>
+                    <h3>Manage Badges</h3>
+                    <p>Assign badges to members</p>
+                </div>
+                <div class="action-card" onclick="showTab('decoration');">
+                    <i class="fas fa-palette"></i>
+                    <h3>Decorate Server</h3>
+                    <p>Change icon, banner, emojis</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Roles Tab -->
+        <div id="roles" class="content-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>Roles Management</h2>
+                <button class="btn" onclick="createRole()"><i class="fas fa-plus"></i> Create Role</button>
+            </div>
+            <div id="rolesContainer"></div>
+        </div>
+
+        <!-- Channels Tab -->
+        <div id="channels" class="content-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>Channels Management</h2>
+                <button class="btn" onclick="createChannel()"><i class="fas fa-plus"></i> Create Channel</button>
+            </div>
+            <div id="channelsContainer"></div>
+        </div>
+
+        <!-- Members Tab -->
+        <div id="members" class="content-section">
+            <h2>Members Management</h2>
+            <div id="membersContainer"></div>
+        </div>
+
+        <!-- Badges Tab -->
+        <div id="badges" class="content-section">
+            <h2>Badge System</h2>
+            <p>Assign badges to members to identify their roles</p>
+            <div class="action-grid">
+                <div class="action-card" onclick="assignBadgeToAll('Owner')">
+                    <i class="fas fa-crown"></i>
+                    <h3>👑 Owner</h3>
+                    <p>Assign to server owner</p>
+                </div>
+                <div class="action-card" onclick="assignBadgeToAll('Admin')">
+                    <i class="fas fa-shield-alt"></i>
+                    <h3>⚡ Admin</h3>
+                    <p>Assign to administrators</p>
+                </div>
+                <div class="action-card" onclick="assignBadgeToAll('Moderator')">
+                    <i class="fas fa-gavel"></i>
+                    <h3>🔨 Moderator</h3>
+                    <p>Assign to moderators</p>
+                </div>
+                <div class="action-card" onclick="assignBadgeToAll('Member')">
+                    <i class="fas fa-user"></i>
+                    <h3>✅ Member</h3>
+                    <p>Assign to all members</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Decoration Tab -->
+        <div id="decoration" class="content-section">
+            <h2>Server Decoration</h2>
+            <div class="action-grid">
+                <div class="action-card" onclick="updateServerIcon()">
+                    <i class="fas fa-image"></i>
+                    <h3>Change Icon</h3>
+                    <p>Update server icon</p>
+                </div>
+                <div class="action-card" onclick="updateServerBanner()">
+                    <i class="fas fa-panorama"></i>
+                    <h3>Change Banner</h3>
+                    <p>Update server banner</p>
+                </div>
+                <div class="action-card" onclick="createEmoji()">
+                    <i class="fas fa-smile"></i>
+                    <h3>Add Emoji</h3>
+                    <p>Create custom emoji</p>
+                </div>
+                <div class="action-card" onclick="updateServerName()">
+                    <i class="fas fa-edit"></i>
+                    <h3>Change Name</h3>
+                    <p>Update server name</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/management.js') }}"></script>
+    <script>
+        function showTab(tabName) {
+            document.querySelectorAll('.content-section').forEach(section => {
+                section.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        async function updateServerIcon() {
+            const url = prompt('Enter image URL for server icon:');
+            if (!url) return;
+            
+            try {
+                const response = await fetch(`/api/server/${currentServer}/icon`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({icon_url: url})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showNotification('Server icon updated!', 'success');
+                } else {
+                    showNotification(data.error || 'Failed to update icon', 'error');
+                }
+            } catch (error) {
+                showNotification('Failed to update icon', 'error');
+            }
+        }
+
+        async function updateServerBanner() {
+            const url = prompt('Enter image URL for server banner:');
+            if (!url) return;
+            
+            try {
+                const response = await fetch(`/api/server/${currentServer}/banner`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({banner_url: url})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showNotification('Server banner updated!', 'success');
+                } else {
+                    showNotification(data.error || 'Failed to update banner', 'error');
+                }
+            } catch (error) {
+                showNotification('Failed to update banner', 'error');
+            }
+        }
+
+        async function createEmoji() {
+            const name = prompt('Enter emoji name:');
+            if (!name) return;
+            const url = prompt('Enter emoji image URL:');
+            if (!url) return;
+            
+            try {
+                const response = await fetch(`/api/server/${currentServer}/emojis`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name, url})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showNotification(`Emoji :${name}: created!`, 'success');
+                } else {
+                    showNotification(data.error || 'Failed to create emoji', 'error');
+                }
+            } catch (error) {
+                showNotification('Failed to create emoji', 'error');
+            }
+        }
+
+        async function updateServerName() {
+            const name = prompt('Enter new server name:');
+            if (!name) return;
+            
+            try {
+                const response = await fetch(`/api/server/${currentServer}/settings`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name})
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showNotification('Server name updated!', 'success');
+                    loadServers();
+                } else {
+                    showNotification(data.error || 'Failed to update name', 'error');
+                }
+            } catch (error) {
+                showNotification('Failed to update name', 'error');
+            }
+        }
+
+        async function assignBadgeToAll(badgeName) {
+            if (!confirm(`Assign ${badgeName} badge to all eligible members?`)) return;
+            showNotification(`Assigning ${badgeName} badges...`, 'info');
+            // This would need backend support to assign to multiple members
+            showNotification('Feature coming soon! Use /auto-assign-badges command in Discord for now.', 'info');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WAN Bot - Ultimate Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="logo">
+            <i class="fas fa-robot"></i>
+            <h2>WAN Bot</h2>
+            <span class="version">Ultimate v5.0</span>
+        </div>
+        
+        <nav class="nav-menu">
+            <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                <i class="fas fa-home"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="#servers" class="nav-item" data-page="servers">
+                <i class="fas fa-server"></i>
+                <span>Servers</span>
+            </a>
+            <a href="#analytics" class="nav-item" data-page="analytics">
+                <i class="fas fa-chart-line"></i>
+                <span>Analytics</span>
+            </a>
+            <a href="#moderation" class="nav-item" data-page="moderation">
+                <i class="fas fa-shield-alt"></i>
+                <span>Moderation</span>
+            </a>
+            <a href="#music" class="nav-item" data-page="music">
+                <i class="fas fa-music"></i>
+                <span>Music Control</span>
+            </a>
+            <a href="#ai" class="nav-item" data-page="ai">
+                <i class="fas fa-brain"></i>
+                <span>AI Features</span>
+            </a>
+            <a href="#games" class="nav-item" data-page="games">
+                <i class="fas fa-gamepad"></i>
+                <span>Games</span>
+            </a>
+            <a href="#settings" class="nav-item" data-page="settings">
+                <i class="fas fa-cog"></i>
+                <span>Settings</span>
+            </a>
+            <a href="#logs" class="nav-item" data-page="logs">
+                <i class="fas fa-file-alt"></i>
+                <span>Logs</span>
+            </a>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <div class="bot-status">
+                <div class="status-indicator" id="bot-status-indicator"></div>
+                <span id="bot-status-text">Connecting...</span>
+            </div>
+            <button class="logout-btn" onclick="logout()">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </button>
+        </div>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 id="page-title">Dashboard</h1>
+                <p id="page-subtitle">Complete server control at your fingertips</p>
+            </div>
+            <div class="header-right">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="Search servers, members, commands...">
+                </div>
+                <div class="user-profile">
+                    <img src="https://via.placeholder.com/40" alt="User">
+                    <span>Admin</span>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Dashboard Page -->
+        <div id="dashboard-page" class="page active">
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <i class="fas fa-server"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3 id="total-servers">0</h3>
+                        <p>Total Servers</p>
+                        <span class="stat-change positive">+5 this week</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3 id="total-users">0</h3>
+                        <p>Total Users</p>
+                        <span class="stat-change positive">+234 this week</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                        <i class="fas fa-bolt"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3 id="bot-latency">0ms</h3>
+                        <p>Bot Latency</p>
+                        <span class="stat-change positive">Excellent</span>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <div class="stat-info">
+                        <h3 id="bot-uptime">0h</h3>
+                        <p>Uptime</p>
+                        <span class="stat-change positive">99.9%</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quick Actions -->
+            <div class="section">
+                <h2><i class="fas fa-bolt"></i> Quick Actions</h2>
+                <div class="quick-actions">
+                    <button class="action-btn" onclick="showPage('servers')">
+                        <i class="fas fa-server"></i>
+                        <span>Manage Servers</span>
+                    </button>
+                    <button class="action-btn" onclick="showPage('moderation')">
+                        <i class="fas fa-shield-alt"></i>
+                        <span>Moderation Tools</span>
+                    </button>
+                    <button class="action-btn" onclick="showPage('analytics')">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>View Analytics</span>
+                    </button>
+                    <button class="action-btn" onclick="showPage('music')">
+                        <i class="fas fa-music"></i>
+                        <span>Music Control</span>
+                    </button>
+                    <button class="action-btn" onclick="sendAnnouncement()">
+                        <i class="fas fa-bullhorn"></i>
+                        <span>Send Announcement</span>
+                    </button>
+                    <button class="action-btn" onclick="backupServers()">
+                        <i class="fas fa-download"></i>
+                        <span>Backup Servers</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="section">
+                <h2><i class="fas fa-history"></i> Recent Activity</h2>
+                <div class="activity-feed" id="activity-feed">
+                    <div class="activity-item">
+                        <div class="activity-icon" style="background: #667eea;">
+                            <i class="fas fa-user-plus"></i>
+                        </div>
+                        <div class="activity-content">
+                            <p><strong>New member joined</strong> in Gaming Server</p>
+                            <span class="activity-time">2 minutes ago</span>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-icon" style="background: #f093fb;">
+                            <i class="fas fa-music"></i>
+                        </div>
+                        <div class="activity-content">
+                            <p><strong>Music playing</strong> in Music Channel</p>
+                            <span class="activity-time">5 minutes ago</span>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-icon" style="background: #4facfe;">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                        <div class="activity-content">
+                            <p><strong>Auto-mod action</strong> - Spam detected and removed</p>
+                            <span class="activity-time">10 minutes ago</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Servers Page -->
+        <div id="servers-page" class="page">
+            <div class="section">
+                <h2><i class="fas fa-server"></i> Your Servers</h2>
+                <div class="servers-grid" id="servers-grid">
+                    <!-- Servers will be loaded here -->
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading servers...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Analytics Page -->
+        <div id="analytics-page" class="page">
+            <div class="section">
+                <h2><i class="fas fa-chart-line"></i> Server Analytics</h2>
+                <div class="analytics-container">
+                    <div class="chart-card">
+                        <h3>Member Growth</h3>
+                        <canvas id="member-growth-chart"></canvas>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Activity Overview</h3>
+                        <canvas id="activity-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Moderation Page -->
+        <div id="moderation-page" class="page">
+            <div class="section">
+                <h2><i class="fas fa-shield-alt"></i> Moderation Tools</h2>
+                <div class="moderation-tools">
+                    <div class="tool-card">
+                        <h3><i class="fas fa-user-slash"></i> Kick Member</h3>
+                        <input type="text" placeholder="Member ID" id="kick-member-id">
+                        <input type="text" placeholder="Reason" id="kick-reason">
+                        <button class="btn-danger" onclick="kickMember()">Kick</button>
+                    </div>
+                    <div class="tool-card">
+                        <h3><i class="fas fa-ban"></i> Ban Member</h3>
+                        <input type="text" placeholder="Member ID" id="ban-member-id">
+                        <input type="text" placeholder="Reason" id="ban-reason">
+                        <button class="btn-danger" onclick="banMember()">Ban</button>
+                    </div>
+                    <div class="tool-card">
+                        <h3><i class="fas fa-broom"></i> Bulk Actions</h3>
+                        <button class="btn-primary" onclick="purgeMessages()">Purge Messages</button>
+                        <button class="btn-primary" onclick="cleanupInactive()">Remove Inactive</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Music Page -->
+        <div id="music-page" class="page">
+            <div class="section">
+                <h2><i class="fas fa-music"></i> Music Control</h2>
+                <div class="music-player">
+                    <div class="now-playing">
+                        <img src="https://via.placeholder.com/200" alt="Album Art" id="album-art">
+                        <div class="track-info">
+                            <h3 id="track-title">No track playing</h3>
+                            <p id="track-artist">Select a server to control music</p>
+                        </div>
+                    </div>
+                    <div class="player-controls">
+                        <button class="control-btn"><i class="fas fa-step-backward"></i></button>
+                        <button class="control-btn play-btn"><i class="fas fa-play"></i></button>
+                        <button class="control-btn"><i class="fas fa-step-forward"></i></button>
+                        <button class="control-btn"><i class="fas fa-random"></i></button>
+                        <button class="control-btn"><i class="fas fa-redo"></i></button>
+                    </div>
+                    <div class="volume-control">
+                        <i class="fas fa-volume-up"></i>
+                        <input type="range" min="0" max="100" value="50" class="volume-slider">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Logs Page -->
+        <div id="logs-page" class="page">
+            <div class="section">
+                <h2><i class="fas fa-file-alt"></i> Bot Logs</h2>
+                <div class="logs-container" id="logs-container">
+                    <div class="log-entry">
+                        <span class="log-time">2024-02-28 10:30:45</span>
+                        <span class="log-level info">INFO</span>
+                        <span class="log-message">Bot started successfully</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

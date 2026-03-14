@@ -1,0 +1,580 @@
+/**
+ * WAN Bot - Ultimate Liquid Glass Theme
+ * High-end graphics with glassmorphism and liquid animations
+ */
+
+/* ===== CSS Variables ===== */
+:root {
+    /* Liquid Glass Colors */
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-shadow: rgba(0, 0, 0, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 0.15);
+    
+    /* Gradient Colors */
+    --gradient-1: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --gradient-2: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --gradient-3: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --gradient-4: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    --gradient-5: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    --gradient-6: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
+    
+    /* Liquid Animation Colors */
+    --liquid-1: #667eea;
+    --liquid-2: #764ba2;
+    --liquid-3: #f093fb;
+    --liquid-4: #4facfe;
+    
+    /* Text Colors */
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.8);
+    --text-tertiary: rgba(255, 255, 255, 0.6);
+    
+    /* Spacing */
+    --spacing-xs: 0.5rem;
+    --spacing-sm: 1rem;
+    --spacing-md: 1.5rem;
+    --spacing-lg: 2rem;
+    --spacing-xl: 3rem;
+    
+    /* Border Radius */
+    --radius-sm: 12px;
+    --radius-md: 20px;
+    --radius-lg: 30px;
+    --radius-xl: 40px;
+    
+    /* Blur */
+    --blur-sm: 10px;
+    --blur-md: 20px;
+    --blur-lg: 30px;
+    --blur-xl: 40px;
+}
+
+/* ===== Base Styles ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0e27;
+    color: var(--text-primary);
+    overflow-x: hidden;
+    min-height: 100vh;
+}
+
+/* ===== Animated Background ===== */
+.liquid-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    overflow: hidden;
+}
+
+.liquid-blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.3;
+    animation: float 20s infinite ease-in-out;
+}
+
+.liquid-blob:nth-child(1) {
+    width: 500px;
+    height: 500px;
+    background: var(--liquid-1);
+    top: -250px;
+    left: -250px;
+    animation-delay: 0s;
+}
+
+.liquid-blob:nth-child(2) {
+    width: 400px;
+    height: 400px;
+    background: var(--liquid-2);
+    top: 50%;
+    right: -200px;
+    animation-delay: -5s;
+}
+
+.liquid-blob:nth-child(3) {
+    width: 600px;
+    height: 600px;
+    background: var(--liquid-3);
+    bottom: -300px;
+    left: 50%;
+    animation-delay: -10s;
+}
+
+.liquid-blob:nth-child(4) {
+    width: 450px;
+    height: 450px;
+    background: var(--liquid-4);
+    top: 20%;
+    left: 30%;
+    animation-delay: -15s;
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translate(0, 0) scale(1);
+    }
+    25% {
+        transform: translate(100px, -100px) scale(1.1);
+    }
+    50% {
+        transform: translate(-50px, 100px) scale(0.9);
+    }
+    75% {
+        transform: translate(-100px, -50px) scale(1.05);
+    }
+}
+
+/* ===== Glass Morphism ===== */
+.glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur-md));
+    -webkit-backdrop-filter: blur(var(--blur-md));
+    border: 1px solid var(--glass-border);
+    box-shadow: 
+        0 8px 32px var(--glass-shadow),
+        inset 0 1px 0 var(--glass-highlight);
+    border-radius: var(--radius-md);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-4px);
+    box-shadow: 
+        0 12px 48px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.glass-strong {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(var(--blur-lg));
+    -webkit-backdrop-filter: blur(var(--blur-lg));
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* ===== Liquid Cards ===== */
+.liquid-card {
+    position: relative;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur-md));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.liquid-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.1) 0%,
+        transparent 50%,
+        rgba(255, 255, 255, 0.05) 100%
+    );
+    opacity: 0;
+    transition: opacity 0.4s;
+}
+
+.liquid-card:hover::before {
+    opacity: 1;
+}
+
+.liquid-card::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(
+        circle,
+        rgba(255, 255, 255, 0.1) 0%,
+        transparent 70%
+    );
+    opacity: 0;
+    transition: opacity 0.6s;
+}
+
+.liquid-card:hover::after {
+    opacity: 1;
+    animation: liquid-ripple 2s infinite;
+}
+
+@keyframes liquid-ripple {
+    0% {
+        transform: scale(0.8) rotate(0deg);
+    }
+    100% {
+        transform: scale(1.2) rotate(360deg);
+    }
+}
+
+/* ===== Gradient Buttons ===== */
+.liquid-button {
+    position: relative;
+    padding: 1rem 2rem;
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--gradient-1);
+    color: white;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.liquid-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    transition: left 0.5s;
+}
+
+.liquid-button:hover::before {
+    left: 100%;
+}
+
+.liquid-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.liquid-button:active {
+    transform: translateY(0);
+}
+
+/* ===== Floating Elements ===== */
+.float-element {
+    animation: float-gentle 6s infinite ease-in-out;
+}
+
+@keyframes float-gentle {
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-20px);
+    }
+}
+
+/* ===== Glow Effects ===== */
+.glow {
+    position: relative;
+}
+
+.glow::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 100%;
+    height: 100%;
+    background: inherit;
+    border-radius: inherit;
+    filter: blur(20px);
+    opacity: 0.5;
+    transform: translate(-50%, -50%);
+    z-index: -1;
+    animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        opacity: 0.5;
+        transform: translate(-50%, -50%) scale(1);
+    }
+    50% {
+        opacity: 0.8;
+        transform: translate(-50%, -50%) scale(1.05);
+    }
+}
+
+/* ===== Liquid Progress Bar ===== */
+.liquid-progress {
+    position: relative;
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.liquid-progress-fill {
+    height: 100%;
+    background: var(--gradient-1);
+    border-radius: 10px;
+    position: relative;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.liquid-progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+/* ===== Liquid Text ===== */
+.liquid-text {
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-weight: 700;
+    animation: gradient-shift 3s infinite;
+}
+
+@keyframes gradient-shift {
+    0%, 100% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+/* ===== Particle Effects ===== */
+.particles {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: white;
+    border-radius: 50%;
+    opacity: 0.3;
+    animation: particle-float 10s infinite;
+}
+
+@keyframes particle-float {
+    0% {
+        transform: translateY(100vh) translateX(0);
+        opacity: 0;
+    }
+    10% {
+        opacity: 0.3;
+    }
+    90% {
+        opacity: 0.3;
+    }
+    100% {
+        transform: translateY(-100px) translateX(100px);
+        opacity: 0;
+    }
+}
+
+/* ===== Holographic Effect ===== */
+.holographic {
+    position: relative;
+    background: linear-gradient(
+        45deg,
+        #667eea,
+        #764ba2,
+        #f093fb,
+        #4facfe,
+        #43e97b
+    );
+    background-size: 400% 400%;
+    animation: holographic-shift 10s ease infinite;
+}
+
+@keyframes holographic-shift {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+/* ===== 3D Transform Effects ===== */
+.transform-3d {
+    transform-style: preserve-3d;
+    perspective: 1000px;
+}
+
+.transform-3d:hover {
+    transform: rotateY(5deg) rotateX(5deg);
+}
+
+/* ===== Liquid Sidebar ===== */
+.liquid-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    width: 280px;
+    background: rgba(10, 14, 39, 0.8);
+    backdrop-filter: blur(var(--blur-xl));
+    border-right: 1px solid var(--glass-border);
+    padding: var(--spacing-lg);
+    z-index: 1000;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.liquid-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    margin-bottom: var(--spacing-xs);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+}
+
+.liquid-sidebar-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--gradient-1);
+    transform: scaleY(0);
+    transition: transform 0.3s;
+}
+
+.liquid-sidebar-item:hover,
+.liquid-sidebar-item.active {
+    background: var(--glass-bg);
+    color: var(--text-primary);
+}
+
+.liquid-sidebar-item:hover::before,
+.liquid-sidebar-item.active::before {
+    transform: scaleY(1);
+}
+
+/* ===== Responsive Design ===== */
+@media (max-width: 768px) {
+    .liquid-sidebar {
+        transform: translateX(-100%);
+    }
+    
+    .liquid-sidebar.open {
+        transform: translateX(0);
+    }
+    
+    .liquid-card {
+        padding: var(--spacing-md);
+    }
+}
+
+/* ===== Scrollbar Styling ===== */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--gradient-1);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--gradient-2);
+}
+
+/* ===== Selection ===== */
+::selection {
+    background: rgba(102, 126, 234, 0.3);
+    color: white;
+}
+
+/* ===== Utility Classes ===== */
+.text-gradient {
+    background: var(--gradient-1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.shadow-glow {
+    box-shadow: 0 0 30px rgba(102, 126, 234, 0.5);
+}
+
+.blur-bg {
+    backdrop-filter: blur(var(--blur-md));
+    -webkit-backdrop-filter: blur(var(--blur-md));
+}
+
+.animate-in {
+    animation: slideInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
