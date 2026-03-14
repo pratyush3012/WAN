@@ -15,10 +15,8 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY requirements.txt .
-# cache-bust: v3 - force PyNaCl reinstall for voice support
+# cache-bust: v4 - use discord.py[voice] to fix PyNaCl voice error
 RUN pip install --no-cache-dir -r requirements.txt
-# Explicitly ensure PyNaCl is installed for Discord voice
-RUN pip install --no-cache-dir "PyNaCl>=1.5.0"
 
 COPY . .
 
