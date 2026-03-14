@@ -75,7 +75,7 @@ async def edit_role_action(server_id, role_id, role_data):
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
-    role = guild.get_role(role_id)
+    role = guild.get_role(int(role_id))
     if not role:
         return jsonify({'error': 'Role not found'}), 404
     
@@ -100,7 +100,7 @@ async def delete_role_action(server_id, role_id):
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
-    role = guild.get_role(role_id)
+    role = guild.get_role(int(role_id))
     if not role:
         return jsonify({'error': 'Role not found'}), 404
     
@@ -117,11 +117,11 @@ async def assign_role_action(server_id, member_id, role_id, action='add'):
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
-    member = guild.get_member(member_id)
+    member = guild.get_member(int(member_id))
     if not member:
         return jsonify({'error': 'Member not found'}), 404
     
-    role = guild.get_role(role_id)
+    role = guild.get_role(int(role_id))
     if not role:
         return jsonify({'error': 'Role not found'}), 404
     
@@ -193,7 +193,7 @@ async def edit_channel_action(server_id, channel_id, channel_data):
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
-    channel = guild.get_channel(channel_id)
+    channel = guild.get_channel(int(channel_id))
     if not channel:
         return jsonify({'error': 'Channel not found'}), 404
     
@@ -225,7 +225,7 @@ async def delete_channel_action(server_id, channel_id):
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
-    channel = guild.get_channel(channel_id)
+    channel = guild.get_channel(int(channel_id))
     if not channel:
         return jsonify({'error': 'Channel not found'}), 404
     
@@ -326,7 +326,7 @@ async def kick_member_action(server_id, member_id, reason=''):
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
-    member = guild.get_member(member_id)
+    member = guild.get_member(int(member_id))
     if not member:
         return jsonify({'error': 'Member not found'}), 404
     
@@ -343,7 +343,7 @@ async def ban_member_action(server_id, member_id, reason='', delete_days=0):
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
-    member = guild.get_member(member_id)
+    member = guild.get_member(int(member_id))
     if not member:
         return jsonify({'error': 'Member not found'}), 404
     
@@ -364,7 +364,7 @@ async def timeout_member_action(server_id, member_id, duration, reason=''):
     if not guild:
         return jsonify({'error': 'Server not found'}), 404
     
-    member = guild.get_member(member_id)
+    member = guild.get_member(int(member_id))
     if not member:
         return jsonify({'error': 'Member not found'}), 404
     
@@ -391,7 +391,7 @@ async def assign_badge_action(server_id, member_id, badge_name):
     if not badges_cog:
         return jsonify({'error': 'Badge system not loaded'}), 503
     
-    member = guild.get_member(member_id)
+    member = guild.get_member(int(member_id))
     if not member:
         return jsonify({'error': 'Member not found'}), 404
     

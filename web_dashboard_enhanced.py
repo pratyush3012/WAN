@@ -331,14 +331,14 @@ def get_server_details(server_id):
 
         # Detailed server info
         channels = {
-            'text': [{'id': c.id, 'name': c.name, 'category': c.category.name if c.category else None}
+            'text': [{'id': str(c.id), 'name': c.name, 'category': c.category.name if c.category else None}
                      for c in guild.text_channels],
-            'voice': [{'id': c.id, 'name': c.name, 'category': c.category.name if c.category else None}
+            'voice': [{'id': str(c.id), 'name': c.name, 'category': c.category.name if c.category else None}
                       for c in guild.voice_channels],
-            'categories': [{'id': c.id, 'name': c.name} for c in guild.categories]
+            'categories': [{'id': str(c.id), 'name': c.name} for c in guild.categories]
         }
 
-        roles = [{'id': r.id, 'name': r.name, 'color': str(r.color), 'members': len(r.members),
+        roles = [{'id': str(r.id), 'name': r.name, 'color': str(r.color), 'members': len(r.members),
                   'position': r.position} for r in guild.roles]
 
         cached_members = guild.members
@@ -914,21 +914,21 @@ def create_role(server_id):
     """Create a new role"""
     return create_role_action(server_id, request.json)
 
-@app.route('/api/server/<server_id>/roles/<int:role_id>', methods=['PUT'])
+@app.route('/api/server/<server_id>/roles/<role_id>', methods=['PUT'])
 @require_auth
 @limiter.limit("10 per minute")
 def edit_role(server_id, role_id):
     """Edit a role"""
     return edit_role_action(server_id, role_id, request.json)
 
-@app.route('/api/server/<server_id>/roles/<int:role_id>', methods=['DELETE'])
+@app.route('/api/server/<server_id>/roles/<role_id>', methods=['DELETE'])
 @require_auth
 @limiter.limit("10 per minute")
 def delete_role(server_id, role_id):
     """Delete a role"""
     return delete_role_action(server_id, role_id)
 
-@app.route('/api/server/<server_id>/members/<int:member_id>/roles/<int:role_id>', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<member_id>/roles/<role_id>', methods=['POST'])
 @require_auth
 @limiter.limit("20 per minute")
 def assign_role(server_id, member_id, role_id):
@@ -944,14 +944,14 @@ def create_channel(server_id):
     """Create a new channel"""
     return create_channel_action(server_id, request.json)
 
-@app.route('/api/server/<server_id>/channels/<int:channel_id>', methods=['PUT'])
+@app.route('/api/server/<server_id>/channels/<channel_id>', methods=['PUT'])
 @require_auth
 @limiter.limit("10 per minute")
 def edit_channel(server_id, channel_id):
     """Edit a channel"""
     return edit_channel_action(server_id, channel_id, request.json)
 
-@app.route('/api/server/<server_id>/channels/<int:channel_id>', methods=['DELETE'])
+@app.route('/api/server/<server_id>/channels/<channel_id>', methods=['DELETE'])
 @require_auth
 @limiter.limit("10 per minute")
 def delete_channel(server_id, channel_id):
@@ -983,7 +983,7 @@ def create_emoji(server_id):
     return create_emoji_action(server_id, request.json)
 
 # Member Management
-@app.route('/api/server/<server_id>/members/<int:member_id>/kick', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<member_id>/kick', methods=['POST'])
 @require_auth
 @limiter.limit("10 per minute")
 def kick_member(server_id, member_id):
@@ -991,7 +991,7 @@ def kick_member(server_id, member_id):
     reason = request.json.get('reason', '')
     return kick_member_action(server_id, member_id, reason)
 
-@app.route('/api/server/<server_id>/members/<int:member_id>/ban', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<member_id>/ban', methods=['POST'])
 @require_auth
 @limiter.limit("10 per minute")
 def ban_member(server_id, member_id):
@@ -1000,7 +1000,7 @@ def ban_member(server_id, member_id):
     delete_days = request.json.get('delete_days', 0)
     return ban_member_action(server_id, member_id, reason, delete_days)
 
-@app.route('/api/server/<server_id>/members/<int:member_id>/timeout', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<member_id>/timeout', methods=['POST'])
 @require_auth
 @limiter.limit("20 per minute")
 def timeout_member(server_id, member_id):
@@ -1010,7 +1010,7 @@ def timeout_member(server_id, member_id):
     return timeout_member_action(server_id, member_id, duration, reason)
 
 # Badge Management
-@app.route('/api/server/<server_id>/members/<int:member_id>/badge', methods=['POST'])
+@app.route('/api/server/<server_id>/members/<member_id>/badge', methods=['POST'])
 @require_auth
 @limiter.limit("20 per minute")
 def assign_badge(server_id, member_id):
@@ -1042,7 +1042,7 @@ def get_server_members(server_id):
         members = []
         for member in guild.members:
             members.append({
-                'id': member.id,
+                'id': str(member.id),
                 'name': member.name,
                 'display_name': member.display_name,
                 'avatar': str(member.avatar.url) if member.avatar else None,
