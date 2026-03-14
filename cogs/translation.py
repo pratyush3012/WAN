@@ -1,253 +1,317 @@
+"""
+WAN Bot - Translation Cog
+Translate messages via deep-translator (no API key needed).
+Features: /translate command with autocomplete, right-click context menu,
+          🌐 reaction handler (replies in-channel, not DM), 30+ languages.
+"""
 import discord
 from discord import app_commands
 from discord.ext import commands
 from deep_translator import GoogleTranslator
-from utils.embeds import EmbedFactory
-from utils.database import Database
 import time
 import logging
-from collections import deque, defaultdict
 import asyncio
+from collections import deque
 
 logger = logging.getLogger('discord_bot.translation')
 
-class TranslationView(discord.ui.View):
-    def __init__(self, original_message, cog, timeout=180):
-        super().__init__(timeout=timeout)
-        self.original_message = original_message
+# ── Language registry ──────────────────────────────────────────────────────
+LANGUAGES = {
+    "English":    "en",
+    "Hindi":      "hi",
+    "Spanish":    "es",
+    "French":     "fr",
+    "German":     "de",
+    "Japanese":   "ja",
+    "Korean":     "ko",
+    "Chinese (Simplified)":  "zh-CN",
+    "Chinese (Traditional)": "zh-TW",
+    "Russian":    "ru",
+    "Arabic":     "ar",
+    "Portuguese": "pt",
+    "Italian":    "it",
+    "Turkish":    "tr",
+    "Dutch":      "nl",
+    "Polish":     "pl",
+    "Swedish":    "sv",
+    "Norwegian":  "no",
+    "Danish":     "da",
+    "Finnish":    "fi",
+    "Greek":      "el",
+    "Hebrew":     "iw",
+    "Thai":       "th",
+    "Vietnamese": "vi",
+    "Indonesian": "id",
+    "Malay":      "ms",
+    "Filipino":   "tl",
+    "Bengali":    "bn",
+    "Urdu":       "ur",
+    "Punjabi":    "pa",
+    "Tamil":      "ta",
+    "Telugu":     "te",
+    "Marathi":    "mr",
+    "Gujarati":   "gu",
+    "Ukrainian":  "uk",
+    "Romanian":   "ro",
+    "Hungarian":  "hu",
+    "Czech":      "cs",
+    "Slovak":     "sk",
+    "Croatian":   "hr",
+    "Catalan":    "ca",
+    "Swahili":    "sw",
+}
+
+# Quick-pick buttons shown in the reaction view (most common)
+QUICK_LANGS = [
+    ("🇺🇸", "en",    "English"),
+    ("🇮🇳", "hi",    "Hindi"),
+    ("🇪🇸", "es",    "Spanish"),
+    ("🇫🇷", "fr",    "French"),
+    ("🇩🇪", "de",    "German"),
+    ("🇯🇵", "ja",    "Japanese"),
+    ("🇰🇷", "ko",    "Korean"),
+    ("🇨🇳", "zh-CN", "Chinese"),
+    ("🇷🇺", "ru",    "Russian"),
+    ("🇸🇦", "ar",    "Arabic"),
+]
+
+
+async def _do_translate(text: str, target: str) -> str:
+    """Run translation in executor so it doesn't block the event loop."""
+    loop = asyncio.get_event_loop()
+    translator = GoogleTranslator(source='auto', target=target)
+    return await loop.run_in_executor(None, translator.translate, text)
+
+
+def _translation_embed(translated: str, original: str, target_name: str, requester: discord.User | discord.Member) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"🌐 Translation → {target_name}",
+        description=translated,
+        color=0x5865f2,
+    )
+    if len(original) <= 1024:
+        embed.add_field(name="Original", value=original, inline=False)
+    else:
+        embed.add_field(name="Original (truncated)", value=original[:1021] + "...", inline=False)
+    embed.set_footer(text=f"Requested by {requester.display_name} • Powered by Google Translate")
+    return embed
+
+
+class QuickTranslateView(discord.ui.View):
+    """Shown when a user reacts 🌐 — quick-pick buttons + a custom language select."""
+
+    def __init__(self, message: discord.Message, cog: "Translation"):
+        super().__init__(timeout=120)
+        self.message = message
         self.cog = cog
-        self.languages = {
-            "🇺🇸": ("en", "English"),
-            "🇯🇵": ("ja", "Japanese"),
-            "🇪🇸": ("es", "Spanish"),
-            "🇫🇷": ("fr", "French"),
-            "🇩🇪": ("de", "German"),
-            "🇰🇷": ("ko", "Korean"),
-            "🇷🇺": ("ru", "Russian"),
-            "🇮🇳": ("hi", "Hindi")
-        }
-        
-        for emoji, (code, name) in self.languages.items():
-            button = discord.ui.Button(emoji=emoji, label=name, style=discord.ButtonStyle.secondary)
-            button.callback = self.create_callback(code, name)
-            self.add_item(button)
-    
-    def create_callback(self, lang_code, lang_name):
+
+        # Add flag buttons (2 rows of 5)
+        for i, (emoji, code, name) in enumerate(QUICK_LANGS):
+            btn = discord.ui.Button(
+                emoji=emoji,
+                label=name,
+                style=discord.ButtonStyle.secondary,
+                row=i // 5,
+            )
+            btn.callback = self._make_btn_callback(code, name)
+            self.add_item(btn)
+
+        # Custom language select on row 2
+        select = discord.ui.Select(
+            placeholder="More languages…",
+            options=[
+                discord.SelectOption(label=name, value=code)
+                for name, code in list(LANGUAGES.items())[:25]   # Discord limit: 25
+            ],
+            row=2,
+        )
+        select.callback = self._select_callback
+        self.add_item(select)
+
+    def _make_btn_callback(self, code: str, name: str):
         async def callback(interaction: discord.Interaction):
-            # Check per-user rate limit
-            if not await self.cog.check_user_rate_limit(interaction.user.id):
+            if not await self.cog._check_rate_limit(interaction.user.id):
                 return await interaction.response.send_message(
-                    embed=EmbedFactory.error("Rate Limited", "Please wait before translating again (10s cooldown per user)"),
-                    ephemeral=True
+                    "⏳ Please wait a few seconds before translating again.", ephemeral=True
                 )
-            
-            # Check global API rate limit
-            if not await self.cog.check_api_rate_limit():
-                return await interaction.response.send_message(
-                    embed=EmbedFactory.error("Service Busy", "Translation service is temporarily busy. Please try again in a minute."),
-                    ephemeral=True
-                )
-            
+            await interaction.response.defer(ephemeral=True)
             try:
-                # Use free deep-translator library (no API key needed!)
-                translator = GoogleTranslator(source='auto', target=lang_code)
-                # Run translation in executor to avoid blocking
-                loop = asyncio.get_event_loop()
-                translated = await loop.run_in_executor(
-                    None, 
-                    translator.translate, 
-                    self.original_message.content
-                )
-                
-                embed = EmbedFactory.info(f"Translation to {lang_name}", translated)
-                embed.add_field(name="Original", value=self.original_message.content[:1024], inline=False)
-                embed.set_footer(text=f"Translated by {interaction.user.display_name} • ✨ Free translation")
-                
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                translated = await _do_translate(self.message.content, code)
+                embed = _translation_embed(translated, self.message.content, name, interaction.user)
+                await interaction.followup.send(embed=embed, ephemeral=True)
             except Exception as e:
                 logger.error(f"Translation error: {e}")
-                await interaction.response.send_message(
-                    embed=EmbedFactory.error("Translation Error", "Could not translate this message. Please try again later."),
-                    ephemeral=True
-                )
+                await interaction.followup.send("❌ Translation failed. Try again later.", ephemeral=True)
         return callback
+
+    async def _select_callback(self, interaction: discord.Interaction):
+        code = interaction.data['values'][0]
+        name = next((n for n, c in LANGUAGES.items() if c == code), code)
+        if not await self.cog._check_rate_limit(interaction.user.id):
+            return await interaction.response.send_message(
+                "⏳ Please wait a few seconds before translating again.", ephemeral=True
+            )
+        await interaction.response.defer(ephemeral=True)
+        try:
+            translated = await _do_translate(self.message.content, code)
+            embed = _translation_embed(translated, self.message.content, name, interaction.user)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Translation error: {e}")
+            await interaction.followup.send("❌ Translation failed. Try again later.", ephemeral=True)
+
 
 class Translation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db = Database()
-        
-        # Per-user rate limiting (10 second cooldown)
-        self.user_cooldowns = {}
-        
-        # Global API rate limiting (60 calls per minute)
-        self.api_calls = deque(maxlen=100)
-        self.max_calls_per_minute = 60
-        
-        # Per-guild reaction cooldown (5 seconds)
-        self.guild_reaction_cooldown = {}
-    
-    async def check_user_rate_limit(self, user_id: int) -> bool:
-        """Check if user can make a translation request"""
+        self._user_cooldowns: dict[int, float] = {}
+        self._api_calls: deque = deque(maxlen=120)
+        self._reaction_cooldown: dict[int, float] = {}   # per-channel
+
+    # ── Rate limiting ──────────────────────────────────────────────────────
+
+    async def _check_rate_limit(self, user_id: int, cooldown: float = 5.0) -> bool:
         now = time.time()
-        
-        if user_id in self.user_cooldowns:
-            if now - self.user_cooldowns[user_id] < 10:  # 10 second cooldown
-                return False
-        
-        self.user_cooldowns[user_id] = now
-        
-        # Cleanup old entries (older than 1 minute)
-        to_remove = [uid for uid, timestamp in self.user_cooldowns.items() if now - timestamp > 60]
-        for uid in to_remove:
-            del self.user_cooldowns[uid]
-        
-        return True
-    
-    async def check_api_rate_limit(self) -> bool:
-        """Check if we can make an API call (global rate limit)"""
-        now = time.time()
-        
-        # Remove calls older than 1 minute
-        while self.api_calls and now - self.api_calls[0] > 60:
-            self.api_calls.popleft()
-        
-        if len(self.api_calls) >= self.max_calls_per_minute:
-            logger.warning("Translation API rate limit reached")
+        last = self._user_cooldowns.get(user_id, 0)
+        if now - last < cooldown:
             return False
-        
-        self.api_calls.append(now)
+        self._user_cooldowns[user_id] = now
+        # Prune old entries
+        cutoff = now - 120
+        self._user_cooldowns = {k: v for k, v in self._user_cooldowns.items() if v > cutoff}
         return True
-    
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot or not message.guild:
-            return
-        
-        config = await self.db.get_guild_config(message.guild.id)
-        if not config.translation_enabled:
-            return
-        
-        # Skip commands, links, short messages
-        if message.content.startswith(('/', '!', 'http://', 'https://')) or len(message.content) < 20:
-            return
-        
-        # Per-guild cooldown for reactions (prevent spam)
-        guild_id = message.guild.id
+
+    async def _check_api_limit(self) -> bool:
         now = time.time()
-        if guild_id in self.guild_reaction_cooldown:
-            if now - self.guild_reaction_cooldown[guild_id] < 5:  # 5 second cooldown per guild
-                return
-        
-        self.guild_reaction_cooldown[guild_id] = now
-        
-        # Only add reaction to longer messages
-        if len(message.content) > 50:
-            try:
-                await message.add_reaction("🌐")
-            except Exception as e:
-                logger.debug(f"Could not add reaction: {e}")
-    
-    @app_commands.command(name="translate", description="Translate a message to another language")
-    async def translate(self, interaction: discord.Interaction, text: str, target_language: str):
-        # Check rate limits
-        if not await self.check_user_rate_limit(interaction.user.id):
+        while self._api_calls and now - self._api_calls[0] > 60:
+            self._api_calls.popleft()
+        if len(self._api_calls) >= 60:
+            return False
+        self._api_calls.append(now)
+        return True
+
+    # ── Autocomplete ───────────────────────────────────────────────────────
+
+    async def _lang_autocomplete(self, interaction: discord.Interaction, current: str):
+        current_lower = current.lower()
+        matches = [
+            app_commands.Choice(name=name, value=code)
+            for name, code in LANGUAGES.items()
+            if current_lower in name.lower() or current_lower in code.lower()
+        ]
+        return matches[:25]
+
+    # ── /translate ─────────────────────────────────────────────────────────
+
+    @app_commands.command(name="translate", description="🌐 Translate text to another language")
+    @app_commands.describe(
+        text="The text to translate",
+        language="Target language (start typing to search)",
+    )
+    @app_commands.autocomplete(language=_lang_autocomplete)
+    async def translate(self, interaction: discord.Interaction, text: str, language: str):
+        if not await self._check_rate_limit(interaction.user.id):
             return await interaction.response.send_message(
-                embed=EmbedFactory.error("Rate Limited", "Please wait 10 seconds before translating again"),
-                ephemeral=True
+                "⏳ Please wait a few seconds before translating again.", ephemeral=True
             )
-        
-        if not await self.check_api_rate_limit():
+        if not await self._check_api_limit():
             return await interaction.response.send_message(
-                embed=EmbedFactory.error("Service Busy", "Translation service is temporarily busy. Please try again in a minute."),
-                ephemeral=True
+                "⚠️ Translation service is busy. Try again in a moment.", ephemeral=True
             )
-        
+
         await interaction.response.defer(ephemeral=True)
-        
         try:
-            translator = GoogleTranslator(source='auto', target=target_language)
-            translated = translator.translate(text)
-            
-            embed = EmbedFactory.info(f"Translation to {target_language}", translated)
-            embed.add_field(name="Original", value=text[:1024], inline=False)
-            
+            translated = await _do_translate(text, language)
+            lang_name = next((n for n, c in LANGUAGES.items() if c == language), language)
+            embed = _translation_embed(translated, text, lang_name, interaction.user)
             await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
-            logger.error(f"Translation error: {e}")
+            logger.error(f"Translate command error: {e}")
             await interaction.followup.send(
-                embed=EmbedFactory.error("Translation Error", "Could not translate. Please check the language code and try again."),
-                ephemeral=True
+                "❌ Could not translate. Check the language and try again.", ephemeral=True
             )
-    
-    @app_commands.command(name="translate_message", description="Translate a specific message by ID")
-    async def translate_message(self, interaction: discord.Interaction, message_id: str, target_language: str):
-        # Check rate limits
-        if not await self.check_user_rate_limit(interaction.user.id):
+
+    # ── Context menu: right-click a message → Translate ───────────────────
+
+    @app_commands.context_menu(name="Translate Message")
+    async def translate_context(self, interaction: discord.Interaction, message: discord.Message):
+        if not message.content:
             return await interaction.response.send_message(
-                embed=EmbedFactory.error("Rate Limited", "Please wait 10 seconds before translating again"),
-                ephemeral=True
+                "❌ This message has no text to translate.", ephemeral=True
             )
-        
-        if not await self.check_api_rate_limit():
+        if not await self._check_rate_limit(interaction.user.id):
             return await interaction.response.send_message(
-                embed=EmbedFactory.error("Service Busy", "Translation service is temporarily busy. Please try again in a minute."),
-                ephemeral=True
+                "⏳ Please wait a few seconds before translating again.", ephemeral=True
             )
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            message = await interaction.channel.fetch_message(int(message_id))
-            translator = GoogleTranslator(source='auto', target=target_language)
-            translated = translator.translate(message.content)
-            
-            embed = EmbedFactory.info(f"Translation to {target_language}", translated)
-            embed.add_field(name="Original", value=message.content[:1024], inline=False)
-            embed.add_field(name="Author", value=message.author.mention, inline=True)
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-        except ValueError:
-            await interaction.followup.send(
-                embed=EmbedFactory.error("Invalid ID", "Please provide a valid message ID"),
-                ephemeral=True
-            )
-        except Exception as e:
-            logger.error(f"Translation error: {e}")
-            await interaction.followup.send(
-                embed=EmbedFactory.error("Translation Error", "Could not translate this message"),
-                ephemeral=True
-            )
-    
+        view = QuickTranslateView(message, self)
+        await interaction.response.send_message(
+            "🌐 Choose a language to translate to:", view=view, ephemeral=True
+        )
+
+    # ── 🌐 reaction handler ────────────────────────────────────────────────
+
     @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload):
-        if payload.emoji.name != "🌐":
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        if str(payload.emoji) != "🌐":
             return
-        
         if payload.user_id == self.bot.user.id:
             return
-        
+
+        # Per-channel cooldown to prevent spam
+        now = time.time()
+        ch_id = payload.channel_id
+        if now - self._reaction_cooldown.get(ch_id, 0) < 3:
+            return
+        self._reaction_cooldown[ch_id] = now
+
         try:
-            channel = self.bot.get_channel(payload.channel_id)
+            channel = self.bot.get_channel(ch_id)
             if not channel:
                 return
-                
             message = await channel.fetch_message(payload.message_id)
-            
-            if message.author.bot:
+            if not message.content or message.author.bot:
                 return
-            
-            # Send translation view
-            view = TranslationView(message, self)
-            
-            user = await self.bot.fetch_user(payload.user_id)
-            embed = EmbedFactory.info("Select Translation Language", "Click a button below to translate this message")
-            await user.send(embed=embed, view=view)
-        except discord.Forbidden:
-            # User has DMs disabled
-            logger.debug(f"Could not DM user {payload.user_id} for translation")
+
+            user = channel.guild.get_member(payload.user_id) if channel.guild else None
+            if not user:
+                return
+
+            view = QuickTranslateView(message, self)
+            # Reply ephemerally in the channel — no DM needed
+            await channel.send(
+                content=f"{user.mention} Choose a language:",
+                view=view,
+                delete_after=120,
+            )
         except Exception as e:
-            logger.error(f"Error in translation reaction handler: {e}")
+            logger.debug(f"Reaction translation error: {e}")
+
+    # ── on_message: add 🌐 reaction to longer messages ────────────────────
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
+        # Only react to messages that look like they might need translation
+        # (longer than 40 chars, not a command, not a URL)
+        content = message.content
+        if (len(content) < 40
+                or content.startswith(('/', '!', 'http://', 'https://'))
+                or not content.strip()):
+            return
+
+        # Per-guild cooldown — don't spam reactions
+        now = time.time()
+        gid = message.guild.id
+        if now - self._reaction_cooldown.get(gid, 0) < 8:
+            return
+        self._reaction_cooldown[gid] = now
+
+        try:
+            await message.add_reaction("🌐")
+        except Exception:
+            pass
+
 
 async def setup(bot):
     await bot.add_cog(Translation(bot))
