@@ -738,7 +738,7 @@ def music_play(server_id):
                 vc = await ch.connect()
 
             from cogs.music import YTDLSource
-            player = await YTDLSource.from_query(query, loop=bot_instance.loop)
+            player = await YTDLSource.from_query(query, loop=bot_instance.loop, stream=True)
             player.requester = guild.me
             queue = music_cog.get_queue(guild.id)
 
@@ -748,6 +748,8 @@ def music_play(server_id):
             else:
                 queue.current = player
                 def after(err):
+                    if err:
+                        logger.error(f"Dashboard music player error: {err}")
                     music_cog._play_next(guild)
                 vc.play(player, after=after)
                 broadcast_update('music_update', {
