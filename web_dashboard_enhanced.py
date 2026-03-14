@@ -47,7 +47,7 @@ cache = Cache(app, config={'CACHE_TYPE': 'simple', 'CACHE_DEFAULT_TIMEOUT': 300}
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"],
+    default_limits=["2000 per day", "500 per hour"],
     storage_uri="memory://"
 )
 
@@ -429,6 +429,7 @@ def export_data(format):
         return jsonify({'error': 'Export failed'}), 500
 
 @app.route('/api/health')
+@limiter.exempt
 def health_check():
     """Health check endpoint - no auth required"""
     checks = {
