@@ -35,8 +35,8 @@ logger = logging.getLogger('dashboard')
 
 # Initialize Flask app
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('DASHBOARD_SECRET_KEY', 'wan-bot-dashboard-secret-key-change-me-in-env')
-app.config['SESSION_COOKIE_SECURE'] = False  # Render handles HTTPS termination; cookies work on HTTP internally
+app.config['SECRET_KEY'] = os.getenv('DASHBOARD_SECRET_KEY', secrets.token_hex(32))
+app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only in production
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
@@ -47,7 +47,7 @@ cache = Cache(app, config={'CACHE_TYPE': 'simple', 'CACHE_DEFAULT_TIMEOUT': 300}
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["2000 per day", "500 per hour"],
+    default_limits=["200 per day", "50 per hour"],
     storage_uri="memory://"
 )
 
@@ -92,9 +92,8 @@ def require_auth(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            # Always return JSON for /api/ routes
-            if request.path.startswith('/api/') or request.is_json:
-                return jsonify({'error': 'Authentication required', 'redirect': '/login'}), 401
+            if request.is_json:
+                return jsonify({'error': 'Authentication required'}), 401
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -157,12 +156,6 @@ def index():
         return render_template('ultimate_dashboard.html', username=session.get('username'))
     return render_template('landing.html')
 
-@app.route('/manage')
-@require_auth
-def manage():
-    """Server management page"""
-    return render_template('server_management.html', username=session.get('username'))
-
 @app.route('/auth')
 def auth():
     """Authenticate with token from Discord command"""
@@ -175,13 +168,9 @@ def auth():
     if bot_instance:
         webdashboard_cog = bot_instance.get_cog('WebDashboardCog')
         if webdashboard_cog:
-            loop = bot_instance.loop
-            if loop and loop.is_running():
-                import concurrent.futures
-                future = asyncio.run_coroutine_threadsafe(webdashboard_cog.verify_token(token), loop)
-                token_data = future.result(timeout=5)
-            else:
-                token_data = None
+            import asyncio
+            loop = bot_instance.loop or asyncio.get_event_loop()
+            token_data = loop.run_until_complete(webdashboard_cog.verify_token(token))
             
             if token_data:
                 # Set session
@@ -246,8 +235,9 @@ def logout():
 
 @app.route('/api/bot/status')
 @require_auth
+@cache.cached(timeout=10, key_prefix='bot_status')
 def bot_status():
-    """Get bot status"""
+    """Get bot status with caching"""
     try:
         if bot_instance and bot_instance.is_ready():
             # Fix timezone issue - make both timezone-aware
@@ -275,90 +265,70 @@ def bot_status():
 
 @app.route('/api/servers')
 @require_auth
+@cache.cached(timeout=60, key_prefix='servers_list')
 def get_servers():
-    """Get all servers"""
+    """Get all servers with caching"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
-
+        
         servers = []
         for guild in bot_instance.guilds:
             servers.append({
-                'id': str(guild.id),
+                'id': guild.id,
                 'name': guild.name,
                 'icon': str(guild.icon.url) if guild.icon else None,
                 'member_count': guild.member_count,
-                'owner': str(guild.owner) if guild.owner else f"User {guild.owner_id}",
-                'owner_id': str(guild.owner_id),
+                'owner': str(guild.owner),
+                'owner_id': guild.owner_id,
                 'created_at': guild.created_at.isoformat(),
                 'boost_level': guild.premium_tier,
                 'boost_count': guild.premium_subscription_count or 0
             })
-
+        
         return jsonify({'servers': servers, 'total': len(servers)})
     except Exception as e:
-        logger.error(f"Error getting servers: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error getting servers: {e}")
+        return jsonify({'error': 'Failed to get servers'}), 500
 
-@app.route('/api/server/<server_id>')
+@app.route('/api/server/<int:server_id>')
 @require_auth
 def get_server_details(server_id):
     """Get detailed server information"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
-
-        try:
-            guild_id_int = int(server_id)
-        except (ValueError, TypeError):
-            return jsonify({'error': 'Invalid server ID'}), 400
-
-        guild = bot_instance.get_guild(guild_id_int)
+        
+        guild = bot_instance.get_guild(server_id)
         if not guild:
-            # Log all known guild IDs to help debug
-            known = [str(g.id) for g in bot_instance.guilds]
-            logger.warning(f"Guild {server_id} not found. Known guilds: {known}")
-            return jsonify({'error': 'Server not found', 'known_guilds': known}), 404
-
-        # Chunk members if not already cached (needed for accurate member stats)
-        if not guild.chunked:
-            try:
-                future = asyncio.run_coroutine_threadsafe(guild.chunk(), bot_instance.loop)
-                future.result(timeout=10)
-            except Exception as chunk_err:
-                logger.warning(f"Could not chunk guild {guild.id}: {chunk_err}")
-
+            return jsonify({'error': 'Server not found'}), 404
+        
         # Detailed server info
         channels = {
-            'text': [{'id': str(c.id), 'name': c.name, 'category': c.category.name if c.category else None}
+            'text': [{'id': c.id, 'name': c.name, 'category': c.category.name if c.category else None} 
                      for c in guild.text_channels],
-            'voice': [{'id': str(c.id), 'name': c.name, 'category': c.category.name if c.category else None}
+            'voice': [{'id': c.id, 'name': c.name, 'category': c.category.name if c.category else None} 
                       for c in guild.voice_channels],
-            'categories': [{'id': str(c.id), 'name': c.name} for c in guild.categories]
+            'categories': [{'id': c.id, 'name': c.name} for c in guild.categories]
         }
-
-        roles = [{'id': str(r.id), 'name': r.name, 'color': str(r.color), 'members': len(r.members),
+        
+        roles = [{'id': r.id, 'name': r.name, 'color': str(r.color), 'members': len(r.members), 
                   'position': r.position} for r in guild.roles]
-
-        cached_members = guild.members
+        
         members = {
             'total': guild.member_count,
-            'online': len([m for m in cached_members if m.status != discord.Status.offline]),
-            'bots': len([m for m in cached_members if m.bot]),
-            'humans': len([m for m in cached_members if not m.bot])
+            'online': len([m for m in guild.members if m.status != discord.Status.offline]),
+            'bots': len([m for m in guild.members if m.bot]),
+            'humans': len([m for m in guild.members if not m.bot])
         }
-
-        # owner may be None if not cached — fetch safely
-        owner_id = guild.owner_id
-        owner_name = str(guild.owner) if guild.owner else f"User {owner_id}"
-
+        
         return jsonify({
-            'id': str(guild.id),
+            'id': guild.id,
             'name': guild.name,
             'icon': str(guild.icon.url) if guild.icon else None,
             'banner': str(guild.banner.url) if guild.banner else None,
             'description': guild.description,
-            'owner': {'id': str(owner_id), 'name': owner_name},
+            'owner': {'id': guild.owner.id, 'name': str(guild.owner)},
             'channels': channels,
             'roles': roles,
             'members': members,
@@ -366,11 +336,11 @@ def get_server_details(server_id):
             'boost_count': guild.premium_subscription_count or 0,
             'verification_level': str(guild.verification_level),
             'created_at': guild.created_at.isoformat(),
-            'features': list(guild.features)
+            'features': guild.features
         })
     except Exception as e:
-        logger.error(f"Error getting server details for {server_id}: {e}", exc_info=True)
-        return jsonify({'error': f'Failed to get server details: {str(e)}'}), 500
+        logger.error(f"Error getting server details: {e}")
+        return jsonify({'error': 'Failed to get server details'}), 500
 
 @app.route('/api/export/<format>')
 @require_auth
@@ -414,7 +384,7 @@ def export_data(format):
                 },
                 'servers': [
                     {
-                        'id': str(g.id),
+                        'id': g.id,
                         'name': g.name,
                         'members': g.member_count,
                         'owner': str(g.owner)
@@ -428,38 +398,17 @@ def export_data(format):
         logger.error(f"Error exporting data: {e}")
         return jsonify({'error': 'Export failed'}), 500
 
-def _check_nacl():
-    try:
-        import nacl
-        return nacl.__version__
-    except ImportError:
-        return False
 @app.route('/api/health')
-@limiter.exempt
 def health_check():
-    """Health check endpoint - no auth required"""
-    cogs_loaded = list(bot_instance.cogs.keys()) if bot_instance and bot_instance.is_ready() else []
+    """Health check endpoint"""
     checks = {
         'bot': bot_instance.is_ready() if bot_instance else False,
-        'bot_guilds': len(bot_instance.guilds) if bot_instance and bot_instance.is_ready() else 0,
-        'session_active': 'user_id' in session,
         'cache': cache.cache is not None,
-        'cogs': cogs_loaded,
-        'music_loaded': 'Music' in cogs_loaded,
-        'cog_errors': getattr(bot_instance, 'cog_errors', {}),
-        'nacl_installed': _check_nacl(),
-        'youtube_cookies': os.path.exists('/app/youtube_cookies.txt'),
         'timestamp': datetime.utcnow().isoformat()
     }
+    
     status = 'healthy' if checks['bot'] else 'degraded'
     return jsonify({'status': status, 'checks': checks})
-
-@app.route('/api/server/<server_id>/audit')
-@require_auth
-def get_audit_log(server_id):
-    """Get recent audit log events for a server"""
-    audit_log = dashboard_cache.get('audit_log', {}).get(str(server_id), [])
-    return jsonify({'events': audit_log[:50]})
 
 # ===== Roblox Integration API Endpoints =====
 
@@ -539,50 +488,61 @@ def get_roblox_player_stats(discord_id):
         logger.error(f"Error getting player stats: {e}")
         return jsonify({'error': 'Failed to get player stats'}), 500
 
-@app.route('/api/leaderboard/<category>')
+@app.route('/api/roblox/leaderboard/<category>')
 @require_auth
-def get_activity_leaderboard(category):
-    """Get real Discord activity leaderboard"""
+@cache.cached(timeout=60, key_prefix='roblox_leaderboard')
+def get_roblox_leaderboard(category):
+    """Get Roblox leaderboard by category"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
-
-        lb_cog = bot_instance.get_cog('Leaderboard')
-        if not lb_cog:
-            return jsonify({'error': 'Leaderboard cog not loaded'}), 503
-
-        # Use first guild
-        guild = bot_instance.guilds[0] if bot_instance.guilds else None
-        if not guild:
-            return jsonify({'error': 'No guild found'}), 404
-
-        g = lb_cog._guild(guild.id)
-        entries = []
-        for uid, stats in g.items():
-            member = guild.get_member(int(uid))
-            score = stats.get("messages", 0) + (stats.get("voice_seconds", 0) // 60) * 2 + int(stats.get("reactions", 0) * 0.5)
-            entries.append({
-                'user_id': uid,
-                'name': member.display_name if member else f"User {uid}",
-                'avatar': str(member.display_avatar.url) if member else None,
-                'messages': stats.get("messages", 0),
-                'voice_seconds': stats.get("voice_seconds", 0),
-                'reactions': stats.get("reactions", 0),
-                'score': score
-            })
-
-        key_map = {
-            'score': lambda x: x['score'],
-            'messages': lambda x: x['messages'],
-            'voice': lambda x: x['voice_seconds'],
-            'reactions': lambda x: x['reactions'],
+        
+        roblox_cog = bot_instance.get_cog('RobloxIntegration')
+        if not roblox_cog:
+            return jsonify({'error': 'Roblox integration not loaded'}), 503
+        
+        # Collect all player data
+        all_stats = []
+        for discord_id, member_info in roblox_cog.clan_members.items():
+            player_data = roblox_cog.player_cache.get(discord_id)
+            if player_data:
+                all_stats.append(player_data)
+        
+        # Sort by category
+        sort_keys = {
+            'playtime': lambda x: x['stats']['playtime'],
+            'coins': lambda x: x['stats']['coins_collected'],
+            'kills': lambda x: x['stats']['kills'],
+            'level': lambda x: x['stats']['level'],
+            'kd': lambda x: x['stats']['kills'] / max(x['stats']['deaths'], 1)
         }
-        entries.sort(key=key_map.get(category, key_map['score']), reverse=True)
-
+        
+        sort_key = sort_keys.get(category, sort_keys['playtime'])
+        all_stats.sort(key=sort_key, reverse=True)
+        
+        # Return top 20
+        leaderboard = []
+        for i, player in enumerate(all_stats[:20]):
+            entry = {
+                'rank': i + 1,
+                'discord_id': player['discord_id'],
+                'roblox_username': player['roblox_username'],
+                'display_name': player['display_name'],
+                'is_online': player['is_online'],
+                'stats': player['stats']
+            }
+            
+            if category == 'kd':
+                entry['value'] = player['stats']['kills'] / max(player['stats']['deaths'], 1)
+            else:
+                entry['value'] = player['stats'].get(category if category != 'coins' else 'coins_collected', 0)
+            
+            leaderboard.append(entry)
+        
         return jsonify({
             'category': category,
-            'leaderboard': entries[:20],
-            'total': len(entries),
+            'leaderboard': leaderboard,
+            'total_players': len(all_stats),
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:
@@ -678,19 +638,301 @@ def handle_unsubscribe(data):
         leave_room(f'server_{server_id}')
         emit('unsubscribed', {'server_id': server_id})
 
+# ── Commands Manager ─────────────────────────────────────────────────────────
+
+# Persisted disabled commands set
+_DISABLED_COMMANDS_FILE = 'disabled_commands.json'
+_disabled_commands: set = set()
+
+def _load_disabled_commands():
+    global _disabled_commands
+    try:
+        if os.path.exists(_DISABLED_COMMANDS_FILE):
+            with open(_DISABLED_COMMANDS_FILE) as f:
+                _disabled_commands = set(json.load(f))
+    except Exception:
+        _disabled_commands = set()
+
+def _save_disabled_commands():
+    try:
+        with open(_DISABLED_COMMANDS_FILE, 'w') as f:
+            json.dump(list(_disabled_commands), f)
+    except Exception:
+        pass
+
+_load_disabled_commands()
+
+# Custom commands storage
+_CUSTOM_COMMANDS_FILE = 'custom_commands_dashboard.json'
+_custom_commands: list = []
+
+def _load_custom_commands():
+    global _custom_commands
+    try:
+        if os.path.exists(_CUSTOM_COMMANDS_FILE):
+            with open(_CUSTOM_COMMANDS_FILE) as f:
+                _custom_commands = json.load(f)
+    except Exception:
+        _custom_commands = []
+
+def _save_custom_commands():
+    try:
+        with open(_CUSTOM_COMMANDS_FILE, 'w') as f:
+            json.dump(_custom_commands, f, indent=2)
+    except Exception:
+        pass
+
+_load_custom_commands()
+
+# Map of response types to generated code templates
+_RESPONSE_TEMPLATES = {
+    'text': '''    @app_commands.command(name="{name}", description="{description}")
+    async def {func_name}(self, interaction: discord.Interaction):
+        await interaction.response.send_message("{response}")''',
+
+    'embed': '''    @app_commands.command(name="{name}", description="{description}")
+    async def {func_name}(self, interaction: discord.Interaction):
+        embed = discord.Embed(
+            title="{name}",
+            description="{response}",
+            color=discord.Color.blurple()
+        )
+        await interaction.response.send_message(embed=embed)''',
+
+    'dm': '''    @app_commands.command(name="{name}", description="{description}")
+    async def {func_name}(self, interaction: discord.Interaction):
+        try:
+            await interaction.user.send("{response}")
+            await interaction.response.send_message("✅ Sent you a DM!", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ Could not DM you.", ephemeral=True)''',
+
+    'ephemeral': '''    @app_commands.command(name="{name}", description="{description}")
+    async def {func_name}(self, interaction: discord.Interaction):
+        await interaction.response.send_message("{response}", ephemeral=True)''',
+}
+
+def _generate_cog_file(commands: list) -> str:
+    """Generate a full cog Python file from a list of custom command dicts."""
+    methods = []
+    for cmd in commands:
+        name = cmd['name'].lower().replace(' ', '_').replace('-', '_')
+        tmpl = _RESPONSE_TEMPLATES.get(cmd.get('response_type', 'text'), _RESPONSE_TEMPLATES['text'])
+        methods.append(tmpl.format(
+            name=cmd['name'],
+            func_name=name,
+            description=cmd.get('description', 'Custom command'),
+            response=cmd.get('response', '').replace('"', '\\"'),
+        ))
+
+    body = '\n\n'.join(methods) if methods else '    pass'
+    return f'''"""Auto-generated custom commands from WAN Bot Dashboard"""
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+
+class DashboardCustomCommands(commands.Cog):
+    """Custom commands created via the web dashboard."""
+
+    def __init__(self, bot):
+        self.bot = bot
+
+{body}
+
+
+async def setup(bot):
+    await bot.add_cog(DashboardCustomCommands(bot))
+'''
+
+@app.route('/api/commands')
+@require_auth
+def get_all_commands():
+    """Return all registered slash commands grouped by cog."""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        groups: dict = {}
+        for cmd in bot_instance.tree.get_commands():
+            cog_name = 'Uncategorized'
+            # Find which cog owns this command
+            for cog in bot_instance.cogs.values():
+                for c in cog.get_app_commands():
+                    if c.name == cmd.name:
+                        cog_name = type(cog).__name__
+                        break
+            groups.setdefault(cog_name, []).append({
+                'name': cmd.name,
+                'description': cmd.description,
+                'enabled': cmd.name not in _disabled_commands,
+            })
+
+        return jsonify({
+            'groups': groups,
+            'total': sum(len(v) for v in groups.values()),
+            'disabled_count': len(_disabled_commands),
+        })
+    except Exception as e:
+        logger.error(f"get_all_commands error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/commands/toggle', methods=['POST'])
+@require_auth
+def toggle_command():
+    """Enable or disable a slash command by name."""
+    try:
+        data = request.get_json()
+        name = (data or {}).get('name', '').strip()
+        enabled = (data or {}).get('enabled', True)
+        if not name:
+            return jsonify({'error': 'name required'}), 400
+
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        if enabled:
+            _disabled_commands.discard(name)
+        else:
+            _disabled_commands.add(name)
+        _save_disabled_commands()
+
+        # Apply to the command tree at runtime
+        loop = bot_instance.loop
+        async def _apply():
+            for cmd in bot_instance.tree.get_commands():
+                if cmd.name == name:
+                    # discord.py doesn't have a built-in disable, so we patch the callback
+                    if not enabled:
+                        async def _disabled_handler(interaction: discord.Interaction, **_):
+                            await interaction.response.send_message(
+                                f"❌ The `/{name}` command is currently disabled.", ephemeral=True)
+                        cmd._callback = _disabled_handler
+                    else:
+                        # Reload the cog to restore original callback
+                        for cog in list(bot_instance.cogs.values()):
+                            for c in cog.get_app_commands():
+                                if c.name == name:
+                                    # Re-add cog to restore
+                                    cog_class = type(cog)
+                                    cog_name = cog_class.__name__
+                                    await bot_instance.remove_cog(cog_name)
+                                    await bot_instance.add_cog(cog_class(bot_instance))
+                                    return
+        asyncio.run_coroutine_threadsafe(_apply(), loop).result(timeout=10)
+
+        return jsonify({'success': True, 'name': name, 'enabled': enabled})
+    except Exception as e:
+        logger.error(f"toggle_command error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/commands/custom', methods=['GET'])
+@require_auth
+def get_custom_commands():
+    return jsonify({'commands': _custom_commands})
+
+
+@app.route('/api/commands/custom', methods=['POST'])
+@require_auth
+def create_custom_command():
+    """Create a new custom command and hot-reload it into the bot."""
+    try:
+        data = request.get_json() or {}
+        name = data.get('name', '').strip().lower().replace(' ', '-')
+        description = data.get('description', '').strip()
+        response = data.get('response', '').strip()
+        response_type = data.get('response_type', 'text')
+
+        if not name or not response:
+            return jsonify({'error': 'name and response are required'}), 400
+        if len(name) > 32:
+            return jsonify({'error': 'name must be 32 chars or less'}), 400
+        if any(c['name'] == name for c in _custom_commands):
+            return jsonify({'error': f'Command /{name} already exists'}), 409
+
+        cmd_entry = {
+            'name': name,
+            'description': description or f'Custom command: {name}',
+            'response': response,
+            'response_type': response_type,
+            'created_at': datetime.utcnow().isoformat(),
+        }
+        _custom_commands.append(cmd_entry)
+        _save_custom_commands()
+
+        # Write and reload the cog
+        cog_path = os.path.join(os.path.dirname(__file__), 'cogs', 'dashboard_custom.py')
+        with open(cog_path, 'w') as f:
+            f.write(_generate_cog_file(_custom_commands))
+
+        if bot_instance and bot_instance.is_ready():
+            loop = bot_instance.loop
+            async def _reload():
+                if 'DashboardCustomCommands' in bot_instance.cogs:
+                    await bot_instance.remove_cog('DashboardCustomCommands')
+                await bot_instance.load_extension('cogs.dashboard_custom')
+                await bot_instance.tree.sync()
+            asyncio.run_coroutine_threadsafe(_reload(), loop).result(timeout=15)
+
+        return jsonify({'success': True, 'command': cmd_entry}), 201
+    except Exception as e:
+        logger.error(f"create_custom_command error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/commands/custom/<name>', methods=['DELETE'])
+@require_auth
+def delete_custom_command(name: str):
+    """Delete a custom command and reload the cog."""
+    try:
+        global _custom_commands
+        before = len(_custom_commands)
+        _custom_commands = [c for c in _custom_commands if c['name'] != name]
+        if len(_custom_commands) == before:
+            return jsonify({'error': 'Command not found'}), 404
+        _save_custom_commands()
+
+        cog_path = os.path.join(os.path.dirname(__file__), 'cogs', 'dashboard_custom.py')
+        with open(cog_path, 'w') as f:
+            f.write(_generate_cog_file(_custom_commands))
+
+        if bot_instance and bot_instance.is_ready():
+            loop = bot_instance.loop
+            async def _reload():
+                if 'DashboardCustomCommands' in bot_instance.cogs:
+                    await bot_instance.remove_cog('DashboardCustomCommands')
+                if _custom_commands:
+                    await bot_instance.load_extension('cogs.dashboard_custom')
+                await bot_instance.tree.sync()
+            asyncio.run_coroutine_threadsafe(_reload(), loop).result(timeout=15)
+
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"delete_custom_command error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/commands/custom/<name>/code', methods=['GET'])
+@require_auth
+def get_custom_command_code(name: str):
+    """Return the generated Python code for a custom command."""
+    cmd = next((c for c in _custom_commands if c['name'] == name), None)
+    if not cmd:
+        return jsonify({'error': 'Not found'}), 404
+    tmpl = _RESPONSE_TEMPLATES.get(cmd.get('response_type', 'text'), _RESPONSE_TEMPLATES['text'])
+    func_name = name.replace('-', '_')
+    code = tmpl.format(
+        name=cmd['name'], func_name=func_name,
+        description=cmd.get('description', ''), response=cmd.get('response', '').replace('"', '\\"')
+    )
+    return jsonify({'code': code})
+
+
 def broadcast_update(event_type: str, data: dict, room: str = None):
     """Broadcast update to all connected clients or specific room"""
     try:
-        # Store audit events in memory for late-joining clients
-        if event_type == 'audit':
-            guild_id = str(data.get('guild_id', ''))
-            if guild_id not in dashboard_cache.get('audit_log', {}):
-                if 'audit_log' not in dashboard_cache:
-                    dashboard_cache['audit_log'] = {}
-                dashboard_cache['audit_log'][guild_id] = []
-            dashboard_cache['audit_log'][guild_id].insert(0, data)
-            dashboard_cache['audit_log'][guild_id] = dashboard_cache['audit_log'][guild_id][:100]
-
         if room:
             socketio.emit(event_type, data, room=room)
         else:
@@ -714,833 +956,3 @@ def start_web_dashboard(bot, host='0.0.0.0', port=5000):
 if __name__ == '__main__':
     print("⚠️  Run this through bot.py, not directly!")
     print("The enhanced web dashboard will start automatically with the bot.")
-
-
-# ===== MUSIC API ENDPOINTS =====
-
-@app.route('/api/server/<server_id>/music/play', methods=['POST'])
-@require_auth
-def music_play(server_id):
-    """Play a song via dashboard"""
-    try:
-        query = request.json.get('query', '').strip()
-        channel_id = request.json.get('channel_id')
-        if not query:
-            return jsonify({'error': 'No query provided'}), 400
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        music_cog = bot_instance.get_cog('Music')
-        if not music_cog:
-            return jsonify({'error': 'Music cog not loaded'}), 503
-
-        async def _play():
-            vc = guild.voice_client
-            if not vc:
-                if channel_id:
-                    ch = guild.get_channel(int(channel_id))
-                else:
-                    ch = next((c for c in guild.voice_channels), None)
-                if not ch:
-                    return {'error': 'No voice channel found'}
-                try:
-                    vc = await ch.connect()
-                except Exception as e:
-                    return {'error': f'Could not join voice channel: {e}'}
-
-            from cogs.music import YTDLSource
-            try:
-                player = await YTDLSource.from_query(query, loop=bot_instance.loop)
-            except asyncio.TimeoutError:
-                return {'error': 'Search timed out — try a more specific query or YouTube URL'}
-            except ValueError as e:
-                return {'error': str(e)}
-            except Exception as e:
-                return {'error': f'Could not load audio: {e}'}
-
-            player.requester = guild.me
-            queue = music_cog.get_queue(guild.id)
-
-            if vc.is_playing() or vc.is_paused():
-                queue.add(player)
-                return {'status': 'queued', 'title': player.title, 'queue_size': len(queue.queue)}
-            else:
-                queue.current = player
-                def after(err):
-                    if err:
-                        logger.error(f"Dashboard music player error: {err}")
-                    music_cog._play_next(guild)
-                vc.play(player, after=after)
-                broadcast_update('music_update', {
-                    'guild_id': server_id,
-                    'action': 'now_playing',
-                    'title': player.title,
-                    'thumbnail': player.thumbnail,
-                    'queue_size': len(queue.queue)
-                })
-                return {'status': 'playing', 'title': player.title}
-
-        future = asyncio.run_coroutine_threadsafe(_play(), bot_instance.loop)
-        result = future.result(timeout=35)
-        if 'error' in result:
-            return jsonify(result), 400
-        return jsonify(result)
-    except Exception as e:
-        logger.error(f"Music play error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/server/<server_id>/music/control', methods=['POST'])
-@require_auth
-def music_control(server_id):
-    """Pause/resume/skip/stop"""
-    try:
-        action = request.json.get('action')
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        vc = guild.voice_client
-        music_cog = bot_instance.get_cog('Music')
-
-        if action == 'pause' and vc and vc.is_playing():
-            vc.pause()
-        elif action == 'resume' and vc and vc.is_paused():
-            vc.resume()
-        elif action == 'skip' and vc and vc.is_playing():
-            vc.stop()
-        elif action == 'stop':
-            future = asyncio.run_coroutine_threadsafe(music_cog.cleanup(int(server_id)), bot_instance.loop)
-            future.result(timeout=10)
-        else:
-            return jsonify({'error': f'Cannot perform {action}'}), 400
-
-        broadcast_update('music_update', {'guild_id': server_id, 'action': action})
-        return jsonify({'status': action})
-    except Exception as e:
-        logger.error(f"Music control error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/server/<server_id>/music/status')
-@require_auth
-def music_status(server_id):
-    """Get current music status"""
-    try:
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        music_cog = bot_instance.get_cog('Music')
-        vc = guild.voice_client
-        queue = music_cog.get_queue(int(server_id)) if music_cog else None
-
-        return jsonify({
-            'connected': vc is not None and vc.is_connected(),
-            'playing': vc.is_playing() if vc else False,
-            'paused': vc.is_paused() if vc else False,
-            'channel': vc.channel.name if vc else None,
-            'current': {
-                'title': queue.current.title if queue and queue.current else None,
-                'thumbnail': queue.current.thumbnail if queue and queue.current else None,
-                'duration': queue.current.duration if queue and queue.current else None,
-                'url': queue.current.url if queue and queue.current else None,
-            },
-            'queue': [s.title for s in list(queue.queue)[:20]] if queue else [],
-            'queue_size': len(queue.queue) if queue else 0,
-            'loop': queue.loop if queue else False,
-            'loop_queue': queue.loop_queue if queue else False,
-            'voice_channels': [{'id': str(c.id), 'name': c.name} for c in guild.voice_channels]
-        })
-    except Exception as e:
-        logger.error(f"Music status error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# ===== ANNOUNCEMENTS API =====
-
-@app.route('/api/server/<server_id>/announce', methods=['POST'])
-@require_auth
-def send_announcement(server_id):
-    """Send an announcement to a channel"""
-    try:
-        data = request.json
-        channel_id = data.get('channel_id')
-        message = data.get('message', '').strip()
-        title = data.get('title', '').strip()
-        color = data.get('color', '#5865f2')
-        ping_everyone = data.get('ping_everyone', False)
-
-        if not message:
-            return jsonify({'error': 'Message is required'}), 400
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        async def _send():
-            channel = guild.get_channel(int(channel_id)) if channel_id else \
-                next((c for c in guild.text_channels if 'announce' in c.name.lower()), guild.text_channels[0])
-            if not channel:
-                return {'error': 'Channel not found'}
-
-            color_int = int(color.lstrip('#'), 16)
-            embed = discord.Embed(color=color_int)
-            if title:
-                embed.title = title
-            embed.description = message
-            embed.set_footer(text=f"Announcement from {session.get('username', 'Dashboard')}")
-
-            content = '@everyone' if ping_everyone else None
-            await channel.send(content=content, embed=embed)
-            return {'status': 'sent', 'channel': channel.name}
-
-        future = asyncio.run_coroutine_threadsafe(_send(), bot_instance.loop)
-        result = future.result(timeout=10)
-        if 'error' in result:
-            return jsonify(result), 400
-        return jsonify(result)
-    except Exception as e:
-        logger.error(f"Announcement error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/server/<server_id>/channels/text')
-@require_auth
-def get_text_channels(server_id):
-    """Get text channels for announcement target selector"""
-    try:
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-        channels = [{'id': str(c.id), 'name': c.name} for c in guild.text_channels]
-        return jsonify({'channels': channels})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-# ===== MANAGEMENT API ENDPOINTS =====
-# Import management functions
-from web_dashboard_management import (
-    create_role_action, edit_role_action, delete_role_action, assign_role_action,
-    create_channel_action, edit_channel_action, delete_channel_action,
-    update_server_icon_action, update_server_banner_action, create_emoji_action,
-    kick_member_action, ban_member_action, timeout_member_action,
-    assign_badge_action, update_server_settings_action
-)
-
-# Role Management
-@app.route('/api/server/<server_id>/roles', methods=['POST'])
-@require_auth
-@limiter.limit("10 per minute")
-def create_role(server_id):
-    """Create a new role"""
-    return create_role_action(server_id, request.json)
-
-@app.route('/api/server/<server_id>/roles/<role_id>', methods=['PUT'])
-@require_auth
-@limiter.limit("10 per minute")
-def edit_role(server_id, role_id):
-    """Edit a role"""
-    return edit_role_action(server_id, role_id, request.json)
-
-@app.route('/api/server/<server_id>/roles/<role_id>', methods=['DELETE'])
-@require_auth
-@limiter.limit("10 per minute")
-def delete_role(server_id, role_id):
-    """Delete a role"""
-    return delete_role_action(server_id, role_id)
-
-@app.route('/api/server/<server_id>/members/<member_id>/roles/<role_id>', methods=['POST'])
-@require_auth
-@limiter.limit("20 per minute")
-def assign_role(server_id, member_id, role_id):
-    """Assign role to member"""
-    action = request.json.get('action', 'add')
-    return assign_role_action(server_id, member_id, role_id, action)
-
-# Channel Management
-@app.route('/api/server/<server_id>/channels', methods=['POST'])
-@require_auth
-@limiter.limit("10 per minute")
-def create_channel(server_id):
-    """Create a new channel"""
-    return create_channel_action(server_id, request.json)
-
-@app.route('/api/server/<server_id>/channels/<channel_id>', methods=['PUT'])
-@require_auth
-@limiter.limit("10 per minute")
-def edit_channel(server_id, channel_id):
-    """Edit a channel"""
-    return edit_channel_action(server_id, channel_id, request.json)
-
-@app.route('/api/server/<server_id>/channels/<channel_id>', methods=['DELETE'])
-@require_auth
-@limiter.limit("10 per minute")
-def delete_channel(server_id, channel_id):
-    """Delete a channel"""
-    return delete_channel_action(server_id, channel_id)
-
-# Server Decoration
-@app.route('/api/server/<server_id>/icon', methods=['POST'])
-@require_auth
-@limiter.limit("5 per hour")
-def update_server_icon(server_id):
-    """Update server icon"""
-    icon_url = request.json.get('icon_url')
-    return update_server_icon_action(server_id, icon_url)
-
-@app.route('/api/server/<server_id>/banner', methods=['POST'])
-@require_auth
-@limiter.limit("5 per hour")
-def update_server_banner(server_id):
-    """Update server banner"""
-    banner_url = request.json.get('banner_url')
-    return update_server_banner_action(server_id, banner_url)
-
-@app.route('/api/server/<server_id>/emojis', methods=['POST'])
-@require_auth
-@limiter.limit("10 per hour")
-def create_emoji(server_id):
-    """Create custom emoji"""
-    return create_emoji_action(server_id, request.json)
-
-# Member Management
-@app.route('/api/server/<server_id>/members/<member_id>/kick', methods=['POST'])
-@require_auth
-@limiter.limit("10 per minute")
-def kick_member(server_id, member_id):
-    """Kick a member"""
-    reason = request.json.get('reason', '')
-    return kick_member_action(server_id, member_id, reason)
-
-@app.route('/api/server/<server_id>/members/<member_id>/ban', methods=['POST'])
-@require_auth
-@limiter.limit("10 per minute")
-def ban_member(server_id, member_id):
-    """Ban a member"""
-    reason = request.json.get('reason', '')
-    delete_days = request.json.get('delete_days', 0)
-    return ban_member_action(server_id, member_id, reason, delete_days)
-
-@app.route('/api/server/<server_id>/members/<member_id>/timeout', methods=['POST'])
-@require_auth
-@limiter.limit("20 per minute")
-def timeout_member(server_id, member_id):
-    """Timeout a member"""
-    duration = request.json.get('duration', 10)
-    reason = request.json.get('reason', '')
-    return timeout_member_action(server_id, member_id, duration, reason)
-
-# Badge Management
-@app.route('/api/server/<server_id>/members/<member_id>/badge', methods=['POST'])
-@require_auth
-@limiter.limit("20 per minute")
-def assign_badge(server_id, member_id):
-    """Assign badge to member"""
-    badge_name = request.json.get('badge_name')
-    return assign_badge_action(server_id, member_id, badge_name)
-
-# Server Settings
-@app.route('/api/server/<server_id>/settings', methods=['PUT'])
-@require_auth
-@limiter.limit("5 per minute")
-def update_server_settings(server_id):
-    """Update server settings"""
-    return update_server_settings_action(server_id, request.json)
-
-# Get server members list
-@app.route('/api/server/<server_id>/members')
-@require_auth
-def get_server_members(server_id):
-    """Get list of server members"""
-    try:
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-        
-        members = []
-        for member in guild.members:
-            members.append({
-                'id': str(member.id),
-                'name': member.name,
-                'display_name': member.display_name,
-                'avatar': str(member.avatar.url) if member.avatar else None,
-                'bot': member.bot,
-                'status': str(member.status),
-                'roles': [{'id': str(r.id), 'name': r.name, 'color': str(r.color)} for r in member.roles if r.name != '@everyone'],
-                'joined_at': member.joined_at.isoformat() if member.joined_at else None
-            })
-        
-        return jsonify({'members': members, 'total': len(members)})
-    except Exception as e:
-        logger.error(f"Error getting members: {e}")
-        return jsonify({'error': 'Failed to get members'}), 500
-
-
-# ===== WELCOME / GOODBYE / PROMOTION / AUTOROLE API =====
-
-@app.route('/api/server/<server_id>/welcome', methods=['POST'])
-@require_auth
-def save_welcome_config(server_id):
-    """Save welcome/goodbye/promo/autorole config"""
-    try:
-        data = request.json
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        welcome_cog = bot_instance.get_cog('Welcome')
-        if not welcome_cog:
-            return jsonify({'error': 'Welcome cog not loaded'}), 503
-
-        cfg = welcome_cog._guild(int(server_id))
-        cfg.update({k: v for k, v in data.items() if v is not None and v != ''})
-        welcome_cog._save()
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"Welcome config error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/server/<server_id>/welcome/test', methods=['POST'])
-@require_auth
-def test_welcome_message(server_id):
-    """Send a test welcome/goodbye message"""
-    try:
-        msg_type = request.json.get('type', 'join')
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        welcome_cog = bot_instance.get_cog('Welcome')
-        if not welcome_cog:
-            return jsonify({'error': 'Welcome cog not loaded'}), 503
-
-        event_map = {'join': 'welcome', 'leave': 'goodbye'}
-        event = event_map.get(msg_type, 'welcome')
-        member = guild.me
-
-        async def _test():
-            await welcome_cog._send_embed(member, welcome_cog._guild(int(server_id)), event)
-
-        future = asyncio.run_coroutine_threadsafe(_test(), bot_instance.loop)
-        future.result(timeout=10)
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"Welcome test error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ===== VERIFICATION API =====
-
-@app.route('/api/server/<server_id>/verification', methods=['POST'])
-@require_auth
-def save_verification(server_id):
-    """Save verification config and post verification message"""
-    try:
-        data = request.json
-        method = data.get('method', 'none')
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        if method == 'none':
-            return jsonify({'success': True, 'message': 'Verification disabled'})
-
-        channel_id = data.get('channel_id')
-        role_id = data.get('role_id')
-        if not channel_id or not role_id:
-            return jsonify({'error': 'Channel and role required'}), 400
-
-        async def _setup():
-            channel = guild.get_channel(int(channel_id))
-            role = guild.get_role(int(role_id))
-            if not channel:
-                return {'error': 'Channel not found'}
-            if not role:
-                return {'error': 'Role not found'}
-
-            if method == 'reaction':
-                msg_text = data.get('message', 'React with ✅ to verify!')
-                embed = discord.Embed(title="✅ Verification", description=msg_text, color=0x57f287)
-                embed.set_footer(text="React with ✅ below to verify yourself")
-                msg = await channel.send(embed=embed)
-                await msg.add_reaction('✅')
-                # Store config in welcome cog if available
-                welcome_cog = bot_instance.get_cog('Welcome')
-                if welcome_cog:
-                    cfg = welcome_cog._guild(int(server_id))
-                    cfg['verify_message_id'] = str(msg.id)
-                    cfg['verify_role_id'] = str(role_id)
-                    cfg['verify_channel_id'] = str(channel_id)
-                    if data.get('unverify_role'):
-                        cfg['unverify_role_id'] = str(data['unverify_role'])
-                    welcome_cog._save()
-                return {'success': True, 'message_id': str(msg.id)}
-
-            elif method == 'button':
-                label = data.get('label', '✅ Verify Me')
-                msg_text = data.get('message', 'Click the button below to verify!')
-                embed = discord.Embed(title="🔐 Verification", description=msg_text, color=0x5865f2)
-
-                class VerifyButton(discord.ui.View):
-                    def __init__(self):
-                        super().__init__(timeout=None)
-                    @discord.ui.button(label=label, style=discord.ButtonStyle.success, custom_id=f'verify_{server_id}')
-                    async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
-                        r = interaction.guild.get_role(int(role_id))
-                        if r:
-                            await interaction.user.add_roles(r, reason="Button verification")
-                        await interaction.response.send_message("✅ You've been verified!", ephemeral=True)
-
-                msg = await channel.send(embed=embed, view=VerifyButton())
-                return {'success': True, 'message_id': str(msg.id)}
-
-            elif method == 'question':
-                question = data.get('question', 'What is the server rule #1?')
-                answer = data.get('answer', '').lower().strip()
-                embed = discord.Embed(title="❓ Verification Question", description=question, color=0xf59e0b)
-                embed.set_footer(text="Reply with your answer in this channel")
-                await channel.send(embed=embed)
-                # Store Q&A in welcome cog
-                welcome_cog = bot_instance.get_cog('Welcome')
-                if welcome_cog:
-                    cfg = welcome_cog._guild(int(server_id))
-                    cfg['verify_question'] = question
-                    cfg['verify_answer'] = answer
-                    cfg['verify_role_id'] = str(role_id)
-                    cfg['verify_channel_id'] = str(channel_id)
-                    welcome_cog._save()
-                return {'success': True}
-
-            return {'error': 'Unknown method'}
-
-        future = asyncio.run_coroutine_threadsafe(_setup(), bot_instance.loop)
-        result = future.result(timeout=15)
-        if 'error' in result:
-            return jsonify(result), 400
-        return jsonify(result)
-    except Exception as e:
-        logger.error(f"Verification setup error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ===== REACTION ROLES API =====
-
-@app.route('/api/server/<server_id>/rr/panel', methods=['POST'])
-@require_auth
-def create_rr_panel(server_id):
-    """Create a reaction role panel"""
-    try:
-        data = request.json
-        title = data.get('title', 'Get Your Roles!')
-        description = data.get('description', 'React below to get your roles.')
-        channel_id = data.get('channel_id')
-        if not channel_id:
-            return jsonify({'error': 'Channel required'}), 400
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        async def _create():
-            channel = guild.get_channel(int(channel_id))
-            if not channel:
-                return {'error': 'Channel not found'}
-            embed = discord.Embed(title=title, description=description, color=0x7c3aed)
-            embed.set_footer(text="React below to get your roles!")
-            msg = await channel.send(embed=embed)
-            return {'success': True, 'message_id': str(msg.id)}
-
-        future = asyncio.run_coroutine_threadsafe(_create(), bot_instance.loop)
-        result = future.result(timeout=10)
-        if 'error' in result:
-            return jsonify(result), 400
-        return jsonify(result)
-    except Exception as e:
-        logger.error(f"RR panel error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/server/<server_id>/rr/add', methods=['POST'])
-@require_auth
-def add_reaction_role(server_id):
-    """Add a reaction role to a message"""
-    try:
-        data = request.json
-        message_id = data.get('message_id')
-        emoji = data.get('emoji')
-        role_id = data.get('role_id')
-        if not all([message_id, emoji, role_id]):
-            return jsonify({'error': 'message_id, emoji, and role_id required'}), 400
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        rr_cog = bot_instance.get_cog('ReactionRoles')
-        if not rr_cog:
-            return jsonify({'error': 'ReactionRoles cog not loaded'}), 503
-
-        gid = str(server_id)
-        if gid not in rr_cog.data:
-            rr_cog.data[gid] = {}
-        if message_id not in rr_cog.data[gid]:
-            rr_cog.data[gid][message_id] = {}
-        rr_cog.data[gid][message_id][emoji] = int(role_id)
-        rr_cog._save()
-
-        async def _add_reaction():
-            for ch in guild.text_channels:
-                try:
-                    msg = await ch.fetch_message(int(message_id))
-                    await msg.add_reaction(emoji)
-                    return {'success': True}
-                except Exception:
-                    continue
-            return {'success': True, 'warning': 'Could not add reaction — message not found in text channels'}
-
-        future = asyncio.run_coroutine_threadsafe(_add_reaction(), bot_instance.loop)
-        result = future.result(timeout=10)
-        return jsonify(result)
-    except Exception as e:
-        logger.error(f"RR add error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ===== AUTO RESPONDER API =====
-
-@app.route('/api/server/<server_id>/ar/add', methods=['POST'])
-@require_auth
-def ar_add(server_id):
-    """Add an auto-response trigger"""
-    try:
-        data = request.json
-        trigger = data.get('trigger', '').strip()
-        response = data.get('response', '').strip()
-        exact = data.get('exact', False)
-        if not trigger or not response:
-            return jsonify({'error': 'trigger and response required'}), 400
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-
-        ar_cog = bot_instance.get_cog('AutoResponder')
-        if not ar_cog:
-            return jsonify({'error': 'AutoResponder cog not loaded'}), 503
-
-        rules = ar_cog._guild(int(server_id))
-        if any(r['trigger'].lower() == trigger.lower() for r in rules):
-            return jsonify({'error': f'Trigger "{trigger}" already exists'}), 400
-        rules.append({'trigger': trigger, 'response': response, 'exact': exact, 'enabled': True})
-        ar_cog._save()
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"AR add error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/server/<server_id>/ar/remove', methods=['POST'])
-@require_auth
-def ar_remove(server_id):
-    """Remove an auto-response trigger"""
-    try:
-        trigger = request.json.get('trigger', '').strip()
-        if not trigger:
-            return jsonify({'error': 'trigger required'}), 400
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-
-        ar_cog = bot_instance.get_cog('AutoResponder')
-        if not ar_cog:
-            return jsonify({'error': 'AutoResponder cog not loaded'}), 503
-
-        gid = str(server_id)
-        before = len(ar_cog.data.get(gid, []))
-        ar_cog.data[gid] = [r for r in ar_cog.data.get(gid, []) if r['trigger'].lower() != trigger.lower()]
-        ar_cog._save()
-        if len(ar_cog.data.get(gid, [])) < before:
-            return jsonify({'success': True})
-        return jsonify({'error': 'Trigger not found'}), 404
-    except Exception as e:
-        logger.error(f"AR remove error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/server/<server_id>/ar/list')
-@require_auth
-def ar_list(server_id):
-    """List auto-response triggers"""
-    try:
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        ar_cog = bot_instance.get_cog('AutoResponder')
-        if not ar_cog:
-            return jsonify({'error': 'AutoResponder cog not loaded'}), 503
-        rules = ar_cog.data.get(str(server_id), [])
-        return jsonify({'rules': rules, 'total': len(rules)})
-    except Exception as e:
-        logger.error(f"AR list error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ===== XP / LEVELING API =====
-
-@app.route('/api/server/<server_id>/xp/leaderboard')
-@require_auth
-def xp_leaderboard(server_id):
-    """Get XP leaderboard for a server"""
-    try:
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        lvl_cog = bot_instance.get_cog('Leveling')
-        if not lvl_cog:
-            return jsonify({'error': 'Leveling cog not loaded'}), 503
-
-        from cogs.leveling import _xp_progress
-        g = lvl_cog._guild(int(server_id))
-        users = g.get('users', {})
-        entries = []
-        for uid, data in users.items():
-            member = guild.get_member(int(uid))
-            level, cur_xp, needed = _xp_progress(data.get('xp', 0))
-            entries.append({
-                'user_id': uid,
-                'name': member.display_name if member else f'User {uid}',
-                'avatar': str(member.display_avatar.url) if member else None,
-                'level': level,
-                'xp': data.get('xp', 0),
-                'messages': data.get('messages', 0),
-                'cur_xp': cur_xp,
-                'needed': needed
-            })
-        entries.sort(key=lambda x: x['xp'], reverse=True)
-        return jsonify({'leaderboard': entries[:20], 'total': len(entries)})
-    except Exception as e:
-        logger.error(f"XP leaderboard error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/server/<server_id>/xp/config', methods=['POST'])
-@require_auth
-def xp_config(server_id):
-    """Update XP config"""
-    try:
-        data = request.json
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-
-        lvl_cog = bot_instance.get_cog('Leveling')
-        if not lvl_cog:
-            return jsonify({'error': 'Leveling cog not loaded'}), 503
-
-        g = lvl_cog._guild(int(server_id))
-        if data.get('channel_id'):
-            g['config']['announce_channel'] = int(data['channel_id'])
-        if data.get('multiplier'):
-            g['config']['xp_multiplier'] = float(data['multiplier'])
-        lvl_cog._save()
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"XP config error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/server/<server_id>/xp/level-role', methods=['POST'])
-@require_auth
-def xp_level_role(server_id):
-    """Set a role for a specific level"""
-    try:
-        data = request.json
-        level = data.get('level')
-        role_id = data.get('role_id')
-        if not level or not role_id:
-            return jsonify({'error': 'level and role_id required'}), 400
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-
-        lvl_cog = bot_instance.get_cog('Leveling')
-        if not lvl_cog:
-            return jsonify({'error': 'Leveling cog not loaded'}), 503
-
-        g = lvl_cog._guild(int(server_id))
-        g['config']['level_roles'][str(level)] = int(role_id)
-        lvl_cog._save()
-        return jsonify({'success': True})
-    except Exception as e:
-        logger.error(f"XP level role error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-# ===== ANALYTICS API =====
-
-@app.route('/api/server/<server_id>/analytics')
-@require_auth
-def server_analytics(server_id):
-    """Get server analytics"""
-    try:
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        guild = bot_instance.get_guild(int(server_id))
-        if not guild:
-            return jsonify({'error': 'Server not found'}), 404
-
-        cached_members = guild.members
-        online = len([m for m in cached_members if m.status != discord.Status.offline])
-        bots = len([m for m in cached_members if m.bot])
-
-        # Try to get message stats from analytics cog
-        analytics_cog = bot_instance.get_cog('Analytics')
-        messages_today = 0
-        joins_today = 0
-        top_channels = []
-        if analytics_cog and hasattr(analytics_cog, 'data'):
-            gdata = analytics_cog.data.get(str(server_id), {})
-            messages_today = gdata.get('messages_today', 0)
-            joins_today = gdata.get('joins_today', 0)
-            ch_data = gdata.get('channels', {})
-            top_channels = sorted(
-                [{'id': k, 'name': guild.get_channel(int(k)).name if guild.get_channel(int(k)) else k, 'messages': v}
-                 for k, v in ch_data.items()],
-                key=lambda x: x['messages'], reverse=True
-            )[:5]
-
-        return jsonify({
-            'members': guild.member_count,
-            'online': online,
-            'bots': bots,
-            'humans': guild.member_count - bots,
-            'messages_today': messages_today,
-            'joins_today': joins_today,
-            'boost_level': guild.premium_tier,
-            'boost_count': guild.premium_subscription_count or 0,
-            'channels': len(guild.channels),
-            'roles': len(guild.roles),
-            'top_channels': top_channels,
-            'timestamp': datetime.utcnow().isoformat()
-        })
-    except Exception as e:
-        logger.error(f"Analytics error: {e}")
-        return jsonify({'error': str(e)}), 500
