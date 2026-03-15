@@ -56,31 +56,33 @@ class GamingBot(commands.Bot):
             logger.critical(f"❌ Failed to initialize database: {e}")
             raise
         
-        # Load cogs (Essential only - Discord has 100 command limit)
+        # Load cogs — Discord hard limit is 100 slash commands
         cogs = [
-            'cogs.admin',         # 8 commands - Essential for bot management
-            'cogs.moderation',    # 8 commands - Essential for server moderation
-            'cogs.utility',       # 8 commands - Essential utilities
-            'cogs.logging',       # 0 commands - Background logging
-            'cogs.fun',           # 5 commands - Basic fun commands
-            'cogs.economy',       # 9 commands - Economy system
-            'cogs.social',        # 7 commands - Social features
-            'cogs.roles',         # 17 commands - Role management
-            'cogs.badges',        # 5 commands - Badge system
-            'cogs.automod',       # 4 commands - Auto moderation
-            'cogs.tickets',       # 4 commands - Ticket system
-            'cogs.suggestions',   # 1 command - Suggestions
-            'cogs.birthdays',     # 5 commands - Birthday tracking
-            'cogs.webdashboard',  # 3 commands - Web Dashboard (CRITICAL)
-            'cogs.leaderboard',   # 2 commands - Real activity leaderboard
-            'cogs.roblox',        # 6 commands - Roblox Integration (CRITICAL)
-            'cogs.music',         # 16 commands - Music (24/7, autoplay, playlist, search)
-            'cogs.translation',   # 2 commands + 1 context menu - Translation
-            # Total: ~91 commands (under 100 limit)
-            # Disabled to stay under limit: games(7), minigames(6), ai(9),
-            # server(7), advanced(5), customcmds(5), automation(4), rewards(4),
-            # tempvoice(5), starboard(3), voicestats(3), bump(3), dashboard(3),
-            # gaming(3), youtube(3)
+            'cogs.admin',           # ~6 commands
+            'cogs.moderation',      # ~6 commands
+            'cogs.utility',         # ~5 commands
+            'cogs.logging',         # 0 commands (background)
+            'cogs.fun',             # ~4 commands
+            'cogs.economy',         # ~7 commands
+            'cogs.social',          # ~5 commands
+            'cogs.roles',           # ~8 commands
+            'cogs.badges',          # ~4 commands
+            'cogs.automod',         # ~3 commands
+            'cogs.tickets',         # ~3 commands
+            'cogs.suggestions',     # 1 command
+            'cogs.birthdays',       # ~4 commands
+            'cogs.webdashboard',    # 3 commands (CRITICAL)
+            'cogs.leaderboard',     # 2 commands
+            'cogs.roblox',          # ~5 commands (CRITICAL)
+            'cogs.music',           # ~14 commands
+            'cogs.translation',     # 2 commands
+            # ── NEW power cogs ──────────────────────────────────────────
+            'cogs.leveling',        # 5 commands  (XP/levels — replaces MEE6)
+            'cogs.reactionroles',   # 4 commands  (reaction roles — replaces Carl-bot)
+            'cogs.welcome',         # 4 commands  (welcome/goodbye/autorole)
+            'cogs.autoresponder',   # 3 commands  (auto-reply to keywords — replaces Dyno)
+            'cogs.analytics',       # 2 commands  (server stats — replaces Statbot)
+            # Total ≈ 99 commands — just under the 100 limit
         ]
         
         self.cog_errors = {}  # store load errors for /api/health
