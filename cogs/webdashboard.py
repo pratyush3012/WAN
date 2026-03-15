@@ -157,53 +157,6 @@ class WebDashboardCog(commands.Cog):
         # Log access
         print(f"🌐 Dashboard access granted to {interaction.user} ({role}) in {interaction.guild.name}")
     
-    @app_commands.command(name="web-admin", description="🔧 Admin dashboard with full control")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def web_admin(self, interaction: discord.Interaction):
-        """Open admin dashboard with full permissions"""
-        
-        # Generate admin token
-        token = self.generate_access_token(
-            interaction.user.id,
-            interaction.guild.id,
-            'admin'
-        )
-        
-        dashboard_url = f"{self.dashboard_url}/admin?token={token}"
-        
-        embed = discord.Embed(
-            title="🔧 Admin Dashboard",
-            description="**Full administrative control panel**",
-            color=discord.Color.red()
-        )
-        
-        embed.add_field(
-            name="⚡ Admin Features",
-            value=(
-                "```\n"
-                "• Complete server control\n"
-                "• Advanced analytics\n"
-                "• Security management\n"
-                "• Bot configuration\n"
-                "• Database access\n"
-                "• System monitoring\n"
-                "• Backup & restore\n"
-                "• Debug tools\n"
-                "```"
-            ),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🔗 Admin Panel",
-            value=f"[Open Admin Dashboard]({dashboard_url})",
-            inline=False
-        )
-        
-        embed.set_footer(text="⚠️ Admin access - Use responsibly")
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    
     @app_commands.command(name="backend", description="🖥️ Open the bot dashboard in your browser")
     async def backend(self, interaction: discord.Interaction):
         """Send a clickable link to the dashboard"""
@@ -222,52 +175,7 @@ class WebDashboardCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="web-status", description="📊 Check dashboard status and your access")
-    async def web_status(self, interaction: discord.Interaction):
-        """Check dashboard status"""
-        
-        role = self.get_user_role(interaction.user)
-        
-        # Count active tokens for this user
-        user_tokens = sum(1 for t in self.access_tokens.values() 
-                         if t['user_id'] == interaction.user.id and t['expires'] > datetime.utcnow())
-        
-        embed = discord.Embed(
-            title="📊 Dashboard Status",
-            color=discord.Color.green()
-        )
-        
-        embed.add_field(
-            name="🌐 Dashboard",
-            value="```✅ Online & Ready```",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="🎭 Your Role",
-            value=f"```{role.title()}```",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="🔑 Active Sessions",
-            value=f"```{user_tokens}```",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="📍 Dashboard URL",
-            value=f"```{self.dashboard_url}```",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="💡 Quick Access",
-            value="Use `/web` to open the dashboard instantly!",
-            inline=False
-        )
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    # web-status removed to stay under 100 command limit
     
     async def verify_token(self, token: str) -> dict:
         """Verify access token and return user info"""

@@ -217,34 +217,7 @@ class Birthdays(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="birthday-today", description="Check today's birthdays")
-    @is_member()
-    async def today_birthdays(self, interaction: discord.Interaction):
-        """Check today's birthdays"""
-        
-        guild_id = interaction.guild.id
-        today = date.today()
-        
-        birthday_members = []
-        for user_id, birthday in self.birthdays[guild_id].items():
-            if birthday.month == today.month and birthday.day == today.day:
-                member = interaction.guild.get_member(user_id)
-                if member:
-                    birthday_members.append(member)
-        
-        if not birthday_members:
-            return await interaction.response.send_message(
-                "🎂 No birthdays today!",
-                ephemeral=True
-            )
-        
-        embed = discord.Embed(
-            title="🎂 Today's Birthdays!",
-            description="\n".join(f"🎉 {m.mention}" for m in birthday_members),
-            color=discord.Color.gold()
-        )
-        
-        await interaction.response.send_message(embed=embed)
+    # birthday-today removed — use /birthday-list instead
 
 async def setup(bot):
     await bot.add_cog(Birthdays(bot))

@@ -406,70 +406,7 @@ class Economy(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="leaderboard-coins", description="[Member] View the richest users")
-    @is_member()
-    async def leaderboard_coins(self, interaction: discord.Interaction):
-            """Display economy leaderboard with beautiful visuals"""
-            from utils.visuals import AnimatedEmbed, Emojis
-
-            # Placeholder leaderboard (in production, fetch from database)
-            top_users = [
-                (interaction.guild.members[i % len(interaction.guild.members)], random.randint(1000, 50000))
-                for i in range(min(10, len(interaction.guild.members)))
-            ]
-            top_users.sort(key=lambda x: x[1], reverse=True)
-
-            # Convert to format expected by AnimatedEmbed
-            entries = [(member.id, balance) for member, balance in top_users]
-
-            # Create beautiful leaderboard
-            embed = AnimatedEmbed.create_leaderboard(
-                "💰 Richest Users",
-                entries,
-                interaction.guild,
-                "The wealthiest members of the server!"
-            )
-
-            # Add extra info
-            total_wealth = sum(balance for _, balance in top_users)
-            embed.add_field(
-                name=f"{Emojis.CHART} Server Economy",
-                value=f"```Total Wealth: {total_wealth:,} coins\nAverage: {total_wealth // len(top_users):,} coins```",
-                inline=False
-            )
-
-            embed.set_footer(text="💡 Use /daily and /work to climb the leaderboard!")
-
-            await interaction.response.send_message(embed=embed)
-    
-    @app_commands.command(name="gamble", description="[Member] Gamble your coins (risky!)")
-    @is_member()
-    async def gamble(self, interaction: discord.Interaction, amount: int):
-        """Gamble coins"""
-        if amount < 10:
-            return await interaction.response.send_message(
-                embed=EmbedFactory.error("Invalid Amount", "Minimum bet is 10 coins!"),
-                ephemeral=True
-            )
-        
-        # 45% chance to win, 55% chance to lose
-        won = random.random() < 0.45
-        
-        if won:
-            winnings = int(amount * random.uniform(1.5, 2.5))
-            embed = EmbedFactory.success(
-                "🎰 You Won!",
-                f"You bet **{amount} 🪙** and won **{winnings} 🪙**!\nProfit: **+{winnings - amount} 🪙**"
-            )
-            embed.color = discord.Color.green()
-        else:
-            embed = EmbedFactory.error(
-                "🎰 You Lost!",
-                f"You bet **{amount} 🪙** and lost it all!\nLoss: **-{amount} 🪙**"
-            )
-            embed.color = discord.Color.red()
-        
-        await interaction.response.send_message(embed=embed)
+    # leaderboard-coins and gamble removed to stay under 100 command limit
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))

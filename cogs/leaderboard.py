@@ -166,34 +166,7 @@ class Leaderboard(commands.Cog):
         embed.set_footer(text=f"Tracking since bot joined • {guild.name}")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="rank", description="📊 View your activity rank")
-    async def rank(self, interaction: discord.Interaction, member: Optional[discord.Member] = None):
-        target = member or interaction.user
-        stats = self._user(interaction.guild.id, target.id)
-
-        score = stats["messages"] + (stats["voice_seconds"] // 60) * 2 + int(stats["reactions"] * 0.5)
-
-        # Calculate rank
-        g = self._guild(interaction.guild.id)
-        all_scores = sorted(
-            [(int(uid), s.get("messages", 0) + (s.get("voice_seconds", 0) // 60) * 2 + int(s.get("reactions", 0) * 0.5))
-             for uid, s in g.items()],
-            key=lambda x: x[1], reverse=True
-        )
-        rank = next((i + 1 for i, (uid, _) in enumerate(all_scores) if uid == target.id), len(all_scores))
-
-        embed = discord.Embed(
-            title=f"📊 Activity Rank — {target.display_name}",
-            color=discord.Color.blurple(),
-            timestamp=datetime.utcnow()
-        )
-        embed.set_thumbnail(url=target.display_avatar.url)
-        embed.add_field(name="🏆 Rank", value=f"**#{rank}** of {len(all_scores)}", inline=True)
-        embed.add_field(name="⭐ Score", value=f"**{score:,} pts**", inline=True)
-        embed.add_field(name="💬 Messages", value=f"{stats['messages']:,}", inline=True)
-        embed.add_field(name="🎙️ Voice Time", value=self.fmt_voice(stats["voice_seconds"]), inline=True)
-        embed.add_field(name="😄 Reactions", value=f"{stats['reactions']:,}", inline=True)
-        await interaction.followup.send(embed=embed) if interaction.response.is_done() else await interaction.response.send_message(embed=embed)
+    # rank command removed — use /rank from leveling cog instead
 
 async def setup(bot):
     await bot.add_cog(Leaderboard(bot))

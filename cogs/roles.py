@@ -21,32 +21,7 @@ class RoleCommands(commands.Cog):
     # ==================== MODERATOR COMMANDS ====================
     # Moderation and management tools
     
-    @app_commands.command(name="mod-announce", description="[Moderator] Make an announcement")
-    @is_moderator()
-    async def mod_announce(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel,
-        title: str,
-        message: str,
-        ping_everyone: bool = False
-    ):
-        """Create an announcement"""
-        embed = discord.Embed(
-            title=f"📢 {title}",
-            description=message,
-            color=discord.Color.blue(),
-            timestamp=discord.utils.utcnow()
-        )
-        embed.set_footer(text=f"Announced by {interaction.user.display_name}")
-        
-        content = "@everyone" if ping_everyone else None
-        await channel.send(content=content, embed=embed)
-        
-        await interaction.response.send_message(
-            embed=EmbedFactory.success("Announcement Sent", f"Sent to {channel.mention}"),
-            ephemeral=True
-        )
+    # mod-announce removed — use /announce from dashboard or cogs/announce
     
     @app_commands.command(name="slowmode", description="[Moderator] Set channel slowmode")
     @is_moderator()
@@ -101,29 +76,7 @@ class RoleCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="modstats", description="[Moderator] View moderation statistics")
-    @is_moderator()
-    async def modstats(self, interaction: discord.Interaction):
-        """Display moderation statistics"""
-        embed = discord.Embed(
-            title="📊 Moderation Statistics",
-            color=discord.Color.blue()
-        )
-        
-        # Placeholder stats
-        embed.add_field(name="Total Actions", value="1,234", inline=True)
-        embed.add_field(name="This Week", value="56", inline=True)
-        embed.add_field(name="Today", value="8", inline=True)
-        
-        embed.add_field(name="Kicks", value="45", inline=True)
-        embed.add_field(name="Bans", value="23", inline=True)
-        embed.add_field(name="Timeouts", value="89", inline=True)
-        
-        embed.add_field(name="Warnings", value="234", inline=True)
-        embed.add_field(name="Messages Deleted", value="567", inline=True)
-        embed.add_field(name="Active Mutes", value="3", inline=True)
-        
-        await interaction.response.send_message(embed=embed)
+    # modstats removed — use dashboard analytics instead
     
     # ==================== ADMIN COMMANDS ====================
     # Server configuration and management
@@ -168,44 +121,9 @@ class RoleCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="backup", description="[Admin] Create server backup")
-    @is_admin()
-    async def backup(self, interaction: discord.Interaction):
-        """Create a server backup"""
-        await interaction.response.defer(ephemeral=True)
-        
-        embed = EmbedFactory.success(
-            "🗄️ Backup Created",
-            f"Server backup created successfully!\n\n**Includes:**\n• Roles\n• Channels\n• Settings\n• Permissions"
-        )
-        embed.add_field(name="Backup ID", value=f"`{interaction.guild.id}-{int(discord.utils.utcnow().timestamp())}`")
-        embed.set_footer(text="Backups are stored securely")
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
+    # backup removed — placeholder only, no real functionality
     
-    @app_commands.command(name="audit", description="[Admin] View audit log")
-    @is_admin()
-    async def audit(self, interaction: discord.Interaction, limit: int = 10):
-        """View recent audit log entries"""
-        await interaction.response.defer()
-        
-        embed = discord.Embed(
-            title="📋 Audit Log",
-            description=f"Last {limit} actions",
-            color=discord.Color.blue()
-        )
-        
-        try:
-            async for entry in interaction.guild.audit_logs(limit=limit):
-                embed.add_field(
-                    name=f"{entry.action.name}",
-                    value=f"**User:** {entry.user.mention}\n**Target:** {entry.target}\n**Time:** <t:{int(entry.created_at.timestamp())}:R>",
-                    inline=False
-                )
-        except discord.Forbidden:
-            embed.description = "❌ Missing permissions to view audit log"
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
+    # audit removed — use dashboard audit log instead
     
     # ==================== OWNER COMMANDS ====================
     # Bot management and control
@@ -220,71 +138,11 @@ class RoleCommands(commands.Cog):
         logger.info(f"Bot shutdown initiated by {interaction.user}")
         await self.bot.close()
     
-    @app_commands.command(name="reload-cog", description="[Owner] Reload a cog")
-    @is_owner()
-    async def reload_cog(self, interaction: discord.Interaction, cog: str):
-        """Reload a cog"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            await self.bot.reload_extension(f'cogs.{cog}')
-            embed = EmbedFactory.success("✅ Cog Reloaded", f"Successfully reloaded **{cog}**")
-        except Exception as e:
-            embed = EmbedFactory.error("❌ Reload Failed", f"Error: {str(e)}")
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
+    # reload-cog removed — use /reload in admin.py instead
     
-    @app_commands.command(name="eval", description="[Owner] Evaluate Python code")
-    @is_owner()
-    async def eval_code(self, interaction: discord.Interaction, code: str):
-        """Evaluate Python code (DANGEROUS - Owner only)"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            result = eval(code)
-            embed = EmbedFactory.success(
-                "✅ Evaluation Result",
-                f"**Code:**\n```py\n{code}\n```\n**Result:**\n```py\n{result}\n```"
-            )
-        except Exception as e:
-            embed = EmbedFactory.error(
-                "❌ Evaluation Error",
-                f"**Code:**\n```py\n{code}\n```\n**Error:**\n```py\n{str(e)}\n```"
-            )
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
+    # eval removed — security risk
     
-    @app_commands.command(name="permissions", description="View your permission level")
-    async def permissions(self, interaction: discord.Interaction):
-        """Check your permission level"""
-        level = get_permission_level(interaction.user)
-        level_name = get_permission_name(level)
-        
-        embed = discord.Embed(
-            title="🔐 Your Permissions",
-            color=discord.Color.blue()
-        )
-        
-        embed.add_field(name="Permission Level", value=f"**{level_name}**", inline=True)
-        embed.add_field(name="Level Number", value=f"**{level}/4**", inline=True)
-        
-        # Show available command categories
-        categories = {
-            PermissionLevel.GUEST: ["Info", "Rules", "Welcome"],
-            PermissionLevel.MEMBER: ["All Guest + Fun", "Utility", "Economy", "Gaming"],
-            PermissionLevel.MODERATOR: ["All Member + Moderation", "Announcements", "User Management"],
-            PermissionLevel.ADMIN: ["All Moderator + Server Config", "Role Management", "Backups"],
-            PermissionLevel.OWNER: ["All Admin + Bot Control", "Shutdown", "Reload", "Eval"]
-        }
-        
-        available = categories.get(level, [])
-        embed.add_field(
-            name="Available Commands",
-            value="\n".join(f"• {cat}" for cat in available),
-            inline=False
-        )
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    # permissions removed — low value, covered by Discord's own UI
 
 async def setup(bot):
     await bot.add_cog(RoleCommands(bot))

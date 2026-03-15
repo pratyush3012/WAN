@@ -115,48 +115,7 @@ class Admin(commands.Cog):
                 ephemeral=True
             )
     
-    @app_commands.command(name="sync-commands", description="Fix duplicate commands by clearing guild-specific syncs (Owner only)")
-    @is_owner()
-    async def sync_commands(self, interaction: discord.Interaction):
-        """Clear guild-specific commands and sync globally only"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            # Clear guild-specific commands for all guilds
-            cleared_guilds = []
-            for guild in self.bot.guilds:
-                try:
-                    self.bot.tree.clear_commands(guild=guild)
-                    await self.bot.tree.sync(guild=guild)
-                    cleared_guilds.append(guild.name)
-                except Exception as e:
-                    pass
-            
-            # Sync globally
-            synced = await self.bot.tree.sync()
-            
-            embed = discord.Embed(
-                title="✅ Commands Synced",
-                description=f"Successfully cleared duplicate commands and synced {len(synced)} commands globally.",
-                color=discord.Color.green()
-            )
-            embed.add_field(
-                name="Cleared Guild Commands",
-                value=f"Removed duplicates from {len(cleared_guilds)} guilds",
-                inline=False
-            )
-            embed.add_field(
-                name="⚠️ Note",
-                value="Global commands may take up to 1 hour to appear. Restart Discord if you still see duplicates.",
-                inline=False
-            )
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(
-                embed=EmbedFactory.error("Sync Failed", f"Error: {str(e)}"),
-                ephemeral=True
-            )
+    # sync-commands removed — use /reload instead
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))
