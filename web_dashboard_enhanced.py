@@ -1086,3 +1086,461 @@ def get_server_members(server_id):
     except Exception as e:
         logger.error(f"Error getting members: {e}")
         return jsonify({'error': 'Failed to get members'}), 500
+
+
+# ===== WELCOME / GOODBYE / PROMOTION / AUTOROLE API =====
+
+@app.route('/api/server/<server_id>/welcome', methods=['POST'])
+@require_auth
+def save_welcome_config(server_id):
+    """Save welcome/goodbye/promo/autorole config"""
+    try:
+        data = request.json
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        welcome_cog = bot_instance.get_cog('Welcome')
+        if not welcome_cog:
+            return jsonify({'error': 'Welcome cog not loaded'}), 503
+
+        cfg = welcome_cog._guild(int(server_id))
+        cfg.update({k: v for k, v in data.items() if v is not None and v != ''})
+        welcome_cog._save()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Welcome config error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/welcome/test', methods=['POST'])
+@require_auth
+def test_welcome_message(server_id):
+    """Send a test welcome/goodbye message"""
+    try:
+        msg_type = request.json.get('type', 'join')
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        welcome_cog = bot_instance.get_cog('Welcome')
+        if not welcome_cog:
+            return jsonify({'error': 'Welcome cog not loaded'}), 503
+
+        event_map = {'join': 'welcome', 'leave': 'goodbye'}
+        event = event_map.get(msg_type, 'welcome')
+        member = guild.me
+
+        async def _test():
+            await welcome_cog._send_embed(member, welcome_cog._guild(int(server_id)), event)
+
+        future = asyncio.run_coroutine_threadsafe(_test(), bot_instance.loop)
+        future.result(timeout=10)
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Welcome test error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== VERIFICATION API =====
+
+@app.route('/api/server/<server_id>/verification', methods=['POST'])
+@require_auth
+def save_verification(server_id):
+    """Save verification config and post verification message"""
+    try:
+        data = request.json
+        method = data.get('method', 'none')
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        if method == 'none':
+            return jsonify({'success': True, 'message': 'Verification disabled'})
+
+        channel_id = data.get('channel_id')
+        role_id = data.get('role_id')
+        if not channel_id or not role_id:
+            return jsonify({'error': 'Channel and role required'}), 400
+
+        async def _setup():
+            channel = guild.get_channel(int(channel_id))
+            role = guild.get_role(int(role_id))
+            if not channel:
+                return {'error': 'Channel not found'}
+            if not role:
+                return {'error': 'Role not found'}
+
+            if method == 'reaction':
+                msg_text = data.get('message', 'React with ✅ to verify!')
+                embed = discord.Embed(title="✅ Verification", description=msg_text, color=0x57f287)
+                embed.set_footer(text="React with ✅ below to verify yourself")
+                msg = await channel.send(embed=embed)
+                await msg.add_reaction('✅')
+                # Store config in welcome cog if available
+                welcome_cog = bot_instance.get_cog('Welcome')
+                if welcome_cog:
+                    cfg = welcome_cog._guild(int(server_id))
+                    cfg['verify_message_id'] = str(msg.id)
+                    cfg['verify_role_id'] = str(role_id)
+                    cfg['verify_channel_id'] = str(channel_id)
+                    if data.get('unverify_role'):
+                        cfg['unverify_role_id'] = str(data['unverify_role'])
+                    welcome_cog._save()
+                return {'success': True, 'message_id': str(msg.id)}
+
+            elif method == 'button':
+                label = data.get('label', '✅ Verify Me')
+                msg_text = data.get('message', 'Click the button below to verify!')
+                embed = discord.Embed(title="🔐 Verification", description=msg_text, color=0x5865f2)
+
+                class VerifyButton(discord.ui.View):
+                    def __init__(self):
+                        super().__init__(timeout=None)
+                    @discord.ui.button(label=label, style=discord.ButtonStyle.success, custom_id=f'verify_{server_id}')
+                    async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
+                        r = interaction.guild.get_role(int(role_id))
+                        if r:
+                            await interaction.user.add_roles(r, reason="Button verification")
+                        await interaction.response.send_message("✅ You've been verified!", ephemeral=True)
+
+                msg = await channel.send(embed=embed, view=VerifyButton())
+                return {'success': True, 'message_id': str(msg.id)}
+
+            elif method == 'question':
+                question = data.get('question', 'What is the server rule #1?')
+                answer = data.get('answer', '').lower().strip()
+                embed = discord.Embed(title="❓ Verification Question", description=question, color=0xf59e0b)
+                embed.set_footer(text="Reply with your answer in this channel")
+                await channel.send(embed=embed)
+                # Store Q&A in welcome cog
+                welcome_cog = bot_instance.get_cog('Welcome')
+                if welcome_cog:
+                    cfg = welcome_cog._guild(int(server_id))
+                    cfg['verify_question'] = question
+                    cfg['verify_answer'] = answer
+                    cfg['verify_role_id'] = str(role_id)
+                    cfg['verify_channel_id'] = str(channel_id)
+                    welcome_cog._save()
+                return {'success': True}
+
+            return {'error': 'Unknown method'}
+
+        future = asyncio.run_coroutine_threadsafe(_setup(), bot_instance.loop)
+        result = future.result(timeout=15)
+        if 'error' in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Verification setup error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== REACTION ROLES API =====
+
+@app.route('/api/server/<server_id>/rr/panel', methods=['POST'])
+@require_auth
+def create_rr_panel(server_id):
+    """Create a reaction role panel"""
+    try:
+        data = request.json
+        title = data.get('title', 'Get Your Roles!')
+        description = data.get('description', 'React below to get your roles.')
+        channel_id = data.get('channel_id')
+        if not channel_id:
+            return jsonify({'error': 'Channel required'}), 400
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        async def _create():
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                return {'error': 'Channel not found'}
+            embed = discord.Embed(title=title, description=description, color=0x7c3aed)
+            embed.set_footer(text="React below to get your roles!")
+            msg = await channel.send(embed=embed)
+            return {'success': True, 'message_id': str(msg.id)}
+
+        future = asyncio.run_coroutine_threadsafe(_create(), bot_instance.loop)
+        result = future.result(timeout=10)
+        if 'error' in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"RR panel error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/rr/add', methods=['POST'])
+@require_auth
+def add_reaction_role(server_id):
+    """Add a reaction role to a message"""
+    try:
+        data = request.json
+        message_id = data.get('message_id')
+        emoji = data.get('emoji')
+        role_id = data.get('role_id')
+        if not all([message_id, emoji, role_id]):
+            return jsonify({'error': 'message_id, emoji, and role_id required'}), 400
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        rr_cog = bot_instance.get_cog('ReactionRoles')
+        if not rr_cog:
+            return jsonify({'error': 'ReactionRoles cog not loaded'}), 503
+
+        gid = str(server_id)
+        if gid not in rr_cog.data:
+            rr_cog.data[gid] = {}
+        if message_id not in rr_cog.data[gid]:
+            rr_cog.data[gid][message_id] = {}
+        rr_cog.data[gid][message_id][emoji] = int(role_id)
+        rr_cog._save()
+
+        async def _add_reaction():
+            for ch in guild.text_channels:
+                try:
+                    msg = await ch.fetch_message(int(message_id))
+                    await msg.add_reaction(emoji)
+                    return {'success': True}
+                except Exception:
+                    continue
+            return {'success': True, 'warning': 'Could not add reaction — message not found in text channels'}
+
+        future = asyncio.run_coroutine_threadsafe(_add_reaction(), bot_instance.loop)
+        result = future.result(timeout=10)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"RR add error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== AUTO RESPONDER API =====
+
+@app.route('/api/server/<server_id>/ar/add', methods=['POST'])
+@require_auth
+def ar_add(server_id):
+    """Add an auto-response trigger"""
+    try:
+        data = request.json
+        trigger = data.get('trigger', '').strip()
+        response = data.get('response', '').strip()
+        exact = data.get('exact', False)
+        if not trigger or not response:
+            return jsonify({'error': 'trigger and response required'}), 400
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        ar_cog = bot_instance.get_cog('AutoResponder')
+        if not ar_cog:
+            return jsonify({'error': 'AutoResponder cog not loaded'}), 503
+
+        rules = ar_cog._guild(int(server_id))
+        if any(r['trigger'].lower() == trigger.lower() for r in rules):
+            return jsonify({'error': f'Trigger "{trigger}" already exists'}), 400
+        rules.append({'trigger': trigger, 'response': response, 'exact': exact, 'enabled': True})
+        ar_cog._save()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"AR add error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/ar/remove', methods=['POST'])
+@require_auth
+def ar_remove(server_id):
+    """Remove an auto-response trigger"""
+    try:
+        trigger = request.json.get('trigger', '').strip()
+        if not trigger:
+            return jsonify({'error': 'trigger required'}), 400
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        ar_cog = bot_instance.get_cog('AutoResponder')
+        if not ar_cog:
+            return jsonify({'error': 'AutoResponder cog not loaded'}), 503
+
+        gid = str(server_id)
+        before = len(ar_cog.data.get(gid, []))
+        ar_cog.data[gid] = [r for r in ar_cog.data.get(gid, []) if r['trigger'].lower() != trigger.lower()]
+        ar_cog._save()
+        if len(ar_cog.data.get(gid, [])) < before:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Trigger not found'}), 404
+    except Exception as e:
+        logger.error(f"AR remove error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/ar/list')
+@require_auth
+def ar_list(server_id):
+    """List auto-response triggers"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        ar_cog = bot_instance.get_cog('AutoResponder')
+        if not ar_cog:
+            return jsonify({'error': 'AutoResponder cog not loaded'}), 503
+        rules = ar_cog.data.get(str(server_id), [])
+        return jsonify({'rules': rules, 'total': len(rules)})
+    except Exception as e:
+        logger.error(f"AR list error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== XP / LEVELING API =====
+
+@app.route('/api/server/<server_id>/xp/leaderboard')
+@require_auth
+def xp_leaderboard(server_id):
+    """Get XP leaderboard for a server"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        lvl_cog = bot_instance.get_cog('Leveling')
+        if not lvl_cog:
+            return jsonify({'error': 'Leveling cog not loaded'}), 503
+
+        from cogs.leveling import _xp_progress
+        g = lvl_cog._guild(int(server_id))
+        users = g.get('users', {})
+        entries = []
+        for uid, data in users.items():
+            member = guild.get_member(int(uid))
+            level, cur_xp, needed = _xp_progress(data.get('xp', 0))
+            entries.append({
+                'user_id': uid,
+                'name': member.display_name if member else f'User {uid}',
+                'avatar': str(member.display_avatar.url) if member else None,
+                'level': level,
+                'xp': data.get('xp', 0),
+                'messages': data.get('messages', 0),
+                'cur_xp': cur_xp,
+                'needed': needed
+            })
+        entries.sort(key=lambda x: x['xp'], reverse=True)
+        return jsonify({'leaderboard': entries[:20], 'total': len(entries)})
+    except Exception as e:
+        logger.error(f"XP leaderboard error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/xp/config', methods=['POST'])
+@require_auth
+def xp_config(server_id):
+    """Update XP config"""
+    try:
+        data = request.json
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        lvl_cog = bot_instance.get_cog('Leveling')
+        if not lvl_cog:
+            return jsonify({'error': 'Leveling cog not loaded'}), 503
+
+        g = lvl_cog._guild(int(server_id))
+        if data.get('channel_id'):
+            g['config']['announce_channel'] = int(data['channel_id'])
+        if data.get('multiplier'):
+            g['config']['xp_multiplier'] = float(data['multiplier'])
+        lvl_cog._save()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"XP config error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/xp/level-role', methods=['POST'])
+@require_auth
+def xp_level_role(server_id):
+    """Set a role for a specific level"""
+    try:
+        data = request.json
+        level = data.get('level')
+        role_id = data.get('role_id')
+        if not level or not role_id:
+            return jsonify({'error': 'level and role_id required'}), 400
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        lvl_cog = bot_instance.get_cog('Leveling')
+        if not lvl_cog:
+            return jsonify({'error': 'Leveling cog not loaded'}), 503
+
+        g = lvl_cog._guild(int(server_id))
+        g['config']['level_roles'][str(level)] = int(role_id)
+        lvl_cog._save()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"XP level role error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== ANALYTICS API =====
+
+@app.route('/api/server/<server_id>/analytics')
+@require_auth
+def server_analytics(server_id):
+    """Get server analytics"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        cached_members = guild.members
+        online = len([m for m in cached_members if m.status != discord.Status.offline])
+        bots = len([m for m in cached_members if m.bot])
+
+        # Try to get message stats from analytics cog
+        analytics_cog = bot_instance.get_cog('Analytics')
+        messages_today = 0
+        joins_today = 0
+        top_channels = []
+        if analytics_cog and hasattr(analytics_cog, 'data'):
+            gdata = analytics_cog.data.get(str(server_id), {})
+            messages_today = gdata.get('messages_today', 0)
+            joins_today = gdata.get('joins_today', 0)
+            ch_data = gdata.get('channels', {})
+            top_channels = sorted(
+                [{'id': k, 'name': guild.get_channel(int(k)).name if guild.get_channel(int(k)) else k, 'messages': v}
+                 for k, v in ch_data.items()],
+                key=lambda x: x['messages'], reverse=True
+            )[:5]
+
+        return jsonify({
+            'members': guild.member_count,
+            'online': online,
+            'bots': bots,
+            'humans': guild.member_count - bots,
+            'messages_today': messages_today,
+            'joins_today': joins_today,
+            'boost_level': guild.premium_tier,
+            'boost_count': guild.premium_subscription_count or 0,
+            'channels': len(guild.channels),
+            'roles': len(guild.roles),
+            'top_channels': top_channels,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Analytics error: {e}")
+        return jsonify({'error': str(e)}), 500

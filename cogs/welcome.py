@@ -87,6 +87,34 @@ class Welcome(commands.Cog):
         cfg = self._guild(member.guild.id)
         await self._send_embed(member, cfg, 'goodbye')
 
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        """Detect role promotions and send congrats message."""
+        cfg = self._guild(after.guild.id)
+        promo_channel_id = cfg.get('promo_channel')
+        promo_msg_template = cfg.get('promo_message', '🎉 Congratulations {user}! You\'ve been promoted to **{role}**! Well deserved! 🎊')
+        watched_raw = cfg.get('promo_roles', '')
+        if not promo_channel_id or not watched_raw:
+            return
+        watched = [r.strip().lower() for r in watched_raw.split(',') if r.strip()]
+        if not watched:
+            return
+        new_roles = [r for r in after.roles if r not in before.roles]
+        for role in new_roles:
+            if role.name.lower() in watched:
+                ch = after.guild.get_channel(int(promo_channel_id))
+                if not ch:
+                    return
+                msg = promo_msg_template.replace('{user}', after.mention).replace('{username}', after.display_name).replace('{role}', role.name).replace('{server}', after.guild.name)
+                embed = discord.Embed(description=msg, color=0xf59e0b)
+                embed.set_thumbnail(url=after.display_avatar.url)
+                embed.set_footer(text=f"{after.guild.name} • Promotion")
+                try:
+                    await ch.send(embed=embed)
+                except Exception as e:
+                    logger.warning(f"Promo congrats send error: {e}")
+                break  # only one congrats per update
+
     @app_commands.command(name="welcome-set", description="👋 Configure welcome messages")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_set(self, interaction: discord.Interaction,
