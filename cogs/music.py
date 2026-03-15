@@ -153,6 +153,54 @@ def _extract(query: str) -> dict | None:
     logger.warning(f"No results found for: '{query}'")
     return None
 
+
+def _extract_similar(seed_title: str, exclude_urls: set) -> dict | None:
+    """
+    Fetch 5 SoundCloud results for seed_title, return a random one
+    that hasn't been played yet. Falls back to YouTube if SC fails.
+    """
+    import re
+    # Clean the title — remove noise words
+    clean = re.sub(
+        r'\(.*?\)|\[.*?\]|official|video|lyrics|audio|hd|4k|ft\.?|feat\.?',
+        '', seed_title, flags=re.IGNORECASE
+    ).strip()
+    if not clean:
+        clean = seed_title
+
+    # Try SoundCloud with 5 results so we can pick a different one
+    for n in [5, 3, 1]:
+        try:
+            opts = {**YTDL_OPTS, 'noplaylist': False}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                data = ydl.extract_info(f"scsearch{n}:{clean}", download=False)
+            if data and 'entries' in data:
+                entries = [e for e in data['entries'] if e and e.get('url') and e.get('url') not in exclude_urls]
+                if entries:
+                    pick = random.choice(entries)
+                    logger.info(f"Similar (SC): '{pick.get('title')}' for seed '{clean}'")
+                    return pick
+        except Exception:
+            pass
+
+    # YouTube fallback — search 3 results
+    for clients in _YT_CLIENTS:
+        try:
+            opts = {**YTDL_OPTS, 'noplaylist': False,
+                    'extractor_args': {'youtube': {'player_client': clients}}}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                data = ydl.extract_info(f"ytsearch3:{clean}", download=False)
+            if data and 'entries' in data:
+                entries = [e for e in data['entries'] if e and e.get('url') and e.get('url') not in exclude_urls]
+                if entries:
+                    pick = random.choice(entries)
+                    logger.info(f"Similar (YT): '{pick.get('title')}' for seed '{clean}'")
+                    return pick
+        except Exception:
+            continue
+
+    return None
+
 def _fmt(seconds) -> str:
     if not seconds:
         return "?"
@@ -169,7 +217,8 @@ class MusicQueue:
         self.current = None
         self.loop = False
         self.loop_queue = False
-        self.history: deque = deque(maxlen=100)  # last 100 songs for autoplay seeds
+        self.history: deque = deque(maxlen=100)   # last 100 songs for autoplay seeds
+        self.played_urls: set = set()             # track played URLs to avoid repeats
 
     def add(self, song):
         self.queue.append(song)
@@ -179,6 +228,11 @@ class MusicQueue:
             return self.current
         if self.current:
             self.history.append(self.current)
+            if self.current.url:
+                self.played_urls.add(self.current.url)
+            # Keep played_urls from growing forever
+            if len(self.played_urls) > 200:
+                self.played_urls = set(list(self.played_urls)[-100:])
         if self.loop_queue and self.current:
             self.queue.append(self.current)
         if self.queue:
@@ -407,43 +461,60 @@ class Music(commands.Cog):
     async def _autoplay_next(self, guild: discord.Guild, _attempt: int = 0):
         """
         Pick a song similar to the last played and play it.
-        NEVER gives up — retries forever with backoff.
+        Never repeats the same song. Never gives up.
         """
         vc = guild.voice_client
         if not vc or not vc.is_connected():
             return
         if vc.is_playing() or vc.is_paused():
-            return  # already playing, nothing to do
+            return
 
         queue = self.get_queue(guild.id)
 
-        # Build seed: use last played title for "similar songs", else random genre
+        # Build seed from last played title
         if queue.history:
-            # Use the last played title — SoundCloud will find similar tracks
-            last_title = queue.history[-1].title
-            # Strip common noise from title for better search results
-            import re
-            seed = re.sub(r'\(.*?\)|\[.*?\]|official|video|lyrics|audio|hd|4k', '', last_title, flags=re.IGNORECASE).strip()
-            if not seed:
-                seed = random.choice(_AUTOPLAY_SEEDS)
+            seed_title = queue.history[-1].title
         else:
-            seed = random.choice(_AUTOPLAY_SEEDS)
+            seed_title = random.choice(_AUTOPLAY_SEEDS)
 
-        logger.info(f"Autoplay seed: '{seed}' (attempt {_attempt+1}) in {guild.name}")
+        logger.info(f"Autoplay: finding similar to '{seed_title}' (attempt {_attempt+1}) in {guild.name}")
 
         try:
             vol = self.get_volume(guild.id)
-            player = await YTDLSource.from_query(seed, loop=self.bot.loop, volume=vol)
-            player.requester = None  # marks as autoplay
+
+            # Use _extract_similar to get a different song each time
+            data = await asyncio.wait_for(
+                self.bot.loop.run_in_executor(
+                    None, lambda: _extract_similar(seed_title, queue.played_urls)
+                ),
+                timeout=60.0,
+            )
+
+            # If similar search failed, fall back to a random seed
+            if not data:
+                fallback_seed = random.choice(_AUTOPLAY_SEEDS)
+                logger.info(f"Autoplay: similar failed, trying seed '{fallback_seed}'")
+                data = await asyncio.wait_for(
+                    self.bot.loop.run_in_executor(
+                        None, lambda: _extract(fallback_seed)
+                    ),
+                    timeout=60.0,
+                )
+
+            if not data:
+                raise ValueError("No results from any source")
+
+            src = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTS)
+            player = YTDLSource(src, data=data, volume=vol)
+            player.requester = None  # autoplay
             queue.current = player
             self._start_playing(guild, player, queue)
             logger.info(f"Autoplay playing: '{player.title}' in {guild.name}")
+
         except Exception as e:
-            # Exponential backoff: 5s, 10s, 20s, 30s max — then keep retrying
             wait = min(5 * (2 ** min(_attempt, 3)), 30)
             logger.warning(f"Autoplay attempt {_attempt+1} failed ({e}), retry in {wait}s")
             await asyncio.sleep(wait)
-            # Use a fresh random seed after first failure so we don't keep hammering same query
             asyncio.run_coroutine_threadsafe(
                 self._autoplay_next(guild, _attempt + 1), self.bot.loop
             )
