@@ -21,23 +21,15 @@ logger = logging.getLogger('discord_bot.music')
 
 PERSIST_FILE = 'music_247.json'
 
-YTDL_OPTS = {
+YTDL_BASE = {
     'format': 'bestaudio/best',
-    'noplaylist': False,
     'nocheckcertificate': True,
-    'ignoreerrors': True,
+    'ignoreerrors': False,
     'quiet': True,
     'no_warnings': True,
     'source_address': '0.0.0.0',
-    'playlistend': 50,
-    # Bypass YouTube bot detection on cloud IPs
-    'extractor_args': {'youtube': {'player_client': ['web', 'android']}},
-    'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
+    'noplaylist': True,
 }
-
-YTDL_SINGLE = {**YTDL_OPTS, 'noplaylist': True}
 
 FFMPEG_OPTS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
@@ -52,16 +44,72 @@ AUTOPLAY_SEEDS = [
     "https://www.youtube.com/watch?v=OPf0YbXqDm0",
 ]
 
+# Player clients to try in order — android_embedded bypasses most bot detection
+_PLAYER_CLIENTS = [
+    ['android_embedded'],
+    ['android_music'],
+    ['mweb'],
+    ['web_embedded'],
+    ['ios'],
+]
+
 def _is_url(query: str) -> bool:
     return query.startswith(('http://', 'https://', 'www.'))
 
-def _ytdl_extract(query: str, single: bool = True) -> dict:
-    """Extract info. If query is not a URL, use ytsearch: prefix."""
-    if not _is_url(query):
-        query = f"ytsearch1:{query}" if single else f"ytsearch5:{query}"
-    opts = dict(YTDL_SINGLE if single else YTDL_OPTS)
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        return ydl.extract_info(query, download=False)
+def _clean_url(url: str) -> str:
+    """Strip playlist/radio params so yt-dlp treats it as a single video."""
+    import urllib.parse as up
+    p = up.urlparse(url)
+    qs = up.parse_qs(p.query)
+    # keep only 'v' param for youtube.com/watch URLs
+    if 'youtube.com/watch' in url and 'v' in qs:
+        clean_qs = up.urlencode({'v': qs['v'][0]})
+        return up.urlunparse(p._replace(query=clean_qs))
+    return url
+
+def _ytdl_extract_single(query: str) -> dict | None:
+    """Try multiple player clients until one works."""
+    if _is_url(query):
+        query = _clean_url(query)
+    else:
+        query = f"ytsearch1:{query}"
+
+    last_err = None
+    for clients in _PLAYER_CLIENTS:
+        opts = dict(YTDL_BASE)
+        opts['extractor_args'] = {'youtube': {'player_client': clients}}
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                data = ydl.extract_info(query, download=False)
+            if not data:
+                continue
+            # unwrap search results
+            if 'entries' in data:
+                entries = [e for e in data['entries'] if e and e.get('url')]
+                if entries:
+                    return entries[0]
+                continue
+            if data.get('url'):
+                return data
+        except Exception as e:
+            last_err = e
+            continue
+    logger.warning(f"All player clients failed for '{query}': {last_err}")
+    return None
+
+def _ytdl_extract_playlist(url: str) -> list:
+    """Extract playlist entries."""
+    opts = {**YTDL_BASE, 'noplaylist': False, 'playlistend': 50,
+            'extractor_args': {'youtube': {'player_client': ['android_embedded']}}}
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            data = ydl.extract_info(url, download=False)
+        if not data:
+            return []
+        return [e for e in data.get('entries', [data]) if e and e.get('url')]
+    except Exception as e:
+        logger.warning(f"Playlist extract failed: {e}")
+        return []
 
 
 def _fmt(seconds) -> str:
@@ -127,35 +175,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_query(cls, query: str, *, loop=None, volume=0.5):
         loop = loop or asyncio.get_event_loop()
-
-        def _extract():
-            # Try web+android client first, fall back to android_music
-            for client in (['web', 'android'], ['android_music'], ['ios']):
-                opts = dict(YTDL_SINGLE)
-                opts['extractor_args'] = {'youtube': {'player_client': client}}
-                q = query if _is_url(query) else f"ytsearch1:{query}"
-                try:
-                    with yt_dlp.YoutubeDL(opts) as ydl:
-                        data = ydl.extract_info(q, download=False)
-                    if data:
-                        return data
-                except Exception:
-                    continue
-            return None
-
         data = await asyncio.wait_for(
-            loop.run_in_executor(None, _extract),
-            timeout=45.0,
+            loop.run_in_executor(None, lambda: _ytdl_extract_single(query)),
+            timeout=60.0,
         )
         if not data:
             raise ValueError(f"No results found for: {query}")
-        if 'entries' in data:
-            entries = [e for e in data['entries'] if e and e.get('url')]
-            if not entries:
-                raise ValueError(f"No playable results for: {query}")
-            data = entries[0]
-        if not data.get('url'):
-            raise ValueError(f"Could not extract audio URL for: {query}")
         src = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTS)
         return cls(src, data=data, volume=volume)
 
@@ -163,30 +188,32 @@ class YTDLSource(discord.PCMVolumeTransformer):
     async def search_results(cls, query: str, *, loop=None):
         loop = loop or asyncio.get_event_loop()
         try:
-            data = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: _ytdl_extract(query, single=False)),
-                timeout=20.0,
-            )
+            def _search():
+                q = f"ytsearch5:{query}"
+                for clients in _PLAYER_CLIENTS:
+                    opts = {**YTDL_BASE, 'noplaylist': False,
+                            'extractor_args': {'youtube': {'player_client': clients}}}
+                    try:
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            data = ydl.extract_info(q, download=False)
+                        if data and 'entries' in data:
+                            return [e for e in data['entries'] if e][:5]
+                    except Exception:
+                        continue
+                return []
+            return await asyncio.wait_for(loop.run_in_executor(None, _search), timeout=30.0)
         except Exception:
             return []
-        entries = data.get('entries', [data]) if 'entries' in data else [data]
-        return [e for e in entries if e][:5]
 
     @classmethod
     async def from_playlist(cls, url: str, *, loop=None, volume=0.5):
-        """Return list of YTDLSource objects from a playlist URL (up to 50)."""
         loop = loop or asyncio.get_event_loop()
-        data = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: _ytdl_extract(url, single=False)),
-            timeout=60.0,
+        entries = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: _ytdl_extract_playlist(url)),
+            timeout=90.0,
         )
-        if not data:
-            return []
-        entries = data.get('entries', [data]) if 'entries' in data else [data]
         sources = []
         for entry in entries:
-            if not entry or not entry.get('url'):
-                continue
             try:
                 src = discord.FFmpegPCMAudio(entry['url'], **FFMPEG_OPTS)
                 sources.append(cls(src, data=entry, volume=volume))
@@ -364,7 +391,7 @@ class Music(commands.Cog):
         try:
             vol = self.get_volume(guild.id)
             player = await YTDLSource.from_query(
-                f"ytsearch:{seed} mix", loop=self.bot.loop, volume=vol
+                seed, loop=self.bot.loop, volume=vol
             )
             player.requester = None  # autoplay
             queue.current = player
