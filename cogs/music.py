@@ -31,6 +31,23 @@ YTDL_BASE = {
     'noplaylist': True,
 }
 
+# Add cookies file if it exists (needed for cloud IPs blocked by YouTube)
+_COOKIES_FILE = os.path.join(os.path.dirname(__file__), '..', 'youtube_cookies.txt')
+
+# Also support YOUTUBE_COOKIES env var — paste Netscape cookie file content there
+_COOKIES_ENV = os.getenv('YOUTUBE_COOKIES', '')
+if _COOKIES_ENV and not os.path.exists(_COOKIES_FILE):
+    try:
+        with open(_COOKIES_FILE, 'w') as _f:
+            _f.write(_COOKIES_ENV)
+        logger.info("YouTube cookies written from YOUTUBE_COOKIES env var")
+    except Exception as _e:
+        logger.warning(f"Could not write cookies from env: {_e}")
+
+if os.path.exists(_COOKIES_FILE):
+    YTDL_BASE['cookiefile'] = os.path.abspath(_COOKIES_FILE)
+    logger.info(f"YouTube cookies loaded: {_COOKIES_FILE}")
+
 FFMPEG_OPTS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
