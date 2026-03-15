@@ -291,20 +291,34 @@ class GamingBot(commands.Bot):
         logger.info(f'👥 Serving {sum(g.member_count for g in self.guilds)} members')
         
         try:
-            # Sync commands globally only (no guild-specific sync to avoid duplicates)
             synced = await self.tree.sync()
             logger.info(f'✅ Synced {len(synced)} slash commands globally')
             logger.info('⚠️ Note: Global commands may take up to 1 hour to appear in all servers')
         except Exception as e:
             logger.error(f'❌ Failed to sync commands: {e}')
         
-        # Set status
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
                 name="your community 🎮"
             )
         )
+
+        # Keep-alive: ping own health endpoint every 10 min so Render never sleeps
+        dashboard_url = os.getenv('DASHBOARD_URL', '').rstrip('/')
+        if dashboard_url:
+            async def _keep_alive():
+                import aiohttp
+                while not self.is_closed():
+                    try:
+                        async with aiohttp.ClientSession() as s:
+                            async with s.get(f"{dashboard_url}/api/health", timeout=aiohttp.ClientTimeout(total=10)) as r:
+                                logger.debug(f"Keep-alive ping: {r.status}")
+                    except Exception as e:
+                        logger.debug(f"Keep-alive ping failed: {e}")
+                    await asyncio.sleep(600)  # every 10 minutes
+            self.loop.create_task(_keep_alive())
+            logger.info(f"✅ Keep-alive pinger started → {dashboard_url}/api/health")
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Global error handler for slash commands"""
