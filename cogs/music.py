@@ -85,22 +85,25 @@ def _clean_url(url: str) -> str:
     return url
 
 def _ytdl_extract_single(query: str) -> dict | None:
-    """Try multiple player clients until one works."""
-    if _is_url(query):
+    """Try multiple player clients until one works. Falls back to SoundCloud."""
+    is_url = _is_url(query)
+    if is_url:
         query = _clean_url(query)
     else:
-        query = f"ytsearch1:{query}"
+        yt_query = f"ytsearch1:{query}"
 
     last_err = None
+
+    # --- Try YouTube first ---
+    search_query = query if is_url else yt_query
     for clients in _PLAYER_CLIENTS:
         opts = dict(YTDL_BASE)
         opts['extractor_args'] = {'youtube': {'player_client': clients}}
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                data = ydl.extract_info(query, download=False)
+                data = ydl.extract_info(search_query, download=False)
             if not data:
                 continue
-            # unwrap search results
             if 'entries' in data:
                 entries = [e for e in data['entries'] if e and e.get('url')]
                 if entries:
@@ -111,7 +114,27 @@ def _ytdl_extract_single(query: str) -> dict | None:
         except Exception as e:
             last_err = e
             continue
-    logger.warning(f"All player clients failed for '{query}': {last_err}")
+
+    # --- YouTube failed — try SoundCloud (works on cloud IPs) ---
+    if not is_url:
+        try:
+            sc_query = f"scsearch1:{query}"
+            sc_opts = {**YTDL_BASE, 'default_search': 'scsearch'}
+            with yt_dlp.YoutubeDL(sc_opts) as ydl:
+                data = ydl.extract_info(sc_query, download=False)
+            if data:
+                if 'entries' in data:
+                    entries = [e for e in data['entries'] if e and e.get('url')]
+                    if entries:
+                        logger.info(f"SoundCloud fallback succeeded for '{query}'")
+                        return entries[0]
+                elif data.get('url'):
+                    logger.info(f"SoundCloud fallback succeeded for '{query}'")
+                    return data
+        except Exception as sc_err:
+            logger.warning(f"SoundCloud fallback also failed for '{query}': {sc_err}")
+
+    logger.warning(f"All sources failed for '{query}': {last_err}")
     return None
 
 def _ytdl_extract_playlist(url: str) -> list:
@@ -206,6 +229,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         try:
             def _search():
+                # Try YouTube first
                 q = f"ytsearch5:{query}"
                 for clients in _PLAYER_CLIENTS:
                     opts = {**YTDL_BASE, 'noplaylist': False,
@@ -214,9 +238,20 @@ class YTDLSource(discord.PCMVolumeTransformer):
                         with yt_dlp.YoutubeDL(opts) as ydl:
                             data = ydl.extract_info(q, download=False)
                         if data and 'entries' in data:
-                            return [e for e in data['entries'] if e][:5]
+                            results = [e for e in data['entries'] if e][:5]
+                            if results:
+                                return results
                     except Exception:
                         continue
+                # SoundCloud fallback
+                try:
+                    sc_opts = {**YTDL_BASE, 'noplaylist': False}
+                    with yt_dlp.YoutubeDL(sc_opts) as ydl:
+                        data = ydl.extract_info(f"scsearch5:{query}", download=False)
+                    if data and 'entries' in data:
+                        return [e for e in data['entries'] if e][:5]
+                except Exception:
+                    pass
                 return []
             return await asyncio.wait_for(loop.run_in_executor(None, _search), timeout=30.0)
         except Exception:
