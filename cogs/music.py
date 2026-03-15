@@ -28,12 +28,16 @@ YTDL_OPTS = {
     'ignoreerrors': True,
     'quiet': True,
     'no_warnings': True,
-    'default_search': 'ytsearch5',
     'source_address': '0.0.0.0',
     'playlistend': 50,
+    # Bypass YouTube bot detection on cloud IPs
+    'extractor_args': {'youtube': {'player_client': ['web', 'android']}},
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    },
 }
 
-YTDL_SINGLE = {**YTDL_OPTS, 'noplaylist': True, 'default_search': 'ytsearch'}
+YTDL_SINGLE = {**YTDL_OPTS, 'noplaylist': True}
 
 FFMPEG_OPTS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
@@ -41,14 +45,21 @@ FFMPEG_OPTS = {
 }
 
 AUTOPLAY_SEEDS = [
-    "top hits 2024", "best pop songs", "chill vibes playlist",
-    "hip hop hits", "lofi hip hop", "trending music 2024",
-    "best rap songs", "workout music", "party hits",
+    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "https://www.youtube.com/watch?v=9bZkp7q19f0",
+    "https://www.youtube.com/watch?v=kJQP7kiw5Fk",
+    "https://www.youtube.com/watch?v=JGwWNGJdvx8",
+    "https://www.youtube.com/watch?v=OPf0YbXqDm0",
 ]
 
+def _is_url(query: str) -> bool:
+    return query.startswith(('http://', 'https://', 'www.'))
 
 def _ytdl_extract(query: str, single: bool = True) -> dict:
-    opts = YTDL_SINGLE if single else YTDL_OPTS
+    """Extract info. If query is not a URL, use ytsearch: prefix."""
+    if not _is_url(query):
+        query = f"ytsearch1:{query}" if single else f"ytsearch5:{query}"
+    opts = dict(YTDL_SINGLE if single else YTDL_OPTS)
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(query, download=False)
 
@@ -116,15 +127,30 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_query(cls, query: str, *, loop=None, volume=0.5):
         loop = loop or asyncio.get_event_loop()
+
+        def _extract():
+            # Try web+android client first, fall back to android_music
+            for client in (['web', 'android'], ['android_music'], ['ios']):
+                opts = dict(YTDL_SINGLE)
+                opts['extractor_args'] = {'youtube': {'player_client': client}}
+                q = query if _is_url(query) else f"ytsearch1:{query}"
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        data = ydl.extract_info(q, download=False)
+                    if data:
+                        return data
+                except Exception:
+                    continue
+            return None
+
         data = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: _ytdl_extract(query, single=True)),
-            timeout=30.0,
+            loop.run_in_executor(None, _extract),
+            timeout=45.0,
         )
         if not data:
             raise ValueError(f"No results found for: {query}")
         if 'entries' in data:
-            # filter out None entries
-            entries = [e for e in data['entries'] if e]
+            entries = [e for e in data['entries'] if e and e.get('url')]
             if not entries:
                 raise ValueError(f"No playable results for: {query}")
             data = entries[0]
