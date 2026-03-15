@@ -22,13 +22,16 @@ logger = logging.getLogger('discord_bot.music')
 PERSIST_FILE = 'music_247.json'
 
 YTDL_BASE = {
-    'format': 'bestaudio/best',
+    # Prefer opus > m4a > webm > mp3 — best quality, no re-encode needed
+    'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[ext=opus]/bestaudio/best',
     'nocheckcertificate': True,
     'ignoreerrors': False,
     'quiet': True,
     'no_warnings': True,
     'source_address': '0.0.0.0',
     'noplaylist': True,
+    # Don't re-encode — stream directly
+    'postprocessors': [],
 }
 
 # Add cookies file if it exists (needed for cloud IPs blocked by YouTube)
@@ -49,16 +52,26 @@ if os.path.exists(_COOKIES_FILE):
     logger.info(f"YouTube cookies loaded: {_COOKIES_FILE}")
 
 FFMPEG_OPTS = {
+    # reconnect keeps stream alive on network hiccups
+    # aresample=48000 fixes speed/pitch issues from wrong sample rate metadata (common on SoundCloud)
+    # volume=1.0 keeps original volume — user can adjust with /volume
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn',
+    'options': '-vn -af aresample=48000',
 }
 
+# Autoplay seed queries — used when queue is empty
+# These are SoundCloud-friendly search terms (SC works on cloud IPs, YouTube doesn't)
 AUTOPLAY_SEEDS = [
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "https://www.youtube.com/watch?v=9bZkp7q19f0",
-    "https://www.youtube.com/watch?v=kJQP7kiw5Fk",
-    "https://www.youtube.com/watch?v=JGwWNGJdvx8",
-    "https://www.youtube.com/watch?v=OPf0YbXqDm0",
+    "trending hits 2024",
+    "popular songs mix",
+    "top hits playlist",
+    "best music 2024",
+    "chill vibes mix",
+    "hip hop hits",
+    "pop music 2024",
+    "electronic music mix",
+    "r&b hits 2024",
+    "workout music mix",
 ]
 
 # Player clients to try in order — android_embedded bypasses most bot detection
@@ -422,10 +435,7 @@ class Music(commands.Cog):
         self._broadcast(guild, player, queue)
 
     async def _autoplay_next(self, guild: discord.Guild, _retries: int = 0):
-        """Pick a related/random song and play it automatically."""
-        if _retries >= 3:
-            logger.warning(f"Autoplay gave up after 3 retries in {guild.name}")
-            return
+        """Pick a related/random song and play it automatically. Never gives up."""
         queue = self.get_queue(guild.id)
         vc = guild.voice_client
         if not vc or not vc.is_connected():
@@ -433,26 +443,27 @@ class Music(commands.Cog):
         if vc.is_playing():
             return  # something started already
 
-        # Use last played song title as seed, else random seed
-        seed = None
-        if queue.history:
+        # First try: use last played title as seed. After that: random seed.
+        if _retries == 0 and queue.history:
             seed = queue.history[-1].title
-        if not seed:
+        else:
             seed = random.choice(AUTOPLAY_SEEDS)
 
         try:
             vol = self.get_volume(guild.id)
-            player = await YTDLSource.from_query(
-                seed, loop=self.bot.loop, volume=vol
-            )
+            player = await YTDLSource.from_query(seed, loop=self.bot.loop, volume=vol)
             player.requester = None  # autoplay
             queue.current = player
             self._start_playing(guild, player, queue)
             logger.info(f"Autoplay: {player.title} in {guild.name}")
         except Exception as e:
-            logger.warning(f"Autoplay failed (attempt {_retries+1}/3): {e}")
-            await asyncio.sleep(5)
-            await self._autoplay_next(guild, _retries + 1)
+            # Exponential backoff capped at 30s — then retry forever
+            wait = min(5 * (2 ** min(_retries, 3)), 30)
+            logger.warning(f"Autoplay failed (attempt {_retries+1}), retrying in {wait}s: {e}")
+            await asyncio.sleep(wait)
+            asyncio.run_coroutine_threadsafe(
+                self._autoplay_next(guild, _retries + 1), self.bot.loop
+            )
 
     async def _play_entry(self, interaction: discord.Interaction, entry: dict):
         vc = await self._ensure_voice(interaction)
