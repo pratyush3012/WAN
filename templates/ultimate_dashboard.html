@@ -485,13 +485,26 @@ async function loadMusicStatus() {
 }
 
 function updateMusicUI(d) {
-    const statusEl = document.getElementById('musicStatus'), titleEl = document.getElementById('musicTitle'), thumbEl = document.getElementById('musicThumb'), queueEl = document.getElementById('musicQueue');
+    const statusEl = document.getElementById('musicStatus'), titleEl = document.getElementById('musicTitle'), thumbEl = document.getElementById('musicThumb'), queueEl = document.getElementById('musicQueue'), queueList = document.getElementById('musicQueueList');
+    // Status badge
     if (d.playing) { statusEl.textContent = '▶ Playing'; statusEl.className = 'badge badge-success'; }
     else if (d.paused) { statusEl.textContent = '⏸ Paused'; statusEl.className = 'badge badge-warning'; }
     else { statusEl.textContent = 'Idle'; statusEl.className = 'badge badge-secondary'; }
-    if (d.current && d.current.title) { titleEl.textContent = d.current.title; if (d.current.thumbnail) { thumbEl.src = d.current.thumbnail; thumbEl.style.display = 'block'; } else thumbEl.style.display = 'none'; }
+    // Current song
+    const cur = d.current || {};
+    if (cur.title) { titleEl.textContent = cur.title; if (cur.thumbnail) { thumbEl.src = cur.thumbnail; thumbEl.style.display = 'block'; } else thumbEl.style.display = 'none'; }
     else { titleEl.textContent = 'Nothing playing'; thumbEl.style.display = 'none'; }
-    queueEl.textContent = d.queue && d.queue.length ? d.queue.length + ' song(s) in queue' : 'Queue empty';
+    // Queue count text
+    const q = Array.isArray(d.queue) ? d.queue : [];
+    queueEl.textContent = q.length ? q.length + ' song(s) in queue' : 'Queue empty';
+    // Queue list
+    if (queueList) {
+        if (q.length) {
+            queueList.innerHTML = q.map((t, i) => '<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;"><span style="color:var(--text-muted);margin-right:8px;">' + (i+1) + '.</span>' + (t || 'Unknown') + '</div>').join('');
+        } else {
+            queueList.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Queue is empty</p>';
+        }
+    }
 }
 
 async function playMusic() {
@@ -632,7 +645,7 @@ socket.on('channel_create', () => { if (currentServer) loadServerDetails(current
 socket.on('channel_delete', () => { if (currentServer) loadServerDetails(currentServer); });
 socket.on('role_create',    () => { if (currentServer) loadServerDetails(currentServer); });
 socket.on('role_delete',    () => { if (currentServer) loadServerDetails(currentServer); });
-socket.on('music_update',   d  => { if (currentServer && String(d.guild_id) === String(currentServer)) updateMusicUI(d); });
+socket.on('music_update',   d  => { if (currentServer && String(d.guild_id) === String(currentServer)) loadMusicStatus(); });
 socket.on('audit', ev => { if (!currentServer || String(ev.guild_id) !== String(currentServer)) return; prependAuditEntry(ev); if (['mod','leave'].includes(ev.type)) notify(ev.title, ev.type==='mod'?'warning':'info'); });
 
 // INIT
