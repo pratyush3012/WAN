@@ -2,8 +2,9 @@
 WAN Bot - Music Cog
 - 24/7: bot NEVER leaves voice, NEVER disconnects, auto-rejoins on restart
 - Queue NEVER empty: autoplay picks songs similar to last played, forever
+- NEVER repeats the same song back-to-back
 - Audio: best quality, correct speed/pitch (48kHz resampled)
-- SoundCloud primary (works on Render), YouTube fallback with cookies
+- SoundCloud primary (works on Render), YouTube fallback
 """
 import discord
 from discord import app_commands
@@ -17,6 +18,7 @@ import logging
 import random
 import json
 import os
+import re
 from collections import deque
 
 logger = logging.getLogger('discord_bot.music')
@@ -24,7 +26,6 @@ logger = logging.getLogger('discord_bot.music')
 PERSIST_FILE = 'music_247.json'
 
 # ── yt-dlp options ────────────────────────────────────────────────────────────
-# Best audio quality, no re-encode, stream directly
 YTDL_OPTS = {
     'format': 'bestaudio/best',
     'nocheckcertificate': True,
@@ -36,7 +37,6 @@ YTDL_OPTS = {
     'socket_timeout': 30,
 }
 
-# Write YouTube cookies from env var if provided (bypasses IP blocks on Render)
 _COOKIES_FILE = os.path.join(os.path.dirname(__file__), '..', 'youtube_cookies.txt')
 _COOKIES_ENV = os.getenv('YOUTUBE_COOKIES', '')
 if _COOKIES_ENV:
@@ -51,17 +51,16 @@ if os.path.exists(_COOKIES_FILE):
     logger.info("YouTube cookies loaded")
 
 # ── FFmpeg options ────────────────────────────────────────────────────────────
-# aresample=48000 fixes wrong speed/pitch from bad sample rate metadata (SoundCloud)
+# aresample=48000 fixes wrong speed/pitch from bad sample rate metadata
 FFMPEG_OPTS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn -af aresample=48000',
 }
 
-# ── YouTube player clients (try in order to bypass bot detection) ─────────────
+# ── YouTube player clients ────────────────────────────────────────────────────
 _YT_CLIENTS = [['android_embedded'], ['android_music'], ['ios'], ['mweb'], ['web_embedded']]
 
-# ── Autoplay seed pool ────────────────────────────────────────────────────────
-# Generic search terms that work on SoundCloud (no IP blocks on cloud servers)
+# ── Fallback autoplay seeds (used when history is empty) ─────────────────────
 _AUTOPLAY_SEEDS = [
     "top hits 2024", "popular songs 2024", "best music mix",
     "hip hop hits", "pop hits 2024", "r&b hits", "chill vibes",
@@ -75,7 +74,6 @@ def _is_url(q: str) -> bool:
     return q.startswith(('http://', 'https://', 'www.'))
 
 def _clean_yt_url(url: str) -> str:
-    """Keep only ?v= param so yt-dlp treats it as single video, not playlist."""
     import urllib.parse as up
     p = up.urlparse(url)
     qs = up.parse_qs(p.query)
@@ -84,18 +82,10 @@ def _clean_yt_url(url: str) -> str:
     return url
 
 def _extract(query: str) -> dict | None:
-    """
-    Extract audio info. Strategy:
-    1. SoundCloud search (always works on cloud IPs)
-    2. YouTube with multiple player clients (may be blocked)
-    3. Direct URL fallback
-    """
+    """Extract audio info — SoundCloud first, YouTube fallback."""
     is_url = _is_url(query)
-
-    # ── Direct URL ────────────────────────────────────────────────────────
     if is_url:
         url = _clean_yt_url(query)
-        # Try YouTube clients for YT URLs
         if 'youtube.com' in url or 'youtu.be' in url:
             for clients in _YT_CLIENTS:
                 opts = {**YTDL_OPTS, 'extractor_args': {'youtube': {'player_client': clients}}}
@@ -110,7 +100,6 @@ def _extract(query: str) -> dict | None:
                             return entries[0]
                 except Exception:
                     continue
-        # Non-YouTube URL (SoundCloud, etc.)
         try:
             with yt_dlp.YoutubeDL(YTDL_OPTS) as ydl:
                 data = ydl.extract_info(url, download=False)
@@ -120,8 +109,7 @@ def _extract(query: str) -> dict | None:
             pass
         return None
 
-    # ── Search query ──────────────────────────────────────────────────────
-    # Try SoundCloud FIRST — it works on Render/cloud IPs without blocks
+    # Search: SoundCloud first
     try:
         with yt_dlp.YoutubeDL(YTDL_OPTS) as ydl:
             data = ydl.extract_info(f"scsearch1:{query}", download=False)
@@ -129,14 +117,14 @@ def _extract(query: str) -> dict | None:
             if 'entries' in data:
                 entries = [e for e in data['entries'] if e and e.get('url')]
                 if entries:
-                    logger.info(f"SoundCloud: found '{entries[0].get('title')}' for '{query}'")
+                    logger.info(f"SC: '{entries[0].get('title')}' for '{query}'")
                     return entries[0]
             elif data.get('url'):
                 return data
     except Exception as sc_err:
-        logger.debug(f"SoundCloud search failed for '{query}': {sc_err}")
+        logger.debug(f"SC search failed '{query}': {sc_err}")
 
-    # Try YouTube as fallback
+    # YouTube fallback
     for clients in _YT_CLIENTS:
         opts = {**YTDL_OPTS, 'extractor_args': {'youtube': {'player_client': clients}}}
         try:
@@ -145,61 +133,71 @@ def _extract(query: str) -> dict | None:
             if data and 'entries' in data:
                 entries = [e for e in data['entries'] if e and e.get('url')]
                 if entries:
-                    logger.info(f"YouTube: found '{entries[0].get('title')}' for '{query}'")
+                    logger.info(f"YT: '{entries[0].get('title')}' for '{query}'")
                     return entries[0]
         except Exception:
             continue
 
-    logger.warning(f"No results found for: '{query}'")
+    logger.warning(f"No results for: '{query}'")
     return None
 
 
-def _extract_similar(seed_title: str, exclude_urls: set) -> dict | None:
+def _extract_similar(seed_title: str, exclude_urls: set, exclude_titles: set) -> dict | None:
     """
-    Fetch 5 SoundCloud results for seed_title, return a random one
-    that hasn't been played yet. Falls back to YouTube if SC fails.
+    Fetch multiple SoundCloud results for seed_title.
+    Returns a random one that hasn't been played (by URL or title).
+    Falls back to YouTube, then to a random seed.
     """
-    import re
-    # Clean the title — remove noise words
     clean = re.sub(
-        r'\(.*?\)|\[.*?\]|official|video|lyrics|audio|hd|4k|ft\.?|feat\.?',
+        r'\(.*?\)|\[.*?\]|official|video|lyrics|audio|hd|4k|ft\.?|feat\.?|\d{4}',
         '', seed_title, flags=re.IGNORECASE
     ).strip()
-    if not clean:
+    if len(clean) < 3:
         clean = seed_title
 
-    # Try SoundCloud with 5 results so we can pick a different one
-    for n in [5, 3, 1]:
+    def _not_seen(e):
+        if not e or not e.get('url'):
+            return False
+        url = e.get('webpage_url') or e.get('url', '')
+        title = (e.get('title') or '').lower().strip()
+        return url not in exclude_urls and title not in exclude_titles
+
+    # SoundCloud: fetch 8 results, pick random unseen
+    for n in [8, 5, 3]:
         try:
             opts = {**YTDL_OPTS, 'noplaylist': False}
             with yt_dlp.YoutubeDL(opts) as ydl:
                 data = ydl.extract_info(f"scsearch{n}:{clean}", download=False)
             if data and 'entries' in data:
-                entries = [e for e in data['entries'] if e and e.get('url') and e.get('url') not in exclude_urls]
+                entries = [e for e in data['entries'] if _not_seen(e)]
                 if entries:
                     pick = random.choice(entries)
-                    logger.info(f"Similar (SC): '{pick.get('title')}' for seed '{clean}'")
+                    logger.info(f"Similar(SC): '{pick.get('title')}' for seed '{clean}'")
                     return pick
         except Exception:
             pass
 
-    # YouTube fallback — search 3 results
+    # YouTube: fetch 5 results, pick random unseen
     for clients in _YT_CLIENTS:
         try:
             opts = {**YTDL_OPTS, 'noplaylist': False,
                     'extractor_args': {'youtube': {'player_client': clients}}}
             with yt_dlp.YoutubeDL(opts) as ydl:
-                data = ydl.extract_info(f"ytsearch3:{clean}", download=False)
+                data = ydl.extract_info(f"ytsearch5:{clean}", download=False)
             if data and 'entries' in data:
-                entries = [e for e in data['entries'] if e and e.get('url') and e.get('url') not in exclude_urls]
+                entries = [e for e in data['entries'] if _not_seen(e)]
                 if entries:
                     pick = random.choice(entries)
-                    logger.info(f"Similar (YT): '{pick.get('title')}' for seed '{clean}'")
+                    logger.info(f"Similar(YT): '{pick.get('title')}' for seed '{clean}'")
                     return pick
         except Exception:
             continue
 
-    return None
+    # Last resort: random seed from pool (still exclude seen)
+    seed = random.choice(_AUTOPLAY_SEEDS)
+    logger.info(f"Similar: falling back to random seed '{seed}'")
+    return _extract(seed)
+
 
 def _fmt(seconds) -> str:
     if not seconds:
@@ -217,22 +215,33 @@ class MusicQueue:
         self.current = None
         self.loop = False
         self.loop_queue = False
-        self.history: deque = deque(maxlen=100)   # last 100 songs for autoplay seeds
-        self.played_urls: set = set()             # track played URLs to avoid repeats
+        self.history: deque = deque(maxlen=50)    # last 50 song titles for seed selection
+        self.played_urls: set = set()             # URLs played — never repeat
+        self.played_titles: set = set()           # titles played — never repeat
 
     def add(self, song):
         self.queue.append(song)
 
-    def next(self):
-        if self.loop and self.current:
-            return self.current
+    def _record_current(self):
+        """Mark current song as played and add to history."""
         if self.current:
             self.history.append(self.current)
-            if self.current.url:
-                self.played_urls.add(self.current.url)
-            # Keep played_urls from growing forever
-            if len(self.played_urls) > 200:
+            url = self.current.url or ''
+            title = (self.current.title or '').lower().strip()
+            if url:
+                self.played_urls.add(url)
+            if title:
+                self.played_titles.add(title)
+            # Trim sets so they don't grow forever (keep last 150)
+            if len(self.played_urls) > 150:
                 self.played_urls = set(list(self.played_urls)[-100:])
+            if len(self.played_titles) > 150:
+                self.played_titles = set(list(self.played_titles)[-100:])
+
+    def next(self):
+        if self.loop and self.current:
+            return self.current   # repeat same song
+        self._record_current()
         if self.loop_queue and self.current:
             self.queue.append(self.current)
         if self.queue:
@@ -257,6 +266,7 @@ class MusicQueue:
     def clear(self):
         self.queue.clear()
         self.current = None
+
 
 # ── YTDLSource ────────────────────────────────────────────────────────────────
 
@@ -316,10 +326,15 @@ class Music(commands.Cog):
         self.queues: dict[int, MusicQueue] = {}
         self._volumes: dict[int, float] = {}
         self._247: dict[int, int] = self._load_247()   # guild_id -> voice_channel_id
-        self._autoplay: dict[int, bool] = {}           # guild_id -> bool (default True)
-        # Start background tasks
+        # Per-guild lock: prevents _autoplay_next running twice simultaneously
+        self._autoplay_locks: dict[int, asyncio.Lock] = {}
         self._reconnect_task = bot.loop.create_task(self._reconnect_loop())
         self._watchdog_task = bot.loop.create_task(self._playback_watchdog())
+
+    def _get_lock(self, guild_id: int) -> asyncio.Lock:
+        if guild_id not in self._autoplay_locks:
+            self._autoplay_locks[guild_id] = asyncio.Lock()
+        return self._autoplay_locks[guild_id]
 
     # ── Persistence ───────────────────────────────────────────────────────
 
@@ -356,7 +371,19 @@ class Music(commands.Cog):
                     vc = guild.voice_client
                     if not vc or not vc.is_connected():
                         logger.info(f"24/7 reconnect → {channel.name} in {guild.name}")
-                        await channel.connect()
+                        try:
+                            vc = await channel.connect()
+                        except Exception as ce:
+                            logger.warning(f"Connect failed: {ce}")
+                            continue
+                        # Restart playback after reconnect
+                        queue = self.get_queue(guild_id)
+                        if not vc.is_playing() and not vc.is_paused():
+                            if queue.current:
+                                # Re-fetch the current song (stream URL expired)
+                                asyncio.ensure_future(self._refetch_and_play(guild, queue.current.title))
+                            else:
+                                asyncio.ensure_future(self._autoplay_next(guild))
                     elif vc.channel.id != channel_id:
                         await vc.move_to(channel)
                 except Exception as e:
@@ -376,8 +403,8 @@ class Music(commands.Cog):
                     if not vc or not vc.is_connected():
                         continue
                     if not vc.is_playing() and not vc.is_paused():
-                        queue = self.get_queue(guild_id)
-                        if not queue.current and not queue.queue:
+                        lock = self._get_lock(guild_id)
+                        if not lock.locked():
                             logger.info(f"Watchdog: silent in {guild.name}, starting autoplay")
                             asyncio.ensure_future(self._autoplay_next(guild))
                 except Exception as e:
@@ -395,7 +422,6 @@ class Music(commands.Cog):
         return self._volumes.get(guild_id, 0.5)
 
     async def cleanup(self, guild_id: int):
-        """Stop music and disconnect (dashboard stop button)."""
         guild = self.bot.get_guild(guild_id)
         if not guild:
             return
@@ -438,11 +464,11 @@ class Music(commands.Cog):
     def _play_next(self, guild: discord.Guild):
         """Called after each song ends. Pulls from queue or triggers autoplay."""
         queue = self.get_queue(guild.id)
-        next_song = queue.next()
+        next_song = queue.next()   # records current as played, advances queue
         if next_song:
             self._start_playing(guild, next_song, queue)
         else:
-            # Queue empty — autoplay is always on for 24/7 guilds
+            # Queue empty — autoplay picks a DIFFERENT song
             asyncio.run_coroutine_threadsafe(
                 self._autoplay_next(guild), self.bot.loop
             )
@@ -451,6 +477,8 @@ class Music(commands.Cog):
         vc = guild.voice_client
         if not vc or not vc.is_connected():
             return
+        if vc.is_playing():
+            return  # already playing, don't double-start
         def after(err):
             if err:
                 logger.error(f"Playback error: {err}")
@@ -458,66 +486,92 @@ class Music(commands.Cog):
         vc.play(player, after=after)
         self._broadcast(guild, player, queue)
 
-    async def _autoplay_next(self, guild: discord.Guild, _attempt: int = 0):
-        """
-        Pick a song similar to the last played and play it.
-        Never repeats the same song. Never gives up.
-        """
-        vc = guild.voice_client
-        if not vc or not vc.is_connected():
-            return
-        if vc.is_playing() or vc.is_paused():
-            return
-
-        queue = self.get_queue(guild.id)
-
-        # Build seed from last played title
-        if queue.history:
-            seed_title = queue.history[-1].title
-        else:
-            seed_title = random.choice(_AUTOPLAY_SEEDS)
-
-        logger.info(f"Autoplay: finding similar to '{seed_title}' (attempt {_attempt+1}) in {guild.name}")
-
+    async def _refetch_and_play(self, guild: discord.Guild, title: str):
+        """Re-fetch a song by title (used after reconnect when stream URL expired)."""
         try:
             vol = self.get_volume(guild.id)
-
-            # Use _extract_similar to get a different song each time
             data = await asyncio.wait_for(
-                self.bot.loop.run_in_executor(
-                    None, lambda: _extract_similar(seed_title, queue.played_urls)
-                ),
+                self.bot.loop.run_in_executor(None, lambda: _extract(title)),
                 timeout=60.0,
             )
-
-            # If similar search failed, fall back to a random seed
             if not data:
-                fallback_seed = random.choice(_AUTOPLAY_SEEDS)
-                logger.info(f"Autoplay: similar failed, trying seed '{fallback_seed}'")
+                raise ValueError("No results")
+            src = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTS)
+            player = YTDLSource(src, data=data, volume=vol)
+            player.requester = None
+            queue = self.get_queue(guild.id)
+            queue.current = player
+            self._start_playing(guild, player, queue)
+        except Exception as e:
+            logger.warning(f"Refetch failed for '{title}': {e}, falling back to autoplay")
+            await self._autoplay_next(guild)
+
+    async def _autoplay_next(self, guild: discord.Guild, _attempt: int = 0):
+        """
+        Pick a song SIMILAR to the last played and play it.
+        - Never plays the same song twice in a row (URL + title dedup)
+        - Uses history to pick varied seeds
+        - Retries forever with backoff
+        - Protected by per-guild lock so it never runs twice simultaneously
+        """
+        lock = self._get_lock(guild.id)
+        if lock.locked():
+            return  # already running for this guild
+
+        async with lock:
+            vc = guild.voice_client
+            if not vc or not vc.is_connected():
+                return
+            if vc.is_playing() or vc.is_paused():
+                return
+
+            queue = self.get_queue(guild.id)
+
+            # Pick seed: use last played title, but vary it using history
+            # to avoid always searching the same thing
+            if queue.history:
+                # Pick from last 3 history entries randomly for variety
+                recent = list(queue.history)[-3:]
+                seed_song = random.choice(recent)
+                seed_title = seed_song.title
+            else:
+                seed_title = random.choice(_AUTOPLAY_SEEDS)
+
+            logger.info(f"Autoplay: finding similar to '{seed_title}' (attempt {_attempt+1}) in {guild.name}")
+
+            try:
+                vol = self.get_volume(guild.id)
+
                 data = await asyncio.wait_for(
                     self.bot.loop.run_in_executor(
-                        None, lambda: _extract(fallback_seed)
+                        None,
+                        lambda: _extract_similar(seed_title, queue.played_urls, queue.played_titles)
                     ),
                     timeout=60.0,
                 )
 
-            if not data:
-                raise ValueError("No results from any source")
+                if not data:
+                    raise ValueError("No similar results found")
 
-            src = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTS)
-            player = YTDLSource(src, data=data, volume=vol)
-            player.requester = None  # autoplay
-            queue.current = player
-            self._start_playing(guild, player, queue)
-            logger.info(f"Autoplay playing: '{player.title}' in {guild.name}")
+                src = discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTS)
+                player = YTDLSource(src, data=data, volume=vol)
+                player.requester = None  # autoplay
 
-        except Exception as e:
-            wait = min(5 * (2 ** min(_attempt, 3)), 30)
-            logger.warning(f"Autoplay attempt {_attempt+1} failed ({e}), retry in {wait}s")
-            await asyncio.sleep(wait)
-            asyncio.run_coroutine_threadsafe(
-                self._autoplay_next(guild, _attempt + 1), self.bot.loop
-            )
+                # Record the PREVIOUS current as played before replacing it
+                queue._record_current()
+                queue.current = player
+
+                self._start_playing(guild, player, queue)
+                logger.info(f"Autoplay: now playing '{player.title}' in {guild.name}")
+
+            except Exception as e:
+                wait = min(5 * (2 ** min(_attempt, 3)), 30)
+                logger.warning(f"Autoplay attempt {_attempt+1} failed ({e}), retry in {wait}s")
+
+        # Retry outside the lock so it can re-acquire
+        if _attempt < 10:
+            await asyncio.sleep(wait if '_attempt' in dir() else 5)
+            asyncio.ensure_future(self._autoplay_next(guild, _attempt + 1))
 
     async def _play_entry(self, interaction: discord.Interaction, entry: dict):
         vc = await self._ensure_voice(interaction)
@@ -535,6 +589,7 @@ class Music(commands.Cog):
                     description=f"**[{player.title}]({player.url})**", color=0x5865f2)
                 embed.set_footer(text=f"Position #{len(queue.queue)} • {_fmt(player.duration)}")
             else:
+                queue._record_current()  # record any previous current
                 queue.current = player
                 self._start_playing(interaction.guild, player, queue)
                 embed = discord.Embed(title="🎵 Now Playing",
@@ -552,7 +607,7 @@ class Music(commands.Cog):
     # SLASH COMMANDS
     # ═══════════════════════════════════════════════════════════════════════
 
-    @app_commands.command(name="play", description="🎵 Play a song or YouTube URL")
+    @app_commands.command(name="play", description="🎵 Play a song or YouTube/SoundCloud URL")
     async def play(self, interaction: discord.Interaction, query: str):
         await interaction.response.defer()
         vc = await self._ensure_voice(interaction)
@@ -569,6 +624,7 @@ class Music(commands.Cog):
                     description=f"**[{player.title}]({player.url})**", color=0x5865f2)
                 embed.set_footer(text=f"Position #{len(queue.queue)} • {_fmt(player.duration)}")
             else:
+                queue._record_current()
                 queue.current = player
                 self._start_playing(interaction.guild, player, queue)
                 embed = discord.Embed(title="🎵 Now Playing",
@@ -598,6 +654,7 @@ class Music(commands.Cog):
                 s.requester = interaction.user
             if not vc.is_playing() and not vc.is_paused():
                 first = songs.pop(0)
+                queue._record_current()
                 queue.current = first
                 self._start_playing(interaction.guild, first, queue)
             for s in songs:
@@ -632,7 +689,7 @@ class Music(commands.Cog):
                 await vc.move_to(ch)
             await interaction.response.send_message(
                 f"🟢 24/7 mode **enabled** in **{ch.name}**.\n"
-                "Bot will stay here forever and autoplay similar songs when queue ends."
+                "Bot stays here forever and autoplays similar songs when queue ends."
             )
 
     @app_commands.command(name="leave", description="📤 Leave voice channel (disables 24/7)")
@@ -676,7 +733,7 @@ class Music(commands.Cog):
     async def skip(self, interaction: discord.Interaction):
         vc = interaction.guild.voice_client
         if vc and (vc.is_playing() or vc.is_paused()):
-            vc.stop()
+            vc.stop()  # triggers after() → _play_next
             await interaction.response.send_message("⏭ Skipped.")
         else:
             await interaction.response.send_message("❌ Nothing playing.", ephemeral=True)
