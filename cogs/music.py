@@ -36,7 +36,7 @@ _COOKIES_FILE = os.path.join(os.path.dirname(__file__), '..', 'youtube_cookies.t
 
 # Also support YOUTUBE_COOKIES env var — paste Netscape cookie file content there
 _COOKIES_ENV = os.getenv('YOUTUBE_COOKIES', '')
-if _COOKIES_ENV and not os.path.exists(_COOKIES_FILE):
+if _COOKIES_ENV:
     try:
         with open(_COOKIES_FILE, 'w') as _f:
             _f.write(_COOKIES_ENV)

@@ -434,7 +434,6 @@ def _check_nacl():
         return nacl.__version__
     except ImportError:
         return False
-
 @app.route('/api/health')
 @limiter.exempt
 def health_check():
@@ -449,6 +448,7 @@ def health_check():
         'music_loaded': 'Music' in cogs_loaded,
         'cog_errors': getattr(bot_instance, 'cog_errors', {}),
         'nacl_installed': _check_nacl(),
+        'youtube_cookies': os.path.exists('/app/youtube_cookies.txt'),
         'timestamp': datetime.utcnow().isoformat()
     }
     status = 'healthy' if checks['bot'] else 'degraded'
