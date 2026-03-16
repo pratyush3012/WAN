@@ -87,7 +87,7 @@ def _fetch(query):
     return None
 
 def _fetch_similar(seed, skip_urls, skip_titles):
-    """Fetch a random unseen song similar to seed."""
+    """Fetch a random unseen song similar to seed. SoundCloud first, YouTube fallback."""
     clean = re.sub(
         r"\(.*?\)|\[.*?\]|official\s*(video|audio|mv)?|lyrics?|hd|4k|ft\.?\s*\w+|feat\.?\s*\w+|\d{4}",
         "", seed, flags=re.IGNORECASE
@@ -96,32 +96,48 @@ def _fetch_similar(seed, skip_urls, skip_titles):
     def unseen(e):
         if not e or not e.get("url"):
             return False
-        return (e.get("webpage_url") or e.get("url", "")) not in skip_urls \
-            and (e.get("title") or "").lower().strip() not in skip_titles
+        url = e.get("webpage_url") or e.get("url", "")
+        title = (e.get("title") or "").lower().strip()
+        return url not in skip_urls and title not in skip_titles
 
-    # SoundCloud pool
+    # SoundCloud: fetch multiple results, pick random unseen
     for n in (8, 5, 3):
         try:
-            d = _ydl({**YTDL_OPTS, "noplaylist": False}, f"scsearch{n}:{clean}")
-            if d and "entries" in d:
-                pool = [e for e in d["entries"] if unseen(e)]
-                if pool:
-                    return random.choice(pool)
-        except Exception:
-            pass
+            opts = {**YTDL_OPTS, "noplaylist": False}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                d = ydl.extract_info(f"scsearch{n}:{clean}", download=False)
+            if not d:
+                continue
+            # handle both list-of-entries and single entry
+            entries = d.get("entries") if "entries" in d else [d]
+            pool = [e for e in entries if e and unseen(e)]
+            if pool:
+                pick = random.choice(pool)
+                log.info(f"Autoplay SC similar: '{pick.get('title')}' (seed: '{clean}')")
+                return pick
+        except Exception as ex:
+            log.debug(f"SC similar error: {ex}")
 
-    # YouTube pool
+    # YouTube: fetch multiple results, pick random unseen
     for c in YT_CLIENTS:
         try:
-            d = _ydl({**YTDL_OPTS, "noplaylist": False,
-                      "extractor_args": {"youtube": {"player_client": c}}}, f"ytsearch5:{clean}")
-            if d and "entries" in d:
-                pool = [e for e in d["entries"] if unseen(e)]
-                if pool:
-                    return random.choice(pool)
-        except Exception:
-            pass
+            opts = {**YTDL_OPTS, "noplaylist": False,
+                    "extractor_args": {"youtube": {"player_client": c}}}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                d = ydl.extract_info(f"ytsearch5:{clean}", download=False)
+            if not d:
+                continue
+            entries = d.get("entries") if "entries" in d else [d]
+            pool = [e for e in entries if e and unseen(e)]
+            if pool:
+                pick = random.choice(pool)
+                log.info(f"Autoplay YT similar: '{pick.get('title')}' (seed: '{clean}')")
+                return pick
+        except Exception as ex:
+            log.debug(f"YT similar error: {ex}")
 
+    # Last resort: random seed
+    log.info(f"Autoplay fallback to random seed (no similar found for '{clean}')")
     return _fetch(random.choice(SEEDS))
 
 def _fmt(sec):
@@ -408,43 +424,61 @@ class Music(commands.Cog):
             if vc.is_playing() or vc.is_paused():
                 return
             queue = self.q(guild.id)
+            # Get seed from most recent history
             seed = None
             if queue.history:
                 seed = queue.history[-1].title
             elif queue.current:
                 seed = queue.current.title
+
             loop = asyncio.get_event_loop()
-            for attempt in range(3):
+            for attempt in range(4):
                 try:
-                    if seed:
+                    current_seed = seed  # snapshot for lambda capture
+                    if current_seed:
+                        log.info(f"Autoplay attempt {attempt+1}: similar to '{current_seed}'")
+                        # pass copies of sets so they don't change mid-executor
+                        seen_u = set(queue.seen_urls)
+                        seen_t = set(queue.seen_titles)
                         data = await asyncio.wait_for(
-                            loop.run_in_executor(None, lambda s=seed: _fetch_similar(s, queue.seen_urls, queue.seen_titles)),
+                            loop.run_in_executor(
+                                None,
+                                lambda: _fetch_similar(current_seed, seen_u, seen_t)
+                            ),
                             timeout=90,
                         )
                     else:
+                        s = random.choice(SEEDS)
+                        log.info(f"Autoplay attempt {attempt+1}: random seed '{s}'")
                         data = await asyncio.wait_for(
-                            loop.run_in_executor(None, lambda: _fetch(random.choice(SEEDS))),
+                            loop.run_in_executor(None, lambda: _fetch(s)),
                             timeout=60,
                         )
+
                     if not data:
                         seed = random.choice(SEEDS)
                         continue
-                    # dedup check on raw data before creating Song
+
                     raw_url = data.get("webpage_url") or data.get("url", "")
                     raw_title = (data.get("title") or "").lower().strip()
                     if raw_url in queue.seen_urls or raw_title in queue.seen_titles:
-                        log.info(f"Autoplay dedup skip: {data.get('title')}")
-                        seed = data.get("title", random.choice(SEEDS))
+                        log.info(f"Autoplay dedup skip: '{data.get('title')}'")
+                        seed = data.get("title") or random.choice(SEEDS)
                         continue
+
                     song = Song(data, self.vol(guild.id))
+                    log.info(f"Autoplay playing: '{song.title}'")
                     await self._play(guild, vc, song)
                     return
+
                 except asyncio.TimeoutError:
+                    log.warning(f"Autoplay timeout attempt {attempt+1}")
                     seed = random.choice(SEEDS)
                 except Exception as e:
-                    log.error(f"_autoplay attempt {attempt+1}: {e}")
+                    log.error(f"Autoplay error attempt {attempt+1}: {e}")
                     seed = random.choice(SEEDS)
-            log.error(f"_autoplay gave up for guild {guild.id}")
+
+            log.error(f"Autoplay gave up after 4 attempts for guild {guild.id}")
 
     # ── slash commands ────────────────────────────────────────────────────────
 
@@ -577,6 +611,9 @@ class Music(commands.Cog):
             return
         queue = self.q(interaction.guild_id)
         title = queue.current.title if queue.current else "Unknown"
+        # resume first if paused so stop() triggers the after callback
+        if vc.is_paused():
+            vc.resume()
         vc.stop()
         await interaction.followup.send(f"⏭️ Skipped **{title}**")
 
