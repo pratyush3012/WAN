@@ -503,10 +503,12 @@ class Music(commands.Cog):
             player.duration = song.duration
             player.requester = song.requester
 
-            vc.play(player, after=lambda e: (
-                logger.error(f"Playback error: {e}") if e else None,
-                self._play_next(guild, vc)
-            )[-1])
+            def _after(err, g=guild, v=vc):
+                if err:
+                    logger.error(f"Playback error in {g.name}: {err}")
+                self._play_next(g, v)
+
+            vc.play(player, after=_after)
 
             embed = discord.Embed(
                 title="🎵 Now Playing",
@@ -834,6 +836,43 @@ class Music(commands.Cog):
             return
         q.shuffle()
         await interaction.response.send_message(f"🔀 Shuffled {len(q.queue)} songs.")
+
+    @app_commands.command(name="radio", description="Play a 24/7 radio station")
+    @app_commands.describe(station="lofi / jazz / classical / electronic / chill")
+    @app_commands.choices(station=[
+        app_commands.Choice(name="lofi", value="lofi"),
+        app_commands.Choice(name="jazz", value="jazz"),
+        app_commands.Choice(name="classical", value="classical"),
+        app_commands.Choice(name="electronic", value="electronic"),
+        app_commands.Choice(name="chill", value="chill"),
+    ])
+    async def radio(self, interaction: discord.Interaction, station: str = "lofi"):
+        stations = {
+            "lofi":       "https://www.youtube.com/watch?v=jfKfPfyJRdk",
+            "jazz":       "https://www.youtube.com/watch?v=neV3EPgvZ3g",
+            "classical":  "https://www.youtube.com/watch?v=EhO_MrRfftU",
+            "electronic": "https://www.youtube.com/watch?v=4xDzrJKXOOY",
+            "chill":      "https://www.youtube.com/watch?v=5qap5aO4i9A",
+        }
+        url = stations.get(station.lower(), stations["lofi"])
+        await interaction.response.defer()
+        vc = await self._ensure_voice(interaction)
+        if not vc:
+            return
+        try:
+            song = await YTDLSource.from_query(url, loop=self.bot.loop, volume=self.get_volume(interaction.guild_id))
+            song.requester = interaction.user
+        except Exception as e:
+            await interaction.followup.send(f"❌ Could not load radio: {e}")
+            return
+        q = self.get_queue(interaction.guild_id)
+        if vc.is_playing() or vc.is_paused():
+            q.add(song)
+            await interaction.followup.send(f"📻 Added **{station}** radio to queue.")
+        else:
+            q.current = song
+            await self._start_playing(interaction.guild, vc, song)
+            await interaction.followup.send(f"📻 Playing **{station}** radio.")
 
 
 async def setup(bot: commands.Bot):
