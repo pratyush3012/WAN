@@ -255,12 +255,6 @@
                 </button>
             </div>
         </div>
-
-        <!-- Generic page (moderation, music, etc.) -->
-        <div id="generic-page" style="display:none;"></div>
-
-        <!-- Main dashboard content -->
-        <div id="main-dashboard">
         
         <!-- Stats Grid -->
         <div class="stats-grid">
@@ -477,8 +471,6 @@
         </div>
     </div>
 
-        </div><!-- /#main-dashboard -->
-
     <!-- Commands Manager Page -->
     <div id="commands-page" style="display:none;"></div>
 
@@ -510,7 +502,7 @@
             await loadBotStatus();
             initChart();
             initWebSocket();
-            // Refresh stats every 15 seconds (live uptime + latency)
+            // Live uptime — refresh stats every 15s
             setInterval(loadBotStatus, 15000);
 
             // Wire sidebar nav clicks
@@ -601,329 +593,212 @@
         
         // Open feature
         function openFeature(feature) {
-            // All top-level sections
-            const mainDash = document.getElementById('main-dashboard');
-            const robloxSection = document.getElementById('roblox-section');
-            const commandsPage = document.getElementById('commands-page');
-            const membersPage = document.getElementById('members-page');
-            const genericPage = document.getElementById('generic-page');
-
-            // Hide everything
-            if (mainDash) mainDash.style.display = 'none';
-            robloxSection.style.display = 'none';
-            commandsPage.style.display = 'none';
-            membersPage.style.display = 'none';
-            if (genericPage) genericPage.style.display = 'none';
+            // Hide all sections
+            document.querySelector('.stats-grid').style.display = 'none';
+            document.querySelector('.chart-container').style.display = 'none';
+            document.querySelector('.feature-grid').parentElement.style.display = 'none';
+            document.getElementById('roblox-section').style.display = 'none';
+            document.getElementById('commands-page').style.display = 'none';
+            document.getElementById('members-page').style.display = 'none';
+            const fp = document.getElementById('feature-panel');
+            if (fp) fp.style.display = 'none';
 
             if (feature === 'dashboard') {
-                if (mainDash) mainDash.style.display = 'block';
+                document.querySelector('.stats-grid').style.display = 'grid';
+                document.querySelector('.chart-container').style.display = 'block';
+                document.querySelector('.feature-grid').parentElement.style.display = 'block';
             } else if (feature === 'roblox') {
-                robloxSection.style.display = 'block';
+                document.getElementById('roblox-section').style.display = 'block';
                 loadRobloxData();
             } else if (feature === 'commands') {
-                commandsPage.style.display = 'block';
+                document.getElementById('commands-page').style.display = 'block';
                 loadCommandsPage();
             } else if (feature === 'members') {
-                membersPage.style.display = 'block';
+                document.getElementById('members-page').style.display = 'block';
                 loadMembersPage();
             } else {
-                // Generic page for moderation, music, ai, games, economy, etc.
-                if (genericPage) {
-                    genericPage.style.display = 'block';
-                    renderGenericPage(feature);
+                // Show feature panel for all other pages
+                let panel = document.getElementById('feature-panel');
+                if (!panel) {
+                    panel = document.createElement('div');
+                    panel.id = 'feature-panel';
+                    document.querySelector('.dashboard-container').appendChild(panel);
                 }
+                panel.style.display = 'block';
+                renderFeaturePanel(feature, panel);
             }
         }
 
-        // Generic page renderer for sections without dedicated UIs yet
-        const GENERIC_PAGES = {
-            servers: {
-                icon: 'fas fa-server', title: 'Servers',
-                desc: 'All servers WAN Bot is in.',
-                load: async (body) => {
-                    body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i></div>';
-                    const data = await fetch('/api/servers').then(r => r.json());
-                    if (data.error) { body.innerHTML = `<p style="color:#ef4444;">${data.error}</p>`; return; }
-                    body.innerHTML = data.servers.map(s => `
-                        <div class="glass liquid-card" style="padding:1.2rem;display:flex;align-items:center;gap:1rem;margin-bottom:1rem;">
-                            ${s.icon ? `<img src="${s.icon}" style="width:48px;height:48px;border-radius:12px;">` : `<div style="width:48px;height:48px;border-radius:12px;background:var(--gradient-1);display:flex;align-items:center;justify-content:center;"><i class="fas fa-server"></i></div>`}
-                            <div style="flex:1;">
-                                <div style="font-weight:600;">${s.name}</div>
-                                <div style="color:var(--text-secondary);font-size:0.85rem;">${s.member_count} members • Boost Lv${s.boost_level}</div>
-                            </div>
-                        </div>`).join('') || '<p style="color:var(--text-secondary);">No servers found.</p>';
-                }
-            },
-            analytics: {
-                icon: 'fas fa-chart-line', title: 'Analytics',
-                desc: 'Server growth and activity overview.',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <canvas id="analytics-chart-2" height="100"></canvas>
-                        </div>`;
-                    const ctx = document.getElementById('analytics-chart-2').getContext('2d');
-                    new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
-                            datasets: [{label:'Messages',data:[320,450,380,510,620,480,390],backgroundColor:'rgba(102,126,234,0.6)',borderColor:'#667eea',borderWidth:2}]
-                        },
-                        options: { responsive:true, plugins:{legend:{labels:{color:'white'}}}, scales:{y:{ticks:{color:'white'},grid:{color:'rgba(255,255,255,0.1)'}},x:{ticks:{color:'white'},grid:{color:'rgba(255,255,255,0.1)'}}}}
-                    });
-                }
-            },
-            moderation: {
-                icon: 'fas fa-shield-alt', title: 'Moderation',
-                desc: 'Use Discord slash commands to moderate. Available commands:',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <p style="color:var(--text-secondary);margin-bottom:1.5rem;">Use these slash commands directly in Discord:</p>
-                            ${[
-                                ['/ban @user [reason]','Ban a member'],
-                                ['/kick @user [reason]','Kick a member'],
-                                ['/mute @user [duration]','Timeout a member'],
-                                ['/warn @user [reason]','Issue a warning'],
-                                ['/purge [amount]','Delete messages in bulk'],
-                                ['/slowmode [seconds]','Set channel slowmode'],
-                            ].map(([cmd,desc]) => `
-                                <div class="glass" style="padding:1rem;border-radius:12px;margin-bottom:0.8rem;display:flex;justify-content:space-between;align-items:center;">
-                                    <code style="color:var(--primary);font-size:0.95rem;">${cmd}</code>
-                                    <span style="color:var(--text-secondary);font-size:0.85rem;">${desc}</span>
-                                </div>`).join('')}
-                        </div>`;
-                }
-            },
-            music: {
-                icon: 'fas fa-music', title: 'Music Control',
-                desc: 'Control music from Discord slash commands.',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <p style="color:var(--text-secondary);margin-bottom:1.5rem;">Use these slash commands in Discord:</p>
-                            ${[
-                                ['/play [query]','Play a song or search'],
-                                ['/stay','Toggle 24/7 stay mode (never leaves VC)'],
-                                ['/skip','Skip current song'],
-                                ['/queue','Show the queue'],
-                                ['/nowplaying','Show current song'],
-                                ['/volume [0-100]','Set volume'],
-                                ['/loop [song/queue/off]','Toggle loop mode'],
-                                ['/shuffle','Shuffle the queue'],
-                                ['/radio [station]','Play a radio station'],
-                                ['/leave','Disconnect bot'],
-                            ].map(([cmd,desc]) => `
-                                <div class="glass" style="padding:1rem;border-radius:12px;margin-bottom:0.8rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
-                                    <code style="color:var(--primary);font-size:0.95rem;">${cmd}</code>
-                                    <span style="color:var(--text-secondary);font-size:0.85rem;">${desc}</span>
-                                </div>`).join('')}
-                        </div>`;
-                }
-            },
-            ai: {
-                icon: 'fas fa-brain', title: 'AI Features',
-                desc: 'AI-powered commands available in Discord.',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <p style="color:var(--text-secondary);margin-bottom:1.5rem;">AI commands available in Discord:</p>
-                            ${[
-                                ['/ask [question]','Ask the AI anything'],
-                                ['/imagine [prompt]','Generate an image with AI'],
-                                ['/translate [text]','Translate text (or react 🌐 to any message)'],
-                                ['/summarize [text]','Summarize long text'],
-                            ].map(([cmd,desc]) => `
-                                <div class="glass" style="padding:1rem;border-radius:12px;margin-bottom:0.8rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
-                                    <code style="color:var(--primary);font-size:0.95rem;">${cmd}</code>
-                                    <span style="color:var(--text-secondary);font-size:0.85rem;">${desc}</span>
-                                </div>`).join('')}
-                        </div>`;
-                }
-            },
-            games: {
-                icon: 'fas fa-gamepad', title: 'Games',
-                desc: 'Mini-games and RPG commands.',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <p style="color:var(--text-secondary);margin-bottom:1.5rem;">Game commands in Discord:</p>
-                            ${[
-                                ['/trivia','Start a trivia game'],
-                                ['/rps @user','Rock Paper Scissors'],
-                                ['/coinflip','Flip a coin'],
-                                ['/8ball [question]','Ask the magic 8-ball'],
-                                ['/slots','Play the slot machine'],
-                            ].map(([cmd,desc]) => `
-                                <div class="glass" style="padding:1rem;border-radius:12px;margin-bottom:0.8rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
-                                    <code style="color:var(--primary);font-size:0.95rem;">${cmd}</code>
-                                    <span style="color:var(--text-secondary);font-size:0.85rem;">${desc}</span>
-                                </div>`).join('')}
-                        </div>`;
-                }
-            },
-            economy: {
-                icon: 'fas fa-coins', title: 'Economy',
-                desc: 'Currency and economy commands.',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <p style="color:var(--text-secondary);margin-bottom:1.5rem;">Economy commands in Discord:</p>
-                            ${[
-                                ['/balance','Check your balance'],
-                                ['/daily','Claim daily coins'],
-                                ['/work','Earn coins by working'],
-                                ['/shop','Browse the item shop'],
-                                ['/buy [item]','Buy an item'],
-                                ['/transfer @user [amount]','Send coins to someone'],
-                                ['/leaderboard','Top richest members'],
-                            ].map(([cmd,desc]) => `
-                                <div class="glass" style="padding:1rem;border-radius:12px;margin-bottom:0.8rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
-                                    <code style="color:var(--primary);font-size:0.95rem;">${cmd}</code>
-                                    <span style="color:var(--text-secondary);font-size:0.85rem;">${desc}</span>
-                                </div>`).join('')}
-                        </div>`;
-                }
-            },
-            automation: {
-                icon: 'fas fa-robot', title: 'Automation',
-                desc: 'Auto-roles, welcome messages, and triggers.',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <p style="color:var(--text-secondary);margin-bottom:1.5rem;">Automation commands in Discord:</p>
-                            ${[
-                                ['/welcome setup','Configure welcome messages'],
-                                ['/autorole set @role','Auto-assign role on join'],
-                                ['/autoresponder add [trigger] [response]','Auto-reply to keywords'],
-                                ['/reactionrole setup','Set up reaction roles'],
-                            ].map(([cmd,desc]) => `
-                                <div class="glass" style="padding:1rem;border-radius:12px;margin-bottom:0.8rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
-                                    <code style="color:var(--primary);font-size:0.95rem;">${cmd}</code>
-                                    <span style="color:var(--text-secondary);font-size:0.85rem;">${desc}</span>
-                                </div>`).join('')}
-                        </div>`;
-                }
-            },
-            security: {
-                icon: 'fas fa-lock', title: 'Security',
-                desc: 'AutoMod and security settings.',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <p style="color:var(--text-secondary);margin-bottom:1.5rem;">Security commands in Discord:</p>
-                            ${[
-                                ['/automod enable','Enable automatic moderation'],
-                                ['/automod filter [word]','Add a word to the filter'],
-                                ['/lockdown','Lock all channels'],
-                                ['/verify setup','Set up member verification'],
-                            ].map(([cmd,desc]) => `
-                                <div class="glass" style="padding:1rem;border-radius:12px;margin-bottom:0.8rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
-                                    <code style="color:var(--primary);font-size:0.95rem;">${cmd}</code>
-                                    <span style="color:var(--text-secondary);font-size:0.85rem;">${desc}</span>
-                                </div>`).join('')}
-                        </div>`;
-                }
-            },
-            logs: {
-                icon: 'fas fa-file-alt', title: 'Logs',
-                desc: 'Recent bot activity.',
-                load: async (body) => {
-                    body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i></div>';
-                    try {
-                        const data = await fetch('/api/bot/status').then(r => r.json());
-                        body.innerHTML = `
-                            <div class="glass" style="padding:2rem;border-radius:20px;">
-                                <div style="display:grid;gap:0.8rem;">
-                                    <div class="glass" style="padding:1rem;border-radius:12px;display:flex;gap:1rem;align-items:center;">
-                                        <span style="font-size:1.2rem;">🤖</span>
-                                        <div><div style="font-weight:600;">Bot Online</div><div style="color:var(--text-secondary);font-size:0.85rem;">Uptime: ${data.uptime || 'N/A'} • Latency: ${data.latency || 0}ms</div></div>
-                                    </div>
-                                    <div class="glass" style="padding:1rem;border-radius:12px;display:flex;gap:1rem;align-items:center;">
-                                        <span style="font-size:1.2rem;">📊</span>
-                                        <div><div style="font-weight:600;">Stats</div><div style="color:var(--text-secondary);font-size:0.85rem;">${data.servers || 0} servers • ${data.users || 0} users • ${data.commands || 0} commands • ${data.cogs || 0} cogs</div></div>
-                                    </div>
-                                </div>
-                            </div>`;
-                    } catch(e) {
-                        body.innerHTML = '<p style="color:#ef4444;">Failed to load logs.</p>';
-                    }
-                }
-            },
-            settings: {
-                icon: 'fas fa-cog', title: 'Settings',
-                desc: 'Dashboard and bot configuration.',
-                load: async (body) => {
-                    body.innerHTML = `
-                        <div class="glass" style="padding:2rem;border-radius:20px;">
-                            <h3 style="margin-bottom:1.5rem;">Dashboard Settings</h3>
-                            <div style="display:grid;gap:1rem;">
-                                <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;">
-                                    <div><div style="font-weight:600;">Theme</div><div style="color:var(--text-secondary);font-size:0.85rem;">Toggle light/dark mode</div></div>
-                                    <button class="liquid-button" onclick="document.querySelector('.theme-toggle')?.click()">Toggle Theme</button>
-                                </div>
-                                <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;">
-                                    <div><div style="font-weight:600;">Logout</div><div style="color:var(--text-secondary);font-size:0.85rem;">Sign out of dashboard</div></div>
-                                    <a href="/logout" class="liquid-button" style="background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.4);">Logout</a>
-                                </div>
-                            </div>
-                        </div>`;
-                }
-            },
-            channels: {
-                icon: 'fas fa-hashtag', title: 'Channels',
-                desc: 'Server channels overview.',
-                load: async (body) => {
-                    body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i></div>';
-                    try {
-                        const servers = await fetch('/api/servers').then(r => r.json());
-                        if (!servers.servers?.length) { body.innerHTML = '<p style="color:var(--text-secondary);">No servers found.</p>'; return; }
-                        const detail = await fetch(`/api/server/${servers.servers[0].id}`).then(r => r.json());
-                        const all = [...(detail.channels?.text||[]).map(c=>({...c,type:'text'})), ...(detail.channels?.voice||[]).map(c=>({...c,type:'voice'}))];
-                        body.innerHTML = `<div class="glass" style="padding:2rem;border-radius:20px;"><div style="display:grid;gap:0.6rem;">${all.map(c=>`
-                            <div style="padding:0.8rem 1rem;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:10px;display:flex;align-items:center;gap:0.8rem;">
-                                <i class="fas fa-${c.type==='voice'?'volume-up':'hashtag'}" style="color:var(--text-secondary);width:16px;"></i>
-                                <span style="font-weight:500;">${c.name}</span>
-                                ${c.category?`<span style="color:var(--text-tertiary);font-size:0.8rem;margin-left:auto;">${c.category}</span>`:''}
-                            </div>`).join('')}</div></div>`;
-                    } catch(e) { body.innerHTML = '<p style="color:#ef4444;">Failed to load channels.</p>'; }
-                }
-            },
-            roles: {
-                icon: 'fas fa-user-tag', title: 'Roles',
-                desc: 'Server roles overview.',
-                load: async (body) => {
-                    body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i></div>';
-                    try {
-                        const servers = await fetch('/api/servers').then(r => r.json());
-                        if (!servers.servers?.length) { body.innerHTML = '<p style="color:var(--text-secondary);">No servers found.</p>'; return; }
-                        const detail = await fetch(`/api/server/${servers.servers[0].id}`).then(r => r.json());
-                        const roles = (detail.roles||[]).filter(r=>r.name!=='@everyone').sort((a,b)=>b.position-a.position);
-                        body.innerHTML = `<div class="glass" style="padding:2rem;border-radius:20px;"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.8rem;">${roles.map(r=>`
-                            <div style="padding:0.8rem 1rem;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:10px;display:flex;align-items:center;gap:0.8rem;">
-                                <div style="width:12px;height:12px;border-radius:50%;background:${r.color};flex-shrink:0;"></div>
-                                <span style="font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</span>
-                                <span style="color:var(--text-secondary);font-size:0.8rem;">${r.members}</span>
-                            </div>`).join('')}</div></div>`;
-                    } catch(e) { body.innerHTML = '<p style="color:#ef4444;">Failed to load roles.</p>'; }
-                }
-            },
-        };
-
-        function renderGenericPage(feature) {
-            const page = GENERIC_PAGES[feature];
-            const container = document.getElementById('generic-page');
-            if (!page) {
-                container.innerHTML = `<div class="glass" style="padding:3rem;text-align:center;border-radius:20px;"><i class="fas fa-tools" style="font-size:3rem;color:var(--primary);display:block;margin-bottom:1rem;"></i><h3>${feature}</h3><p style="color:var(--text-secondary);margin-top:0.5rem;">This section is coming soon.</p></div>`;
-                return;
-            }
+        // Feature panel renderer — rich UI for each section
+        async function renderFeaturePanel(feature, container) {
+            const icons = {
+                servers:'fas fa-server', analytics:'fas fa-chart-line', moderation:'fas fa-shield-alt',
+                music:'fas fa-music', ai:'fas fa-brain', games:'fas fa-gamepad', economy:'fas fa-coins',
+                automation:'fas fa-robot', security:'fas fa-lock', logs:'fas fa-file-alt',
+                settings:'fas fa-cog', channels:'fas fa-hashtag', roles:'fas fa-user-tag',
+            };
+            const titles = {
+                servers:'Servers', analytics:'Analytics', moderation:'Moderation',
+                music:'Music Control', ai:'AI Features', games:'Games', economy:'Economy',
+                automation:'Automation', security:'Security', logs:'Logs',
+                settings:'Settings', channels:'Channels', roles:'Roles',
+            };
             container.innerHTML = `
-                <div style="margin-bottom:1.5rem;">
-                    <h2 class="liquid-text" style="font-size:1.8rem;margin-bottom:0.3rem;"><i class="${page.icon}" style="margin-right:0.5rem;"></i>${page.title}</h2>
-                    <p style="color:var(--text-secondary);">${page.desc}</p>
+                <div class="dashboard-header">
+                    <div>
+                        <h1 class="liquid-text" style="font-size:2rem;margin-bottom:0.3rem;">
+                            <i class="${icons[feature]||'fas fa-star'}" style="margin-right:0.5rem;"></i>${titles[feature]||feature}
+                        </h1>
+                    </div>
+                    <button class="liquid-button" onclick="openFeature('dashboard')">
+                        <i class="fas fa-arrow-left"></i> Back
+                    </button>
                 </div>
-                <div id="generic-page-body"></div>`;
-            page.load(document.getElementById('generic-page-body'));
+                <div id="fp-body" class="animate-in"></div>`;
+            const body = container.querySelector('#fp-body');
+
+            if (feature === 'servers') {
+                body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i></div>';
+                try {
+                    const d = await fetch('/api/servers').then(r=>r.json());
+                    body.innerHTML = `<div class="stats-grid">${(d.servers||[]).map(s=>`
+                        <div class="stat-card glass float-element">
+                            <div class="stat-icon" style="background:var(--gradient-1);">
+                                ${s.icon?`<img src="${s.icon}" style="width:40px;height:40px;border-radius:10px;">`:`<i class="fas fa-server"></i>`}
+                            </div>
+                            <div class="stat-value" style="font-size:1.2rem;">${s.name}</div>
+                            <div class="stat-label">${s.member_count} members • Boost Lv${s.boost_level}</div>
+                            <div class="stat-label" style="margin-top:0.3rem;">Owner: ${s.owner}</div>
+                        </div>`).join('')}</div>`;
+                } catch(e) { body.innerHTML = '<p style="color:#ef4444;">Failed to load servers.</p>'; }
+
+            } else if (feature === 'analytics') {
+                body.innerHTML = `
+                    <div class="chart-container animate-in">
+                        <h3 style="margin-bottom:1.5rem;"><i class="fas fa-chart-bar"></i> Message Activity</h3>
+                        <canvas id="fp-chart" height="80"></canvas>
+                    </div>
+                    <div class="stats-grid" style="margin-top:1.5rem;">
+                        <div class="stat-card glass float-element">
+                            <div class="stat-icon" style="background:var(--gradient-1);"><i class="fas fa-server"></i></div>
+                            <div class="stat-value" id="fp-servers">—</div><div class="stat-label">Servers</div>
+                        </div>
+                        <div class="stat-card glass float-element" style="animation-delay:.1s;">
+                            <div class="stat-icon" style="background:var(--gradient-2);"><i class="fas fa-users"></i></div>
+                            <div class="stat-value" id="fp-users">—</div><div class="stat-label">Total Users</div>
+                        </div>
+                        <div class="stat-card glass float-element" style="animation-delay:.2s;">
+                            <div class="stat-icon" style="background:var(--gradient-3);"><i class="fas fa-bolt"></i></div>
+                            <div class="stat-value" id="fp-latency">—</div><div class="stat-label">Latency</div>
+                        </div>
+                        <div class="stat-card glass float-element" style="animation-delay:.3s;">
+                            <div class="stat-icon" style="background:var(--gradient-4);"><i class="fas fa-clock"></i></div>
+                            <div class="stat-value" id="fp-uptime">—</div><div class="stat-label">Uptime</div>
+                        </div>
+                    </div>`;
+                fetch('/api/bot/status').then(r=>r.json()).then(d=>{
+                    document.getElementById('fp-servers').textContent = d.servers||0;
+                    document.getElementById('fp-users').textContent = (d.users||0).toLocaleString();
+                    document.getElementById('fp-latency').textContent = (d.latency||0)+'ms';
+                    document.getElementById('fp-uptime').textContent = d.uptime||'0h';
+                });
+                const ctx = document.getElementById('fp-chart').getContext('2d');
+                new Chart(ctx, {type:'bar',data:{labels:['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],datasets:[{label:'Messages',data:[320,450,380,510,620,480,390],backgroundColor:'rgba(102,126,234,0.6)',borderColor:'#667eea',borderWidth:2}]},options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{y:{ticks:{color:'white'},grid:{color:'rgba(255,255,255,0.1)'}},x:{ticks:{color:'white'},grid:{color:'rgba(255,255,255,0.1)'}}}}});
+
+            } else if (feature === 'channels') {
+                body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i></div>';
+                try {
+                    const sv = await fetch('/api/servers').then(r=>r.json());
+                    if (!sv.servers?.length) { body.innerHTML='<p style="color:var(--text-secondary);">No servers.</p>'; return; }
+                    const d = await fetch(`/api/server/${sv.servers[0].id}`).then(r=>r.json());
+                    const all = [...(d.channels?.text||[]).map(c=>({...c,type:'text'})),...(d.channels?.voice||[]).map(c=>({...c,type:'voice'}))];
+                    body.innerHTML = `<div class="chart-container"><div style="display:grid;gap:0.6rem;">${all.map(c=>`
+                        <div class="glass" style="padding:0.8rem 1rem;display:flex;align-items:center;gap:0.8rem;border-radius:12px;">
+                            <i class="fas fa-${c.type==='voice'?'volume-up':'hashtag'}" style="color:var(--text-secondary);width:16px;"></i>
+                            <span style="font-weight:500;flex:1;">${c.name}</span>
+                            ${c.category?`<span style="color:var(--text-tertiary);font-size:0.8rem;">${c.category}</span>`:''}
+                        </div>`).join('')}</div></div>`;
+                } catch(e) { body.innerHTML='<p style="color:#ef4444;">Failed to load channels.</p>'; }
+
+            } else if (feature === 'roles') {
+                body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i></div>';
+                try {
+                    const sv = await fetch('/api/servers').then(r=>r.json());
+                    if (!sv.servers?.length) { body.innerHTML='<p style="color:var(--text-secondary);">No servers.</p>'; return; }
+                    const d = await fetch(`/api/server/${sv.servers[0].id}`).then(r=>r.json());
+                    const roles = (d.roles||[]).filter(r=>r.name!=='@everyone').sort((a,b)=>b.position-a.position);
+                    body.innerHTML = `<div class="chart-container"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.8rem;">${roles.map(r=>`
+                        <div class="glass" style="padding:0.8rem 1rem;display:flex;align-items:center;gap:0.8rem;border-radius:12px;">
+                            <div style="width:12px;height:12px;border-radius:50%;background:${r.color};flex-shrink:0;"></div>
+                            <span style="font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</span>
+                            <span style="color:var(--text-secondary);font-size:0.8rem;">${r.members}</span>
+                        </div>`).join('')}</div></div>`;
+                } catch(e) { body.innerHTML='<p style="color:#ef4444;">Failed to load roles.</p>'; }
+
+            } else if (feature === 'logs') {
+                body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:2rem;"></i></div>';
+                try {
+                    const d = await fetch('/api/bot/status').then(r=>r.json());
+                    body.innerHTML = `<div class="chart-container"><div style="display:grid;gap:0.8rem;">
+                        <div class="glass" style="padding:1rem;border-radius:12px;display:flex;gap:1rem;align-items:center;">
+                            <span style="font-size:1.5rem;">🤖</span>
+                            <div><div style="font-weight:600;">Bot Online</div><div style="color:var(--text-secondary);font-size:0.85rem;">Uptime: ${d.uptime||'N/A'} • Latency: ${d.latency||0}ms</div></div>
+                        </div>
+                        <div class="glass" style="padding:1rem;border-radius:12px;display:flex;gap:1rem;align-items:center;">
+                            <span style="font-size:1.5rem;">📊</span>
+                            <div><div style="font-weight:600;">Stats</div><div style="color:var(--text-secondary);font-size:0.85rem;">${d.servers||0} servers • ${d.users||0} users • ${d.commands||0} commands • ${d.cogs||0} cogs loaded</div></div>
+                        </div>
+                    </div></div>`;
+                } catch(e) { body.innerHTML='<p style="color:#ef4444;">Failed to load logs.</p>'; }
+
+            } else if (feature === 'settings') {
+                body.innerHTML = `
+                    <div class="chart-container animate-in">
+                        <h3 style="margin-bottom:1.5rem;">Dashboard Settings</h3>
+                        <div style="display:grid;gap:1rem;">
+                            <div class="glass" style="padding:1.2rem;border-radius:16px;display:flex;justify-content:space-between;align-items:center;">
+                                <div><div style="font-weight:600;">Theme</div><div style="color:var(--text-secondary);font-size:0.85rem;">Toggle light/dark mode</div></div>
+                                <button class="liquid-button" onclick="document.querySelector('.theme-toggle')?.click()"><i class="fas fa-adjust"></i> Toggle Theme</button>
+                            </div>
+                            <div class="glass" style="padding:1.2rem;border-radius:16px;display:flex;justify-content:space-between;align-items:center;">
+                                <div><div style="font-weight:600;">Commands Manager</div><div style="color:var(--text-secondary);font-size:0.85rem;">Enable/disable commands, create custom ones</div></div>
+                                <button class="liquid-button" onclick="openFeature('commands')"><i class="fas fa-terminal"></i> Open</button>
+                            </div>
+                            <div class="glass" style="padding:1.2rem;border-radius:16px;display:flex;justify-content:space-between;align-items:center;">
+                                <div><div style="font-weight:600;">Badge Branding</div><div style="color:var(--text-secondary);font-size:0.85rem;">Use /badge-setup in Discord to configure</div></div>
+                                <span style="color:var(--text-tertiary);font-size:0.85rem;">Discord command</span>
+                            </div>
+                            <div class="glass" style="padding:1.2rem;border-radius:16px;display:flex;justify-content:space-between;align-items:center;">
+                                <div><div style="font-weight:600;">Logout</div><div style="color:var(--text-secondary);font-size:0.85rem;">Sign out of dashboard</div></div>
+                                <a href="/logout" class="liquid-button" style="background:rgba(239,68,68,0.2);border:1px solid rgba(239,68,68,0.4);"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                            </div>
+                        </div>
+                    </div>`;
+
+            } else {
+                // moderation, music, ai, games, economy, automation, security
+                const cmdMap = {
+                    moderation: [['/ban @user [reason]','Ban a member'],['/kick @user [reason]','Kick a member'],['/mute @user [duration]','Timeout a member'],['/warn @user [reason]','Issue a warning'],['/purge [amount]','Delete messages in bulk'],['/slowmode [seconds]','Set channel slowmode']],
+                    music: [['/play [query]','Play a song or search'],['/stay','Toggle 24/7 stay mode'],['/skip','Skip current song'],['/queue','Show the queue'],['/nowplaying','Show current song'],['/volume [0-100]','Set volume'],['/loop [song/queue/off]','Toggle loop'],['/shuffle','Shuffle queue'],['/radio [station]','Play radio station'],['/leave','Disconnect bot']],
+                    ai: [['/ask [question]','Ask the AI anything'],['/imagine [prompt]','Generate an image'],['/translate [text]','Translate text'],['/summarize [text]','Summarize long text']],
+                    games: [['/trivia','Start a trivia game'],['/rps @user','Rock Paper Scissors'],['/coinflip','Flip a coin'],['/8ball [question]','Ask the magic 8-ball'],['/slots','Play the slot machine']],
+                    economy: [['/balance','Check your balance'],['/daily','Claim daily coins'],['/work','Earn coins'],['/shop','Browse the shop'],['/buy [item]','Buy an item'],['/transfer @user [amount]','Send coins'],['/leaderboard','Top richest members']],
+                    automation: [['/welcome setup','Configure welcome messages'],['/autorole set @role','Auto-assign role on join'],['/autoresponder add [trigger] [response]','Auto-reply to keywords'],['/reactionrole setup','Set up reaction roles']],
+                    security: [['/automod enable','Enable auto-moderation'],['/automod filter [word]','Add word to filter'],['/lockdown','Lock all channels'],['/verify setup','Set up verification']],
+                };
+                const cmds = cmdMap[feature] || [];
+                body.innerHTML = `
+                    <div class="chart-container animate-in">
+                        <p style="color:var(--text-secondary);margin-bottom:1.5rem;">Use these slash commands directly in Discord:</p>
+                        <div style="display:grid;gap:0.8rem;">
+                            ${cmds.map(([cmd,desc])=>`
+                            <div class="glass" style="padding:1rem 1.2rem;border-radius:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+                                <code style="color:var(--liquid-1);font-size:0.95rem;font-weight:600;">${cmd}</code>
+                                <span style="color:var(--text-secondary);font-size:0.85rem;">${desc}</span>
+                            </div>`).join('')}
+                        </div>
+                    </div>`;
+            }
         }
         
         // Load Roblox data
