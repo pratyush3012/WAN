@@ -956,3 +956,4 @@ def start_web_dashboard(bot, host='0.0.0.0', port=5000):
 if __name__ == '__main__':
     print("⚠️  Run this through bot.py, not directly!")
     print("The enhanced web dashboard will start automatically with the bot.")
+
