@@ -170,43 +170,40 @@ class BadgeSystem(commands.Cog):
 
     # ── Background sync every 30 min ─────────────────────────────────────────
 
-    @tasks.loop(minutes=30)
+    @tasks.loop(hours=2)
     async def auto_sync(self):
         """
-        Rate-limit-safe badge sync.
-        Processes one guild at a time, 5s between members, 30s between guilds.
-        This prevents the 429 storm that was killing voice connections.
+        Rate-limit-safe badge sync — runs every 2 hours.
+        Only touches members whose badge is actually wrong.
+        10s between API calls, 60s between guilds.
         """
         for guild in self.bot.guilds:
             try:
                 await self.ensure_badge_roles(guild)
-                # Only sync members who actually need a change — check first, act second
+                await asyncio.sleep(2)
+                all_badge_names = self.all_badge_role_names(guild.id)
                 for member in guild.members:
                     if member.bot:
                         continue
                     bt = self.get_badge_type(member)
-                    all_badge_names = self.all_badge_role_names(guild.id)
                     current_badges = [r for r in member.roles if r.name in all_badge_names]
                     expected_name = self.role_name(guild.id, bt) if bt else None
-
-                    # Skip if already correct
+                    # Skip if already correct — no API call needed
                     if expected_name:
                         if len(current_badges) == 1 and current_badges[0].name == expected_name:
                             continue
                     elif not current_badges:
                         continue
-
-                    # Needs update — apply with a generous delay
                     await self.assign_badge(member)
-                    await asyncio.sleep(5)  # 5s between each API call — well under rate limits
+                    await asyncio.sleep(10)  # 10s between role changes
             except Exception as e:
                 logger.warning(f"[badges] auto_sync error for {guild.name}: {e}")
-            await asyncio.sleep(30)  # 30s between guilds
+            await asyncio.sleep(60)  # 60s between guilds
 
     @auto_sync.before_loop
     async def before_sync(self):
         await self.bot.wait_until_ready()
-        await asyncio.sleep(90)   # wait 90s after startup
+        await asyncio.sleep(120)  # wait 2 min after startup before first sync
 
     # ── Commands ─────────────────────────────────────────────────────────────
 

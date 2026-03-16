@@ -1,10 +1,10 @@
 """
-WAN Bot - Music Cog v5 (bulletproof)
+WAN Bot - Music Cog v6
 - /stay  : bot locks to VC forever, autoplays similar songs, NEVER leaves
-- Instant rejoin via on_voice_state_update (not polling)
-- Dedup by URL + title — same song NEVER plays back-to-back
-- SoundCloud primary (no IP blocks on Render), YouTube fallback
-- Watchdog catches any silent gap and restarts autoplay
+- NO manual reconnect logic — discord.py reconnect=True handles it natively
+- Watchdog only restarts PLAYBACK (not connection) — no more 4017 errors
+- Dedup by URL + title — same song never plays twice in a row
+- SoundCloud primary, YouTube fallback
 """
 import discord
 from discord import app_commands
@@ -61,7 +61,7 @@ _SEEDS = [
 ]
 
 
-# ── Extraction helpers (blocking — run in executor) ───────────────────────────
+# ── Extraction helpers ────────────────────────────────────────────────────────
 
 def _is_url(q: str) -> bool:
     return q.startswith(("http://", "https://", "www."))
@@ -99,11 +99,8 @@ def _extract(query: str):
                 if r:
                     return r
         return _ydl_extract(YTDL_BASE, url)
-
-    # Text search — SoundCloud first (no IP blocks on cloud hosting)
     r = _ydl_extract(YTDL_BASE, f"scsearch1:{query}")
     if r:
-        logger.info(f"SC hit: '{r.get('title')}' for '{query}'")
         return r
     for clients in _YT_CLIENTS:
         r = _ydl_extract(
@@ -111,16 +108,10 @@ def _extract(query: str):
             f"ytsearch1:{query}",
         )
         if r:
-            logger.info(f"YT hit: '{r.get('title')}' for '{query}'")
             return r
-    logger.warning(f"No results: '{query}'")
     return None
 
 def _extract_similar(seed_title: str, exclude_urls: set, exclude_titles: set):
-    """
-    Fetch songs similar to seed_title, returning a random unseen one.
-    Tries SoundCloud (8 results) → YouTube (5 results) → random seed fallback.
-    """
     clean = re.sub(
         r"\(.*?\)|\[.*?\]|official\s*(video|audio|mv)?|lyrics?|hd|4k|"
         r"ft\.?\s*\w+|feat\.?\s*\w+|\d{4}",
@@ -136,7 +127,6 @@ def _extract_similar(seed_title: str, exclude_urls: set, exclude_titles: set):
         title = (e.get("title") or "").lower().strip()
         return url not in exclude_urls and title not in exclude_titles
 
-    # SoundCloud pool
     for n in (8, 5, 3):
         try:
             opts = {**YTDL_BASE, "noplaylist": False}
@@ -145,13 +135,10 @@ def _extract_similar(seed_title: str, exclude_urls: set, exclude_titles: set):
             if data and "entries" in data:
                 pool = [e for e in data["entries"] if _unseen(e)]
                 if pool:
-                    pick = random.choice(pool)
-                    logger.info(f"Autoplay SC: '{pick.get('title')}' (seed: '{clean}')")
-                    return pick
+                    return random.choice(pool)
         except Exception:
             pass
 
-    # YouTube pool
     for clients in _YT_CLIENTS:
         try:
             opts = {**YTDL_BASE, "noplaylist": False,
@@ -161,16 +148,11 @@ def _extract_similar(seed_title: str, exclude_urls: set, exclude_titles: set):
             if data and "entries" in data:
                 pool = [e for e in data["entries"] if _unseen(e)]
                 if pool:
-                    pick = random.choice(pool)
-                    logger.info(f"Autoplay YT: '{pick.get('title')}' (seed: '{clean}')")
-                    return pick
+                    return random.choice(pool)
         except Exception:
             continue
 
-    # Last resort
-    seed = random.choice(_SEEDS)
-    logger.info(f"Autoplay fallback seed: '{seed}'")
-    return _extract(seed)
+    return _extract(random.choice(_SEEDS))
 
 def _fmt(seconds) -> str:
     if not seconds:
@@ -186,8 +168,8 @@ class MusicQueue:
     def __init__(self):
         self.queue: deque = deque()
         self.current = None
-        self.loop = False        # loop current track
-        self.loop_queue = False  # loop entire queue
+        self.loop = False
+        self.loop_queue = False
         self.history: deque = deque(maxlen=50)
         self.played_urls: set = set()
         self.played_titles: set = set()
@@ -205,16 +187,14 @@ class MusicQueue:
             self.played_urls.add(url)
         if title:
             self.played_titles.add(title)
-        # Trim to avoid unbounded growth
         if len(self.played_urls) > 200:
             self.played_urls = set(list(self.played_urls)[-100:])
         if len(self.played_titles) > 200:
             self.played_titles = set(list(self.played_titles)[-100:])
 
     def advance(self):
-        """Record current as played, return next song (or None)."""
         if self.loop and self.current:
-            return self.current  # repeat same track
+            return self.current
         self.record_played(self.current)
         if self.loop_queue and self.current:
             self.queue.append(self.current)
@@ -228,14 +208,6 @@ class MusicQueue:
         lst = list(self.queue)
         random.shuffle(lst)
         self.queue = deque(lst)
-
-    def remove(self, idx: int):
-        lst = list(self.queue)
-        if 0 < idx <= len(lst):
-            removed = lst.pop(idx - 1)
-            self.queue = deque(lst)
-            return removed.title
-        return None
 
     def clear(self):
         self.queue.clear()
@@ -304,12 +276,8 @@ class Music(commands.Cog):
         self.bot = bot
         self._queues: dict[int, MusicQueue] = {}
         self._volumes: dict[int, float] = {}
-        # guild_id -> {channel_id, text_channel_id}
         self._stay: dict[int, dict] = {}
-        # Per-guild lock so only one autoplay coroutine runs at a time
         self._autoplay_locks: dict[int, asyncio.Lock] = {}
-        # Guilds currently in the middle of a reconnect (avoid double-reconnect)
-        self._reconnecting: set[int] = set()
         self._load_stay()
         self._watchdog.start()
 
@@ -323,13 +291,11 @@ class Music(commands.Cog):
             if os.path.exists(PERSIST_FILE):
                 with open(PERSIST_FILE) as f:
                     raw = json.load(f)
-                # Migrate old format {guild_id: channel_id} → new format {guild_id: {channel_id, text_channel_id}}
                 migrated = {}
                 for k, v in raw.items():
                     if isinstance(v, dict):
                         migrated[int(k)] = v
                     else:
-                        # Old flat format — channel_id was stored directly
                         migrated[int(k)] = {"channel_id": int(v), "text_channel_id": int(v)}
                 self._stay = migrated
         except Exception:
@@ -358,7 +324,6 @@ class Music(commands.Cog):
         return self._volumes.get(guild_id, 0.5)
 
     async def _ensure_voice(self, interaction: discord.Interaction):
-        """Join user's VC or return existing. Returns VoiceClient or None."""
         if not interaction.user.voice or not interaction.user.voice.channel:
             await interaction.followup.send("❌ Join a voice channel first.", ephemeral=True)
             return None
@@ -374,7 +339,6 @@ class Music(commands.Cog):
             return None
 
     async def _broadcast_now_playing(self, guild_id: int, song: "YTDLSource"):
-        """Post now-playing embed to the stored text channel."""
         info = self._stay.get(guild_id)
         if not info:
             return
@@ -398,102 +362,65 @@ class Music(commands.Cog):
         except Exception:
             pass
 
-    # ── Event: instant rejoin on disconnect ───────────────────────────────────
+    # ── Watchdog: ONLY restarts playback, never reconnects ────────────────────
+    # The 4017 "already authenticated" error was caused by our code AND discord.py
+    # both trying to connect at the same time. Solution: let discord.py handle
+    # all reconnection (reconnect=True does this). We only restart PLAYBACK here.
 
-    @commands.Cog.listener()
-    async def on_voice_state_update(
-        self, member: discord.Member,
-        before: discord.VoiceState, after: discord.VoiceState
-    ):
-        """If the bot itself gets disconnected from a stay-mode VC, rejoin instantly."""
-        if member.id != self.bot.user.id:
-            return
-        # Bot was in a channel and is now in no channel (disconnected, not moved)
-        # before.channel must exist (was connected) and after.channel must be None (now disconnected)
-        if before.channel is None or after.channel is not None:
-            return
-
-        guild_id = member.guild.id
-        info = self._stay.get(guild_id)
-        if not info:
-            return  # not in stay mode
-        if guild_id in self._reconnecting:
-            return  # already handling
-
-        self._reconnecting.add(guild_id)
-        try:
-            # Wait a moment — Discord sometimes sends spurious disconnect events
-            await asyncio.sleep(2.0)
-            # If something else already reconnected, bail
-            vc = member.guild.voice_client
-            if vc and vc.is_connected():
-                return
-            ch = member.guild.get_channel(info["channel_id"])
-            if not ch:
-                return
-            logger.info(f"[stay] Reconnecting to {ch.name} in {member.guild.name}")
-            new_vc = await ch.connect(timeout=20.0, reconnect=True)
-            logger.info(f"[stay] Rejoined {ch.name} in {member.guild.name}")
-            # Restart playback
-            if not new_vc.is_playing():
-                asyncio.ensure_future(self._autoplay_next(member.guild, new_vc))
-        except Exception as e:
-            logger.warning(f"[stay] Rejoin failed for {guild_id}: {e}")
-        finally:
-            self._reconnecting.discard(guild_id)
-
-    # ── Watchdog: catches any silent gap in stay mode ─────────────────────────
-
-    @tasks.loop(seconds=20)
+    @tasks.loop(seconds=30)
     async def _watchdog(self):
         for guild_id in list(self._stay.keys()):
             guild = self.bot.get_guild(guild_id)
             if not guild:
                 continue
-            info = self._stay.get(guild_id)
             vc = guild.voice_client
-
-            # ── Not connected at all → reconnect ──────────────────────────
+            # Only act if we're connected — never try to reconnect manually
             if not vc or not vc.is_connected():
-                if guild_id in self._reconnecting:
-                    continue
-                if not info:
-                    continue
-                ch = guild.get_channel(info["channel_id"])
-                if not ch:
-                    continue
-                self._reconnecting.add(guild_id)
-                try:
-                    logger.info(f"[watchdog] Reconnecting to {ch.name} in {guild.name}")
-                    new_vc = await ch.connect(timeout=20.0, reconnect=True)
-                    asyncio.ensure_future(self._autoplay_next(guild, new_vc))
-                except Exception as e:
-                    logger.warning(f"[watchdog] Reconnect failed for {guild_id}: {e}")
-                finally:
-                    self._reconnecting.discard(guild_id)
                 continue
-
-            # ── Connected but silent → resume/autoplay ────────────────────
             if vc.is_playing() or vc.is_paused():
                 continue
+            # Connected but silent → restart autoplay
             q = self.get_queue(guild_id)
-            if q.queue:
-                lock = self._get_lock(guild_id)
-                if not lock.locked():
-                    asyncio.ensure_future(self._play_next_async(guild, vc))
-                continue
             lock = self._get_lock(guild_id)
-            if not lock.locked():
+            if lock.locked():
+                continue
+            if q.queue:
+                asyncio.ensure_future(self._play_next_async(guild, vc))
+            else:
                 asyncio.ensure_future(self._autoplay_next(guild, vc))
 
     @_watchdog.before_loop
     async def _before_watchdog(self):
         await self.bot.wait_until_ready()
 
+    # ── on_voice_state_update: ONLY restart playback after reconnect ──────────
+    # We do NOT call vc.connect() here — discord.py's reconnect=True already
+    # handles reconnection automatically. We just need to restart playback
+    # once the bot is back in the channel.
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self, member: discord.Member,
+        before: discord.VoiceState, after: discord.VoiceState
+    ):
+        if member.id != self.bot.user.id:
+            return
+        guild_id = member.guild.id
+        if guild_id not in self._stay:
+            return
+
+        # Bot just joined/rejoined a channel (after.channel is set)
+        if after.channel is not None and before.channel != after.channel:
+            # Give discord.py a moment to fully establish the connection
+            await asyncio.sleep(1.0)
+            vc = member.guild.voice_client
+            if vc and vc.is_connected() and not vc.is_playing():
+                logger.info(f"[stay] Back in {after.channel.name}, restarting playback")
+                asyncio.ensure_future(self._autoplay_next(member.guild, vc))
+
     # ── Playback core ─────────────────────────────────────────────────────────
 
     def _after_song(self, err, guild: discord.Guild, vc: discord.VoiceClient):
-        """Sync callback fired by discord.py after each track ends."""
         if err:
             logger.error(f"Playback error in {guild.name}: {err}")
         asyncio.run_coroutine_threadsafe(
@@ -502,44 +429,35 @@ class Music(commands.Cog):
 
     async def _play_next_async(self, guild: discord.Guild, vc: discord.VoiceClient):
         q = self.get_queue(guild.id)
-        next_song = q.advance()  # records current as played, returns next
+        next_song = q.advance()
         if next_song:
             await self._start_playing(guild, vc, next_song)
         else:
             await self._autoplay_next(guild, vc)
 
     async def _start_playing(self, guild: discord.Guild, vc: discord.VoiceClient, song: YTDLSource):
-        """Play a YTDLSource. Re-creates FFmpeg source (stream URLs expire)."""
         if not vc or not vc.is_connected():
             return
         if vc.is_playing():
             vc.stop()
-
         q = self.get_queue(guild.id)
         q.current = song
-
         try:
-            # Always re-create the FFmpeg source — stream URLs expire after ~6h
             src = discord.FFmpegPCMAudio(song.data["url"], **FFMPEG_OPTS)
             player = discord.PCMVolumeTransformer(src, volume=self.get_volume(guild.id))
-            # Copy metadata so nowplaying still works
             player.data = song.data
             player.title = song.title
             player.url = song.url
             player.thumbnail = song.thumbnail
             player.duration = song.duration
             player.requester = song.requester
-
             vc.play(player, after=lambda e: self._after_song(e, guild, vc))
             await self._broadcast_now_playing(guild.id, song)
-
         except Exception as e:
             logger.error(f"_start_playing error in {guild.name}: {e}")
-            # Stream URL probably expired — re-fetch and retry
             asyncio.ensure_future(self._refetch_and_play(guild, vc, song))
 
     async def _refetch_and_play(self, guild: discord.Guild, vc: discord.VoiceClient, song: YTDLSource):
-        """Re-extract a fresh stream URL for a song and play it."""
         try:
             loop = asyncio.get_event_loop()
             data = await asyncio.wait_for(
@@ -557,35 +475,21 @@ class Music(commands.Cog):
             await self._autoplay_next(guild, vc)
 
     async def _autoplay_next(self, guild: discord.Guild, vc: discord.VoiceClient):
-        """
-        Pick a song SIMILAR to the last played and start it.
-        - Per-guild lock: only one autoplay runs at a time
-        - Returns immediately on success (no retry-on-success bug)
-        - Retries up to 3x only on actual failure
-        - Dedup: never plays a URL or title that was already played this session
-        """
         if not vc or not vc.is_connected():
             return
-
         lock = self._get_lock(guild.id)
         if lock.locked():
-            return  # already running for this guild
-
+            return
         async with lock:
             q = self.get_queue(guild.id)
-            # Something started while we waited for the lock
             if vc.is_playing() or vc.is_paused():
                 return
-
-            # Seed from most recent history
             seed_title = None
             if q.history:
                 seed_title = q.history[-1].title
             elif q.current:
                 seed_title = q.current.title
-
             loop = asyncio.get_event_loop()
-
             for attempt in range(3):
                 try:
                     if seed_title:
@@ -602,28 +506,23 @@ class Music(commands.Cog):
                             loop.run_in_executor(None, lambda: _extract(seed)),
                             timeout=60.0,
                         )
-
                     if data:
                         song = await YTDLSource.from_data(data, self.get_volume(guild.id))
                         url = song.url or ""
                         title = (song.title or "").lower().strip()
                         if url in q.played_urls or title in q.played_titles:
-                            logger.info(f"Autoplay dedup skip: '{song.title}', retrying…")
                             seed_title = song.title
                             continue
                         q.current = song
                         await self._start_playing(guild, vc, song)
-                        return  # ← SUCCESS, stop here
-
+                        return
                     seed_title = random.choice(_SEEDS)
-
                 except asyncio.TimeoutError:
                     logger.warning(f"Autoplay timeout attempt {attempt + 1}")
                     seed_title = random.choice(_SEEDS)
                 except Exception as e:
                     logger.error(f"Autoplay error attempt {attempt + 1}: {e}")
                     seed_title = random.choice(_SEEDS)
-
             logger.error(f"Autoplay failed after 3 attempts for guild {guild.id}")
 
     # ── Slash commands ────────────────────────────────────────────────────────
@@ -644,14 +543,9 @@ class Music(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ Could not find: `{query}`\n`{e}`")
             return
-
         if vc.is_playing() or vc.is_paused():
             q.add(song)
-            embed = discord.Embed(
-                title="➕ Added to Queue",
-                description=f"[{song.title}]({song.url})",
-                color=discord.Color.blue(),
-            )
+            embed = discord.Embed(title="➕ Added to Queue", description=f"[{song.title}]({song.url})", color=discord.Color.blue())
             embed.add_field(name="Position", value=str(len(q.queue)))
             embed.add_field(name="Duration", value=_fmt(song.duration))
             await interaction.followup.send(embed=embed)
@@ -669,9 +563,7 @@ class Music(commands.Cog):
             return
         await interaction.followup.send("⏳ Loading playlist…")
         try:
-            songs = await YTDLSource.from_playlist(
-                url, loop=self.bot.loop, volume=self.get_volume(interaction.guild_id)
-            )
+            songs = await YTDLSource.from_playlist(url, loop=self.bot.loop, volume=self.get_volume(interaction.guild_id))
         except Exception as e:
             await interaction.followup.send(f"❌ Failed to load playlist: {e}")
             return
@@ -688,7 +580,7 @@ class Music(commands.Cog):
             if next_song:
                 await self._start_playing(interaction.guild, vc, next_song)
 
-    @app_commands.command(name="stay", description="Toggle stay mode — bot never leaves VC and autoplays forever")
+    @app_commands.command(name="stay", description="Toggle 24/7 stay mode — bot never leaves and autoplays forever")
     async def stay(self, interaction: discord.Interaction):
         await interaction.response.defer()
         guild_id = interaction.guild_id
@@ -758,7 +650,7 @@ class Music(commands.Cog):
             return
         q = self.get_queue(interaction.guild_id)
         title = q.current.title if q.current else "Unknown"
-        vc.stop()  # fires _after_song → _play_next_async
+        vc.stop()
         await interaction.followup.send(f"⏭️ Skipped **{title}**")
 
     @app_commands.command(name="stop", description="Stop music and clear queue")
@@ -778,11 +670,7 @@ class Music(commands.Cog):
             await interaction.response.send_message("❌ Nothing playing.", ephemeral=True)
             return
         s = q.current
-        embed = discord.Embed(
-            title="🎵 Now Playing",
-            description=f"[{s.title}]({s.url})",
-            color=discord.Color.green(),
-        )
+        embed = discord.Embed(title="🎵 Now Playing", description=f"[{s.title}]({s.url})", color=discord.Color.green())
         if s.thumbnail:
             embed.set_thumbnail(url=s.thumbnail)
         embed.add_field(name="Duration", value=_fmt(s.duration))
@@ -808,11 +696,7 @@ class Music(commands.Cog):
             lines.append(f"`{i}.` {s.title} `[{_fmt(s.duration)}]`")
         if len(q.queue) > 15:
             lines.append(f"… and {len(q.queue) - 15} more")
-        embed = discord.Embed(
-            title=f"🎶 Queue — {len(q.queue)} songs",
-            description="\n".join(lines),
-            color=discord.Color.blurple(),
-        )
+        embed = discord.Embed(title=f"🎶 Queue — {len(q.queue)} songs", description="\n".join(lines), color=discord.Color.blurple())
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="volume", description="Set volume (0-100)")
@@ -839,11 +723,7 @@ class Music(commands.Cog):
         q = self.get_queue(interaction.guild_id)
         q.loop = (mode == "song")
         q.loop_queue = (mode == "queue")
-        labels = {
-            "song": "🔂 Looping current song",
-            "queue": "🔁 Looping entire queue",
-            "off": "Loop disabled",
-        }
+        labels = {"song": "🔂 Looping current song", "queue": "🔁 Looping entire queue", "off": "Loop disabled"}
         await interaction.response.send_message(labels[mode])
 
     @app_commands.command(name="shuffle", description="Shuffle the queue")
@@ -878,8 +758,7 @@ class Music(commands.Cog):
         if not vc:
             return
         try:
-            song = await YTDLSource.from_query(url, loop=self.bot.loop,
-                                               volume=self.get_volume(interaction.guild_id))
+            song = await YTDLSource.from_query(url, loop=self.bot.loop, volume=self.get_volume(interaction.guild_id))
             song.requester = interaction.user
         except Exception as e:
             await interaction.followup.send(f"❌ Could not load radio: {e}")
