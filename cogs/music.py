@@ -1,8 +1,9 @@
 """
-WAN Bot - Music Cog v6
+WAN Bot - Music Cog v7
 - /stay  : bot locks to VC forever, autoplays similar songs, NEVER leaves
-- NO manual reconnect logic — discord.py reconnect=True handles it natively
-- Watchdog only restarts PLAYBACK (not connection) — no more 4017 errors
+- _reconnect_loop (every 30s): rejoins VC if disconnected — checks is_connected() first
+- _watchdog (every 15s): restarts PLAYBACK if connected but silent
+- No on_voice_state_update reconnect — avoids 4017 "already authenticated" errors
 - Dedup by URL + title — same song never plays twice in a row
 - SoundCloud primary, YouTube fallback
 """
@@ -279,9 +280,11 @@ class Music(commands.Cog):
         self._stay: dict[int, dict] = {}
         self._autoplay_locks: dict[int, asyncio.Lock] = {}
         self._load_stay()
+        self._reconnect_loop.start()
         self._watchdog.start()
 
     def cog_unload(self):
+        self._reconnect_loop.cancel()
         self._watchdog.cancel()
 
     # ── Persistence ───────────────────────────────────────────────────────────
@@ -362,19 +365,48 @@ class Music(commands.Cog):
         except Exception:
             pass
 
-    # ── Watchdog: ONLY restarts playback, never reconnects ────────────────────
-    # The 4017 "already authenticated" error was caused by our code AND discord.py
-    # both trying to connect at the same time. Solution: let discord.py handle
-    # all reconnection (reconnect=True does this). We only restart PLAYBACK here.
+    # ── Reconnect loop: rejoin VC if disconnected (stay mode) ─────────────────
+    # Polls every 30s. Only calls connect() if NOT already connected.
+    # This avoids the 4017 "already authenticated" error that on_voice_state_update
+    # caused (both our code and discord.py tried to connect simultaneously).
 
     @tasks.loop(seconds=30)
+    async def _reconnect_loop(self):
+        for guild_id, info in list(self._stay.items()):
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+            vc = guild.voice_client
+            # Already connected — nothing to do here
+            if vc and vc.is_connected():
+                continue
+            channel_id = info.get("channel_id")
+            if not channel_id:
+                continue
+            ch = guild.get_channel(channel_id)
+            if not ch:
+                continue
+            try:
+                logger.info(f"[stay] Reconnecting to {ch.name} in {guild.name}")
+                vc = await ch.connect(timeout=15.0, reconnect=True)
+                await asyncio.sleep(1.0)
+                asyncio.ensure_future(self._autoplay_next(guild, vc))
+            except Exception as e:
+                logger.warning(f"[stay] Reconnect failed for {guild.name}: {e}")
+
+    @_reconnect_loop.before_loop
+    async def _before_reconnect_loop(self):
+        await self.bot.wait_until_ready()
+
+    # ── Watchdog: restarts playback if connected but silent ───────────────────
+
+    @tasks.loop(seconds=15)
     async def _watchdog(self):
         for guild_id in list(self._stay.keys()):
             guild = self.bot.get_guild(guild_id)
             if not guild:
                 continue
             vc = guild.voice_client
-            # Only act if we're connected — never try to reconnect manually
             if not vc or not vc.is_connected():
                 continue
             if vc.is_playing() or vc.is_paused():
@@ -392,31 +424,6 @@ class Music(commands.Cog):
     @_watchdog.before_loop
     async def _before_watchdog(self):
         await self.bot.wait_until_ready()
-
-    # ── on_voice_state_update: ONLY restart playback after reconnect ──────────
-    # We do NOT call vc.connect() here — discord.py's reconnect=True already
-    # handles reconnection automatically. We just need to restart playback
-    # once the bot is back in the channel.
-
-    @commands.Cog.listener()
-    async def on_voice_state_update(
-        self, member: discord.Member,
-        before: discord.VoiceState, after: discord.VoiceState
-    ):
-        if member.id != self.bot.user.id:
-            return
-        guild_id = member.guild.id
-        if guild_id not in self._stay:
-            return
-
-        # Bot just joined/rejoined a channel (after.channel is set)
-        if after.channel is not None and before.channel != after.channel:
-            # Give discord.py a moment to fully establish the connection
-            await asyncio.sleep(1.0)
-            vc = member.guild.voice_client
-            if vc and vc.is_connected() and not vc.is_playing():
-                logger.info(f"[stay] Back in {after.channel.name}, restarting playback")
-                asyncio.ensure_future(self._autoplay_next(member.guild, vc))
 
     # ── Playback core ─────────────────────────────────────────────────────────
 
