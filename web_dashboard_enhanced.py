@@ -47,7 +47,7 @@ cache = Cache(app, config={'CACHE_TYPE': 'simple', 'CACHE_DEFAULT_TIMEOUT': 300}
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"],
+    default_limits=["2000 per day", "500 per hour"],
     storage_uri="memory://"
 )
 
@@ -399,16 +399,17 @@ def export_data(format):
         return jsonify({'error': 'Export failed'}), 500
 
 @app.route('/api/health')
+@limiter.exempt
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint — always 200 so Render never kills the instance"""
     checks = {
         'bot': bot_instance.is_ready() if bot_instance else False,
         'cache': cache.cache is not None,
         'timestamp': datetime.utcnow().isoformat()
     }
-    
     status = 'healthy' if checks['bot'] else 'degraded'
-    return jsonify({'status': status, 'checks': checks})
+    # Always return 200 — Render marks instance failed on any non-2xx
+    return jsonify({'status': status, 'checks': checks}), 200
 
 # ===== Roblox Integration API Endpoints =====
 
