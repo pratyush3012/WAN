@@ -47,7 +47,7 @@ cache = Cache(app, config={'CACHE_TYPE': 'simple', 'CACHE_DEFAULT_TIMEOUT': 300}
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"],
+    default_limits=["2000 per day", "200 per hour"],
     storage_uri="memory://"
 )
 
@@ -399,6 +399,7 @@ def export_data(format):
         return jsonify({'error': 'Export failed'}), 500
 
 @app.route('/api/health')
+@limiter.exempt
 def health_check():
     """Health check endpoint"""
     checks = {
@@ -637,6 +638,55 @@ def handle_unsubscribe(data):
     if server_id:
         leave_room(f'server_{server_id}')
         emit('unsubscribed', {'server_id': server_id})
+
+# ── Members API ──────────────────────────────────────────────────────────────
+
+@app.route('/api/members')
+@require_auth
+@cache.cached(timeout=30, key_prefix='members_list')
+def get_members():
+    """Get members for the first (or specified) guild."""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        guild_id = request.args.get('guild_id')
+        if guild_id:
+            guild = bot_instance.get_guild(int(guild_id))
+        else:
+            guild = bot_instance.guilds[0] if bot_instance.guilds else None
+
+        if not guild:
+            return jsonify({'members': [], 'total': 0})
+
+        members = []
+        for m in guild.members:
+            top_role = m.top_role
+            members.append({
+                'id': str(m.id),
+                'name': m.display_name,
+                'username': str(m),
+                'avatar': str(m.display_avatar.url) if m.display_avatar else None,
+                'bot': m.bot,
+                'joined_at': m.joined_at.isoformat() if m.joined_at else None,
+                'top_role': top_role.name if top_role else None,
+                'top_role_color': str(top_role.color) if top_role else '#ffffff',
+                'status': str(m.status) if hasattr(m, 'status') else 'offline',
+            })
+
+        # Sort: online first, then by join date
+        status_order = {'online': 0, 'idle': 1, 'dnd': 2, 'offline': 3}
+        members.sort(key=lambda x: (status_order.get(x['status'], 3), x['name'].lower()))
+
+        return jsonify({
+            'members': members[:200],  # cap at 200 for performance
+            'total': len(members),
+            'guild': guild.name,
+        })
+    except Exception as e:
+        logger.error(f"get_members error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 # ── Commands Manager ─────────────────────────────────────────────────────────
 

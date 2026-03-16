@@ -473,6 +473,9 @@
 
     <!-- Commands Manager Page -->
     <div id="commands-page" style="display:none;"></div>
+
+    <!-- Members Page -->
+    <div id="members-page" style="display:none;"></div>
     
     <!-- Scripts -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
@@ -594,6 +597,7 @@
             document.querySelector('.feature-grid').parentElement.style.display = 'none';
             document.getElementById('roblox-section').style.display = 'none';
             document.getElementById('commands-page').style.display = 'none';
+            document.getElementById('members-page').style.display = 'none';
             
             if (feature === 'roblox') {
                 document.getElementById('roblox-section').style.display = 'block';
@@ -601,6 +605,9 @@
             } else if (feature === 'commands') {
                 document.getElementById('commands-page').style.display = 'block';
                 loadCommandsPage();
+            } else if (feature === 'members') {
+                document.getElementById('members-page').style.display = 'block';
+                loadMembersPage();
             } else {
                 showToast('Opening', `Loading ${feature} panel...`, 'info');
                 // Show default sections
@@ -1103,6 +1110,75 @@
             }
         }
         
+        // ── Members Page ──────────────────────────────────────────────────────
+
+        async function loadMembersPage() {
+            const container = document.getElementById('members-page');
+            if (!container) return;
+            container.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem;">
+                    <div>
+                        <h2 class="liquid-text" style="font-size:1.8rem;margin-bottom:0.3rem;">Members</h2>
+                        <p style="color:var(--text-secondary);" id="members-subtitle">Loading…</p>
+                    </div>
+                    <input id="member-search" type="text" placeholder="Search members…" oninput="filterMembers()"
+                        style="background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:12px;padding:0.6rem 1rem;color:var(--text-primary);outline:none;min-width:220px;">
+                </div>
+                <div id="members-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;">
+                    <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-secondary);">
+                        <i class="fas fa-spinner fa-spin" style="font-size:2rem;display:block;margin-bottom:1rem;"></i>
+                        Loading members…
+                    </div>
+                </div>`;
+            try {
+                const data = await fetch('/api/members').then(r => r.json());
+                if (data.error) { showToast('Error', data.error, 'error'); return; }
+                window._membersData = data.members || [];
+                document.getElementById('members-subtitle').textContent =
+                    `${data.total} members in ${data.guild || 'server'}`;
+                renderMembers(window._membersData);
+            } catch(e) {
+                document.getElementById('members-grid').innerHTML =
+                    '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-secondary);">Failed to load members.</div>';
+                showToast('Error', 'Failed to load members', 'error');
+            }
+        }
+
+        function renderMembers(members) {
+            const grid = document.getElementById('members-grid');
+            if (!grid) return;
+            if (!members.length) {
+                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--text-secondary);">No members found.</div>';
+                return;
+            }
+            const statusIcon = { online:'🟢', idle:'🟡', dnd:'🔴', offline:'⚫' };
+            grid.innerHTML = members.map(m => `
+                <div class="glass liquid-card" style="padding:1.2rem;display:flex;align-items:center;gap:1rem;">
+                    <div style="position:relative;flex-shrink:0;">
+                        <img src="${m.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png'}"
+                             style="width:48px;height:48px;border-radius:50%;border:2px solid ${m.top_role_color};"
+                             onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                        <span style="position:absolute;bottom:0;right:0;font-size:0.7rem;">${statusIcon[m.status] || '⚫'}</span>
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:600;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                            ${m.name}${m.bot ? ' <span style="font-size:0.7rem;background:var(--primary);border-radius:4px;padding:0.1rem 0.3rem;">BOT</span>' : ''}
+                        </div>
+                        <div style="color:var(--text-secondary);font-size:0.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${m.username}</div>
+                        ${m.top_role && m.top_role !== '@everyone' ? `<div style="font-size:0.75rem;color:${m.top_role_color};margin-top:0.2rem;">${m.top_role}</div>` : ''}
+                    </div>
+                </div>`).join('');
+        }
+
+        function filterMembers() {
+            const q = (document.getElementById('member-search')?.value || '').toLowerCase();
+            if (!window._membersData) return;
+            const filtered = q
+                ? window._membersData.filter(m => m.name.toLowerCase().includes(q) || m.username.toLowerCase().includes(q))
+                : window._membersData;
+            renderMembers(filtered);
+        }
+
         // Initialize on load
         document.addEventListener('DOMContentLoaded', initDashboard);
     </script>
