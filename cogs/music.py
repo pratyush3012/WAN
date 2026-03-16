@@ -6,7 +6,7 @@ Commands: /play /pause /resume /skip /stop /queue /nowplaying /volume /loop /shu
 - _watchdog : restarts playback every 15s if connected but silent
 - SoundCloud first (no IP blocks on cloud), YouTube fallback
 - Dedup by URL + title — never repeats
-- aresample=48000 for correct audio speed
+- -ar 48000 -ac 2 for correct audio speed/pitch (Discord expects 48kHz stereo PCM)
 """
 import discord
 from discord import app_commands
@@ -37,7 +37,7 @@ YTDL_OPTS = {
 
 FFMPEG = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn -af aresample=48000",
+    "options": "-vn -ar 48000 -ac 2",
 }
 
 YT_CLIENTS = [["android_embedded"], ["android_music"], ["ios"], ["mweb"]]
