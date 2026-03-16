@@ -322,7 +322,16 @@ class Music(commands.Cog):
         try:
             if os.path.exists(PERSIST_FILE):
                 with open(PERSIST_FILE) as f:
-                    self._stay = {int(k): v for k, v in json.load(f).items()}
+                    raw = json.load(f)
+                # Migrate old format {guild_id: channel_id} → new format {guild_id: {channel_id, text_channel_id}}
+                migrated = {}
+                for k, v in raw.items():
+                    if isinstance(v, dict):
+                        migrated[int(k)] = v
+                    else:
+                        # Old flat format — channel_id was stored directly
+                        migrated[int(k)] = {"channel_id": int(v), "text_channel_id": int(v)}
+                self._stay = migrated
         except Exception:
             self._stay = {}
 
@@ -400,6 +409,7 @@ class Music(commands.Cog):
         if member.id != self.bot.user.id:
             return
         # Bot was in a channel and is now in no channel (disconnected, not moved)
+        # before.channel must exist (was connected) and after.channel must be None (now disconnected)
         if before.channel is None or after.channel is not None:
             return
 
@@ -412,17 +422,19 @@ class Music(commands.Cog):
 
         self._reconnecting.add(guild_id)
         try:
-            await asyncio.sleep(1.5)  # brief pause before rejoin
-            # Check nothing else reconnected already
-            if member.guild.voice_client and member.guild.voice_client.is_connected():
+            # Wait a moment — Discord sometimes sends spurious disconnect events
+            await asyncio.sleep(2.0)
+            # If something else already reconnected, bail
+            vc = member.guild.voice_client
+            if vc and vc.is_connected():
                 return
             ch = member.guild.get_channel(info["channel_id"])
             if not ch:
                 return
-            new_vc = await ch.connect(timeout=15.0, reconnect=True)
+            logger.info(f"[stay] Reconnecting to {ch.name} in {member.guild.name}")
+            new_vc = await ch.connect(timeout=20.0, reconnect=True)
             logger.info(f"[stay] Rejoined {ch.name} in {member.guild.name}")
             # Restart playback
-            q = self.get_queue(guild_id)
             if not new_vc.is_playing():
                 asyncio.ensure_future(self._autoplay_next(member.guild, new_vc))
         except Exception as e:
@@ -438,19 +450,38 @@ class Music(commands.Cog):
             guild = self.bot.get_guild(guild_id)
             if not guild:
                 continue
+            info = self._stay.get(guild_id)
             vc = guild.voice_client
+
+            # ── Not connected at all → reconnect ──────────────────────────
             if not vc or not vc.is_connected():
+                if guild_id in self._reconnecting:
+                    continue
+                if not info:
+                    continue
+                ch = guild.get_channel(info["channel_id"])
+                if not ch:
+                    continue
+                self._reconnecting.add(guild_id)
+                try:
+                    logger.info(f"[watchdog] Reconnecting to {ch.name} in {guild.name}")
+                    new_vc = await ch.connect(timeout=20.0, reconnect=True)
+                    asyncio.ensure_future(self._autoplay_next(guild, new_vc))
+                except Exception as e:
+                    logger.warning(f"[watchdog] Reconnect failed for {guild_id}: {e}")
+                finally:
+                    self._reconnecting.discard(guild_id)
                 continue
+
+            # ── Connected but silent → resume/autoplay ────────────────────
             if vc.is_playing() or vc.is_paused():
                 continue
             q = self.get_queue(guild_id)
             if q.queue:
-                # There are queued songs — start them
                 lock = self._get_lock(guild_id)
                 if not lock.locked():
                     asyncio.ensure_future(self._play_next_async(guild, vc))
                 continue
-            # Silent + empty queue → autoplay
             lock = self._get_lock(guild_id)
             if not lock.locked():
                 asyncio.ensure_future(self._autoplay_next(guild, vc))

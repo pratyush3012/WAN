@@ -803,15 +803,15 @@ def get_all_commands():
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
 
+        # Build name→cog map first to avoid variable scope issues
+        cmd_to_cog: dict = {}
+        for cog in bot_instance.cogs.values():
+            for c in cog.get_app_commands():
+                cmd_to_cog[c.name] = type(cog).__name__
+
         groups: dict = {}
         for cmd in bot_instance.tree.get_commands():
-            cog_name = 'Uncategorized'
-            # Find which cog owns this command
-            for cog in bot_instance.cogs.values():
-                for c in cog.get_app_commands():
-                    if c.name == cmd.name:
-                        cog_name = type(cog).__name__
-                        break
+            cog_name = cmd_to_cog.get(cmd.name, 'Uncategorized')
             groups.setdefault(cog_name, []).append({
                 'name': cmd.name,
                 'description': cmd.description,
@@ -984,9 +984,9 @@ def broadcast_update(event_type: str, data: dict, room: str = None):
     """Broadcast update to all connected clients or specific room"""
     try:
         if room:
-            socketio.emit(event_type, data, room=room)
+            socketio.emit(event_type, data, to=room)
         else:
-            socketio.emit(event_type, data, broadcast=True)
+            socketio.emit(event_type, data)
     except Exception as e:
         logger.error(f"Error broadcasting update: {e}")
 
