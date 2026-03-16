@@ -613,7 +613,12 @@ async function loadBotStatus(){
     const d=await(await apiFetch('/api/bot/status')).json();
     if(d.status==='online'){
       document.getElementById('statLatency').textContent=d.latency+'ms';
-      document.getElementById('statUptime').textContent=d.uptime||'—';
+      // Store start timestamp for live ticker
+      const el=document.getElementById('statUptime');
+      if(d.uptime_seconds!=null&&!el.dataset.startTs){
+        el.dataset.startTs=Date.now()-d.uptime_seconds*1000;
+      }
+      el.textContent=d.uptime||'—';
       document.getElementById('botUptime').textContent='Uptime: '+d.uptime;
       document.getElementById('botStatusBadge').innerHTML='<span class="pulse-dot"></span> Online';
       document.getElementById('botStatusBadge').className='badge badge-success';
@@ -1264,7 +1269,17 @@ function initSocket(){
     if(d.servers&&d.servers.length===1){sel.value=d.servers[0].id;selectServer(d.servers[0].id);}
   }catch(e){}
   loadBotStatus();
-  setInterval(loadBotStatus,30000);
+  setInterval(loadBotStatus,15000);
+  // Live uptime ticker — increments every second client-side
+  setInterval(()=>{
+    const el=document.getElementById('statUptime');
+    if(!el||!el.dataset.startTs)return;
+    const secs=Math.floor((Date.now()-parseInt(el.dataset.startTs))/1000);
+    const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;
+    el.textContent=(h?h+':':'')+(h?String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0');
+  },1000);
+  // Music sync every 5s
+  setInterval(()=>{if(currentServer)loadMusicStatus();},5000);
   initSocket();
   // Populate leveling role select when section loads
   const origShow=window.show;

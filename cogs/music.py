@@ -356,6 +356,11 @@ class Music(commands.Cog):
         queue = self.q(guild.id)
         queue.current = song
         song.volume = self.vol(guild.id)
+        # Record as seen immediately so autoplay never picks it again
+        if song.url:
+            queue.seen_urls.add(song.url)
+        if song.title:
+            queue.seen_titles.add(song.title.lower().strip())
         try:
             source = song.make_source()
             vc.play(source, after=lambda e: self._after(e, guild, vc))
@@ -424,10 +429,14 @@ class Music(commands.Cog):
                     if not data:
                         seed = random.choice(SEEDS)
                         continue
-                    song = Song(data, self.vol(guild.id))
-                    if song.url in queue.seen_urls or song.title.lower().strip() in queue.seen_titles:
-                        seed = song.title
+                    # dedup check on raw data before creating Song
+                    raw_url = data.get("webpage_url") or data.get("url", "")
+                    raw_title = (data.get("title") or "").lower().strip()
+                    if raw_url in queue.seen_urls or raw_title in queue.seen_titles:
+                        log.info(f"Autoplay dedup skip: {data.get('title')}")
+                        seed = data.get("title", random.choice(SEEDS))
                         continue
+                    song = Song(data, self.vol(guild.id))
                     await self._play(guild, vc, song)
                     return
                 except asyncio.TimeoutError:

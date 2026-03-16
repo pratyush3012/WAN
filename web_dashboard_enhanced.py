@@ -262,7 +262,8 @@ def bot_status():
                 'latency': round(bot_instance.latency * 1000, 2),
                 'servers': len(bot_instance.guilds),
                 'users': sum(g.member_count for g in bot_instance.guilds),
-                'uptime': str(uptime).split('.')[0],  # Remove microseconds
+                'uptime': str(uptime).split('.')[0],
+                'uptime_seconds': int(uptime.total_seconds()),
                 'commands': len(bot_instance.tree.get_commands()),
                 'cogs': len(bot_instance.cogs),
                 'timestamp': datetime.utcnow().isoformat()
