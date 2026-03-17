@@ -46,13 +46,6 @@ class Admin(commands.Cog):
             embed=EmbedFactory.success("Log Channel Set", f"Logs will be sent to {channel.mention}")
         )
     
-    @app_commands.command(name="setdjrole", description="Set the DJ role for music commands")
-    @is_admin()
-    async def setdjrole(self, interaction: discord.Interaction, role: discord.Role):
-        await self.db.update_guild_config(interaction.guild.id, dj_role=role.id)
-        await interaction.response.send_message(
-            embed=EmbedFactory.success("DJ Role Set", f"DJ role set to {role.mention}")
-        )
     
     @app_commands.command(name="togglemodule", description="Enable or disable a bot module")
     @is_admin()
@@ -92,7 +85,6 @@ class Admin(commands.Cog):
         embed.add_field(name="Log Channel", value=log_ch, inline=True)
         embed.add_field(name="DJ Role", value=dj_role, inline=True)
         embed.add_field(name="Auto Role", value=auto_role, inline=True)
-        embed.add_field(name="Music Volume", value=f"{config.music_volume}%", inline=True)
         embed.add_field(name="Translation", value="✅" if config.translation_enabled else "❌", inline=True)
         embed.add_field(name="XP System", value="✅" if config.xp_enabled else "❌", inline=True)
         embed.add_field(name="Anti-Spam", value="✅" if config.anti_spam else "❌", inline=True)
