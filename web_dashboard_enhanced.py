@@ -767,13 +767,13 @@ def music_play(server_id):
                 return {'error': f'No results found for: {query}'}
 
             song = Song(data, requester=guild.me)
-            queue = music_cog.q(guild.id)
+            queue = music_cog._q(guild.id)
 
             if vc.is_playing() or vc.is_paused():
                 queue.add(song)
                 return {'status': 'queued', 'title': song.title, 'queue_size': len(queue)}
             else:
-                await music_cog._play(guild, vc, song)
+                await music_cog._start(guild, vc, song)
                 broadcast_update('music_update', {
                     'guild_id': server_id,
                     'action': 'now_playing',
@@ -814,7 +814,7 @@ def music_control(server_id):
         elif action == 'skip' and vc and vc.is_playing():
             vc.stop()
         elif action == 'stop':
-            music_cog.q(int(server_id)).clear()
+            music_cog._q(int(server_id)).clear()
             if vc and vc.is_playing():
                 vc.stop()
         else:
@@ -839,7 +839,7 @@ def music_status(server_id):
 
         music_cog = bot_instance.get_cog('Music')
         vc = guild.voice_client
-        queue = music_cog.q(int(server_id)) if music_cog else None
+        queue = music_cog._q(int(server_id)) if music_cog else None
 
         return jsonify({
             'connected': vc is not None and vc.is_connected(),
