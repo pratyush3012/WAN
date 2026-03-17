@@ -74,6 +74,7 @@ class GamingBot(commands.Bot):
             'cogs.webdashboard',    # 3 commands (CRITICAL)
             'cogs.leaderboard',     # 2 commands
             'cogs.roblox',          # ~5 commands (CRITICAL)
+            'cogs.music',           # ~11 commands
             'cogs.translation',     # 2 commands
             # ── NEW power cogs ──────────────────────────────────────────
             'cogs.leveling',        # 5 commands  (XP/levels — replaces MEE6)
