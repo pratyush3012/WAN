@@ -15,7 +15,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY requirements.txt .
-# cache-bust: v5 - yt-dlp>=2026.3.17 fixes YouTube signature extraction
+# cache-bust: v6 - include cookies.txt for YouTube bot-detection bypass
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
