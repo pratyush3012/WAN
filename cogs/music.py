@@ -117,12 +117,15 @@ def _fetch(query: str) -> Optional[dict]:
         ytdl = yt_dlp.YoutubeDL(_build_opts())
         data = ytdl.extract_info(query, download=False)
     except Exception as e:
-        logger.error(f"[_fetch] {e}")
-        return None
+        logger.error(f"[_fetch] FULL ERROR for query={query!r}: {type(e).__name__}: {e}")
+        raise  # re-raise so callers can surface the real error
     if not data:
+        logger.error(f"[_fetch] No data returned for query={query!r}")
         return None
     if "entries" in data:
         entries = [e for e in data["entries"] if e]
+        if not entries:
+            logger.error(f"[_fetch] Empty entries for query={query!r}")
         return entries[0] if entries else None
     return data
 
@@ -451,6 +454,9 @@ class Music(commands.Cog):
             )
         except asyncio.TimeoutError:
             logger.error(f"[extract] Timed out: {query}")
+            return None
+        except Exception as e:
+            logger.error(f"[extract] Failed for {query!r}: {type(e).__name__}: {e}")
             return None
         return Song(data) if data else None
 

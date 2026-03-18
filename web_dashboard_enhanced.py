@@ -455,6 +455,32 @@ def health_check():
     status = 'healthy' if checks['bot'] else 'degraded'
     return jsonify({'status': status, 'checks': checks})
 
+
+@app.route('/api/debug/ytdlp')
+@require_auth
+def debug_ytdlp():
+    """Test yt-dlp extraction directly on this server"""
+    import yt_dlp as _ytdlp
+    query = request.args.get('q', 'ytsearch1:test song')
+    result = {'version': _ytdlp.version.__version__, 'query': query}
+    try:
+        opts = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True,
+                'no_warnings': True, 'default_search': 'ytsearch', 'source_address': '0.0.0.0'}
+        ytdl = _ytdlp.YoutubeDL(opts)
+        data = ytdl.extract_info(f'ytsearch1:{query}', download=False)
+        if data and 'entries' in data and data['entries']:
+            e = data['entries'][0]
+            result['success'] = True
+            result['title'] = e.get('title')
+            result['url'] = e.get('url', '')[:80]
+        else:
+            result['success'] = False
+            result['raw'] = str(data)[:200] if data else None
+    except Exception as e:
+        result['success'] = False
+        result['error'] = f'{type(e).__name__}: {e}'
+    return jsonify(result)
+
 @app.route('/api/server/<server_id>/audit')
 @require_auth
 def get_audit_log(server_id):
@@ -762,7 +788,7 @@ def music_play(server_id):
             except asyncio.TimeoutError:
                 return {'error': 'Search timed out — try a more specific query or YouTube URL'}
             except Exception as e:
-                return {'error': f'Could not load audio: {e}'}
+                return {'error': f'yt-dlp error: {type(e).__name__}: {e}'}
             if not data:
                 return {'error': f'No results found for: {query}'}
 
