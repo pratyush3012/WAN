@@ -81,6 +81,13 @@ class GamingBot(commands.Bot):
             'cogs.afk',             # afk
             'cogs.reminders',       # remind, reminders
             'cogs.info',            # serverinfo, userinfo, roleinfo, avatar, banner, ping, botinfo
+            'cogs.modlog',          # warn, warnings, clearwarnings, tempban, case, modhistory, note, modlog-setup, threshold-set
+            'cogs.serverstats',     # serverstats-setup, serverstats-update
+            'cogs.scheduler',       # schedule-add, schedule-list, schedule-remove
+            'cogs.highlights',      # highlight-add, highlight-remove, highlight-list, highlight-clear
+            'cogs.antiraid',        # antiraid-config, antiraid-toggle, antiraid-status
+            'cogs.tags',            # tag, tag-create, tag-edit, tag-delete, tag-list
+            'cogs.voicexp',         # voicexp-rank, voicexp-leaderboard, voicexp-config
             # ── Dashboard ─────────────────────────────────────────────────
             'cogs.webdashboard',    # web
             'cogs.dashboard',       # wan, dashboard, help

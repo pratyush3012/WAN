@@ -111,6 +111,14 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('giveaways',this)"><i class="fas fa-gift"></i><span>Giveaways</span></button>
     <button class="menu-item" onclick="show('polls',this)"><i class="fas fa-poll"></i><span>Polls</span></button>
     <button class="menu-item" onclick="show('announce',this)"><i class="fas fa-bullhorn"></i><span>Announce</span></button>
+    <button class="menu-item" onclick="show('tickets',this)"><i class="fas fa-ticket-alt"></i><span>Tickets</span></button>
+    <button class="menu-item" onclick="show('tags',this)"><i class="fas fa-tags"></i><span>Tags</span></button>
+    <button class="menu-item" onclick="show('scheduler',this)"><i class="fas fa-clock"></i><span>Scheduler</span></button>
+    <button class="menu-item" onclick="show('serverstats',this)"><i class="fas fa-chart-bar"></i><span>Server Stats</span></button>
+    <button class="menu-item" onclick="show('voicexp',this)"><i class="fas fa-microphone"></i><span>Voice XP</span></button>
+    <button class="menu-item" onclick="show('modlog',this)"><i class="fas fa-gavel"></i><span>Mod Log</span></button>
+    <button class="menu-item" onclick="show('automod2',this)"><i class="fas fa-shield-virus"></i><span>AutoMod</span></button>
+    <button class="menu-item" onclick="show('antiraid',this)"><i class="fas fa-user-shield"></i><span>Anti-Raid</span></button>
     <button class="menu-item" onclick="show('settings',this)"><i class="fas fa-cog"></i><span>Settings</span></button>
     <a href="/logout" class="menu-item" style="color:#ef4444;margin-top:auto;"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
   </div>
@@ -548,6 +556,161 @@ select.form-control option{background:var(--surface2);}
   </div>
 
   <!-- SETTINGS -->
+  <div id="sec-tickets" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-ticket-alt"></i> Tickets</h3></div>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">Transcript Channel ID</label><input id="ticketTranscriptCh" class="form-control" placeholder="Channel ID for transcripts"></div>
+        <div class="form-group"><label class="form-label">Support Role ID</label><input id="ticketSupportRole" class="form-control" placeholder="Default support role ID"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveTicketConfig()"><i class="fas fa-save"></i> Save</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Ticket Categories</h3><button class="btn btn-primary btn-sm" onclick="openAddTicketCat()"><i class="fas fa-plus"></i> Add Category</button></div>
+      <div id="ticketCatList"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="sec-tags" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-tags"></i> Tags</h3><button class="btn btn-primary" onclick="openAddTag()"><i class="fas fa-plus"></i> New Tag</button></div>
+      <div id="tagsList"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="sec-scheduler" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-clock"></i> Scheduled Messages</h3><button class="btn btn-primary" onclick="openAddSchedule()"><i class="fas fa-plus"></i> Schedule Message</button></div>
+      <div id="scheduleList"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="sec-serverstats" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-bar"></i> Server Stat Channels</h3></div>
+      <p style="color:var(--text-muted);margin-bottom:16px;">Auto-updating voice channels showing live server stats. Updates every 10 minutes.</p>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">Stat Type</label>
+          <select id="statType" class="form-control">
+            <option value="members">Members</option><option value="online">Online</option>
+            <option value="bots">Bots</option><option value="humans">Humans</option>
+            <option value="channels">Channels</option><option value="roles">Roles</option>
+            <option value="boosts">Boosts</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="addStatChannel()"><i class="fas fa-plus"></i> Create Stat Channel</button>
+      <div id="statChannelList" style="margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <div id="sec-voicexp" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-microphone"></i> Voice XP Leaderboard</h3><button class="btn btn-ghost btn-sm" onclick="loadVoiceXP()"><i class="fas fa-sync"></i> Refresh</button></div>
+      <div id="voiceXPList"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="sec-modlog" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-gavel"></i> Mod Log</h3><button class="btn btn-ghost btn-sm" onclick="loadModLog()"><i class="fas fa-sync"></i> Refresh</button></div>
+      <div class="grid2" style="margin-bottom:16px;">
+        <div class="form-group"><label class="form-label">Log Channel ID</label><input id="modlogChannel" class="form-control" placeholder="Channel ID for mod logs"></div>
+        <div class="form-group"><label class="form-label">Warn Threshold → Action</label>
+          <select id="modlogThresholdCount" class="form-control" style="margin-bottom:6px;">
+            <option value="3">3 warns</option><option value="5">5 warns</option><option value="10">10 warns</option>
+          </select>
+          <select id="modlogThresholdAction" class="form-control">
+            <option value="kick">Kick</option><option value="ban">Ban</option><option value="timeout">Timeout 1h</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="saveModLogConfig()"><i class="fas fa-save"></i> Save Config</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Recent Cases</h3></div>
+      <div id="modlogCases"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="sec-automod2" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-shield-virus"></i> AutoMod Configuration</h3><button class="btn btn-primary btn-sm" onclick="saveAutoModConfig()"><i class="fas fa-save"></i> Save</button></div>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">Spam Detection</label>
+          <select id="am_spam" class="form-control"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Spam Threshold (msgs)</label>
+          <input id="am_spam_threshold" type="number" class="form-control" value="5" min="2" max="20">
+        </div>
+        <div class="form-group"><label class="form-label">Link Filter</label>
+          <select id="am_links" class="form-control"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Invite Filter</label>
+          <select id="am_invites" class="form-control"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Caps Filter</label>
+          <select id="am_caps" class="form-control"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Caps Threshold (%)</label>
+          <input id="am_caps_threshold" type="number" class="form-control" value="70" min="50" max="100">
+        </div>
+        <div class="form-group"><label class="form-label">Mention Spam</label>
+          <select id="am_mentions" class="form-control"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Mention Threshold</label>
+          <input id="am_mention_threshold" type="number" class="form-control" value="5" min="2" max="20">
+        </div>
+        <div class="form-group"><label class="form-label">Emoji Flood</label>
+          <select id="am_emoji" class="form-control"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Auto Slowmode</label>
+          <select id="am_slowmode" class="form-control"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Bad Words Filter</label>
+          <select id="am_badwords" class="form-control"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Log Channel ID</label>
+          <input id="am_log_channel" class="form-control" placeholder="Channel ID for automod logs">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sec-antiraid" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-user-shield"></i> Anti-Raid Configuration</h3><button class="btn btn-primary btn-sm" onclick="saveAntiRaidConfig()"><i class="fas fa-save"></i> Save</button></div>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">Anti-Raid</label>
+          <select id="ar_enabled" class="form-control"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Join Threshold</label>
+          <input id="ar_threshold" type="number" class="form-control" value="8" min="3" max="50">
+        </div>
+        <div class="form-group"><label class="form-label">Join Window (seconds)</label>
+          <input id="ar_window" type="number" class="form-control" value="10" min="5" max="60">
+        </div>
+        <div class="form-group"><label class="form-label">Raider Action</label>
+          <select id="ar_action" class="form-control">
+            <option value="kick">Kick</option><option value="ban">Ban</option><option value="timeout">Timeout</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Alt Min Age (days)</label>
+          <input id="ar_alt_age" type="number" class="form-control" value="7" min="0" max="365">
+        </div>
+        <div class="form-group"><label class="form-label">Alt Action</label>
+          <select id="ar_alt_action" class="form-control">
+            <option value="kick">Kick</option><option value="ban">Ban</option><option value="none">None</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Log Channel ID</label>
+          <input id="ar_log_channel" class="form-control" placeholder="Channel ID for raid alerts">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
   <div id="sec-settings" class="section">
     <div class="card">
       <div class="card-header"><h3 class="card-title">Server Settings</h3></div>
@@ -603,6 +766,14 @@ function show(name,el){
   if(name==='leveling'&&currentServer)loadXPLeaderboard();
   if(name==='analytics'&&currentServer)loadAnalytics();
   if(name==='moderation'&&currentServer)populateModSelects();
+  if(name==='tickets'&&currentServer)loadTicketsConfig();
+  if(name==='tags'&&currentServer)loadTags();
+  if(name==='scheduler'&&currentServer)loadScheduler();
+  if(name==='serverstats'&&currentServer)loadServerStats();
+  if(name==='voicexp'&&currentServer)loadVoiceXP();
+  if(name==='modlog'&&currentServer){loadModLog();loadModLogConfig();}
+  if(name==='automod2'&&currentServer)loadAutoModConfig();
+  if(name==='antiraid'&&currentServer)loadAntiRaidConfig();
 }
 
 // SERVER SELECT
@@ -1399,6 +1570,211 @@ function initSocket(){
   // Music sync every 5s
   setInterval(()=>{if(currentServer)loadMusicStatus();},5000);
   initSocket();
+
+// ===== TICKETS =====
+async function loadTicketsConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/tickets/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    if(d.transcript_channel)document.getElementById('ticketTranscriptCh').value=d.transcript_channel;
+    if(d.support_role_id)document.getElementById('ticketSupportRole').value=d.support_role_id;
+    const cats=d.categories||[];
+    const el=document.getElementById('ticketCatList');
+    if(!cats.length){el.innerHTML='<p style="color:var(--text-muted)">No categories. Use /ticket-category-add in Discord.</p>';return;}
+    el.innerHTML='<table class="table"><thead><tr><th>Name</th><th>Role ID</th></tr></thead><tbody>'+
+      cats.map(c=>`<tr><td>${escHtml(c.name)}</td><td>${c.role_id||'Default'}</td></tr>`).join('')+'</tbody></table>';
+  }catch(e){}
+}
+async function saveTicketConfig(){
+  if(!currentServer)return;
+  const body={transcript_channel:document.getElementById('ticketTranscriptCh').value,support_role_id:document.getElementById('ticketSupportRole').value};
+  const r=await fetch(`/api/server/${currentServer}/tickets/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'Ticket config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
+function openAddTicketCat(){notify('Use /ticket-category-add in Discord to add categories.','info');}
+
+// ===== TAGS =====
+async function loadTags(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/tags`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const el=document.getElementById('tagsList');
+    if(!d.tags||!d.tags.length){el.innerHTML='<p style="color:var(--text-muted)">No tags yet.</p>';return;}
+    el.innerHTML='<table class="table"><thead><tr><th>Name</th><th>Aliases</th><th>Uses</th><th>Action</th></tr></thead><tbody>'+
+      d.tags.map(t=>`<tr><td><code>${escHtml(t.name)}</code></td><td>${(t.aliases||[]).join(', ')||'—'}</td><td>${t.uses||0}</td><td><button class="btn btn-danger btn-sm" onclick="deleteTag('${escHtml(t.name)}')">Delete</button></td></tr>`).join('')+'</tbody></table>';
+  }catch(e){}
+}
+async function deleteTag(name){
+  if(!confirm('Delete tag '+name+'?'))return;
+  const r=await fetch(`/api/server/${currentServer}/tags/delete/${encodeURIComponent(name)}`,{method:'DELETE',headers:{'X-Session-Token':sessionToken}});
+  const d=await r.json();
+  notify(d.success?'Tag deleted':'Error: '+d.error,d.success?'success':'danger');
+  loadTags();
+}
+function openAddTag(){
+  const name=prompt('Tag name:');if(!name)return;
+  const content=prompt('Tag content:');if(!content)return;
+  const aliases=prompt('Aliases (comma-separated, optional):')||'';
+  fetch(`/api/server/${currentServer}/tags/add`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
+    body:JSON.stringify({name,content,aliases:aliases.split(',').map(a=>a.trim()).filter(Boolean)})})
+    .then(r=>r.json()).then(d=>{notify(d.success?'Tag created!':'Error: '+d.error,d.success?'success':'danger');loadTags();});
+}
+
+// ===== SCHEDULER =====
+async function loadScheduler(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/scheduler/list`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const el=document.getElementById('scheduleList');
+    if(!d.jobs||!d.jobs.length){el.innerHTML='<p style="color:var(--text-muted)">No scheduled messages.</p>';return;}
+    el.innerHTML='<table class="table"><thead><tr><th>#</th><th>Channel</th><th>Run At</th><th>Recur</th><th>Message</th><th>Action</th></tr></thead><tbody>'+
+      d.jobs.map(j=>`<tr><td>${j.id}</td><td><code>${j.channel_id}</code></td><td>${j.run_at.slice(0,16)}</td><td>${j.recur}</td><td>${escHtml((j.message||'').slice(0,60))}</td><td><button class="btn btn-danger btn-sm" onclick="removeSchedule(${j.id})">Remove</button></td></tr>`).join('')+'</tbody></table>';
+  }catch(e){}
+}
+async function removeSchedule(id){
+  const r=await fetch(`/api/server/${currentServer}/scheduler/remove/${id}`,{method:'DELETE',headers:{'X-Session-Token':sessionToken}});
+  const d=await r.json();
+  notify(d.success?'Removed':'Error: '+d.error,d.success?'success':'danger');
+  loadScheduler();
+}
+function openAddSchedule(){
+  const chId=prompt('Channel ID:');if(!chId)return;
+  const msg=prompt('Message:');if(!msg)return;
+  const when=prompt('When? (e.g. 2h, 1d, or ISO datetime):');if(!when)return;
+  const recur=prompt('Recur? (once/hourly/daily/weekly):')||'once';
+  fetch(`/api/server/${currentServer}/scheduler/add`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
+    body:JSON.stringify({channel_id:chId,message:msg,when,recur})})
+    .then(r=>r.json()).then(d=>{notify(d.success?'Scheduled!':'Error: '+d.error,d.success?'success':'danger');loadScheduler();});
+}
+
+// ===== SERVER STATS =====
+async function loadServerStats(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/serverstats`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const el=document.getElementById('statChannelList');
+    if(!d.channels||!d.channels.length){el.innerHTML='<p style="color:var(--text-muted)">No stat channels yet.</p>';return;}
+    el.innerHTML='<table class="table"><thead><tr><th>Channel</th><th>Stat</th></tr></thead><tbody>'+
+      d.channels.map(c=>`<tr><td>${escHtml(c.name)}</td><td><span class="badge badge-info">${c.stat}</span></td></tr>`).join('')+'</tbody></table>';
+  }catch(e){}
+}
+async function addStatChannel(){
+  if(!currentServer)return;
+  const stat=document.getElementById('statType').value;
+  const r=await fetch(`/api/server/${currentServer}/serverstats/add`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify({stat})});
+  const d=await r.json();
+  notify(d.success?'Stat channel created!':'Error: '+d.error,d.success?'success':'danger');
+  loadServerStats();
+}
+
+// ===== VOICE XP =====
+async function loadVoiceXP(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/voicexp/leaderboard`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const el=document.getElementById('voiceXPList');
+    if(!d.leaderboard||!d.leaderboard.length){el.innerHTML='<p style="color:var(--text-muted)">No voice XP data yet.</p>';return;}
+    const medals=['🥇','🥈','🥉'];
+    el.innerHTML='<table class="table"><thead><tr><th>#</th><th>Member</th><th>Level</th><th>XP</th><th>Time in Voice</th></tr></thead><tbody>'+
+      d.leaderboard.map((u,i)=>`<tr><td>${medals[i]||i+1}</td><td>${escHtml(u.name)}</td><td>${u.level}</td><td>${u.xp}</td><td>${Math.floor(u.minutes/60)}h ${u.minutes%60}m</td></tr>`).join('')+'</tbody></table>';
+  }catch(e){}
+}
+
+// ===== MOD LOG =====
+async function loadModLog(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/modlog/cases`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const el=document.getElementById('modlogCases');
+    if(!d.cases||!d.cases.length){el.innerHTML='<p style="color:var(--text-muted)">No cases yet.</p>';return;}
+    const colors={warn:'badge-warning',kick:'badge-warning',ban:'badge-danger',tempban:'badge-danger',timeout:'badge-info',unban:'badge-success',note:'badge-secondary'};
+    el.innerHTML='<table class="table"><thead><tr><th>#</th><th>Action</th><th>Target</th><th>Moderator</th><th>Reason</th><th>Date</th></tr></thead><tbody>'+
+      d.cases.map(c=>`<tr><td>${c.id}</td><td><span class="badge ${colors[c.action]||'badge-secondary'}">${c.action.toUpperCase()}</span></td><td>${escHtml(c.target)}</td><td>${escHtml(c.mod)}</td><td>${escHtml((c.reason||'').slice(0,60))}</td><td>${(c.timestamp||'').slice(0,10)}</td></tr>`).join('')+'</tbody></table>';
+  }catch(e){}
+}
+async function loadModLogConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/modlog/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    if(d.log_channel)document.getElementById('modlogChannel').value=d.log_channel;
+  }catch(e){}
+}
+async function saveModLogConfig(){
+  if(!currentServer)return;
+  const ch=document.getElementById('modlogChannel').value;
+  const count=document.getElementById('modlogThresholdCount').value;
+  const action=document.getElementById('modlogThresholdAction').value;
+  const body={log_channel:ch,thresholds:{[count]:action}};
+  const r=await fetch(`/api/server/${currentServer}/modlog/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'Mod log config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
+
+// ===== AUTOMOD =====
+async function loadAutoModConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/automod/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=String(val);};
+    set('am_spam',d.spam_enabled);set('am_spam_threshold',d.spam_threshold);
+    set('am_links',d.link_filter_enabled);set('am_invites',d.invite_filter_enabled);
+    set('am_caps',d.caps_filter_enabled);set('am_caps_threshold',d.caps_threshold);
+    set('am_mentions',d.mention_spam_enabled);set('am_mention_threshold',d.mention_threshold);
+    set('am_emoji',d.emoji_flood_enabled);set('am_slowmode',d.slowmode_auto);
+    set('am_badwords',d.bad_words_enabled);
+    if(d.log_channel)set('am_log_channel',d.log_channel);
+  }catch(e){}
+}
+async function saveAutoModConfig(){
+  if(!currentServer)return;
+  const g=id=>document.getElementById(id);
+  const body={
+    spam_enabled:g('am_spam').value==='true',spam_threshold:parseInt(g('am_spam_threshold').value),
+    link_filter_enabled:g('am_links').value==='true',invite_filter_enabled:g('am_invites').value==='true',
+    caps_filter_enabled:g('am_caps').value==='true',caps_threshold:parseInt(g('am_caps_threshold').value),
+    mention_spam_enabled:g('am_mentions').value==='true',mention_threshold:parseInt(g('am_mention_threshold').value),
+    emoji_flood_enabled:g('am_emoji').value==='true',slowmode_auto:g('am_slowmode').value==='true',
+    bad_words_enabled:g('am_badwords').value==='true',log_channel:g('am_log_channel').value||null,
+  };
+  const r=await fetch(`/api/server/${currentServer}/automod/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'AutoMod config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
+
+// ===== ANTI-RAID =====
+async function loadAntiRaidConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/antiraid/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=String(val);};
+    set('ar_enabled',d.enabled);set('ar_threshold',d.join_threshold);set('ar_window',d.join_window);
+    set('ar_action',d.action);set('ar_alt_age',d.alt_min_age_days);set('ar_alt_action',d.alt_action);
+    if(d.log_channel)set('ar_log_channel',d.log_channel);
+  }catch(e){}
+}
+async function saveAntiRaidConfig(){
+  if(!currentServer)return;
+  const g=id=>document.getElementById(id);
+  const body={
+    enabled:g('ar_enabled').value==='true',join_threshold:parseInt(g('ar_threshold').value),
+    join_window:parseInt(g('ar_window').value),action:g('ar_action').value,
+    alt_min_age_days:parseInt(g('ar_alt_age').value),alt_action:g('ar_alt_action').value,
+    log_channel:g('ar_log_channel').value||null,
+  };
+  const r=await fetch(`/api/server/${currentServer}/antiraid/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'Anti-raid config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
   // Populate leveling role select when section loads
   const origShow=window.show;
   window.show=function(name,el){

@@ -1576,3 +1576,380 @@ def server_analytics(server_id):
     except Exception as e:
         logger.error(f"Analytics error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ===== MODLOG API =====
+
+@app.route('/api/server/<server_id>/modlog/cases')
+@require_auth
+def modlog_cases(server_id):
+    try:
+        import json as _json
+        if not os.path.exists('modlog.json'):
+            return jsonify({'cases': []})
+        with open('modlog.json') as f:
+            data = _json.load(f)
+        cases = data.get('cases', {}).get(str(server_id), [])
+        return jsonify({'cases': list(reversed(cases[-50:]))})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/modlog/config', methods=['GET', 'POST'])
+@require_auth
+def modlog_config(server_id):
+    try:
+        import json as _json
+        if not os.path.exists('modlog.json'):
+            data = {'cases': {}, 'config': {}, 'tempbans': []}
+        else:
+            with open('modlog.json') as f:
+                data = _json.load(f)
+        if request.method == 'POST':
+            body = request.json or {}
+            cfg = data.setdefault('config', {}).setdefault(str(server_id), {})
+            if 'log_channel' in body:
+                cfg['log_channel'] = body['log_channel']
+            if 'thresholds' in body:
+                cfg['thresholds'] = body['thresholds']
+            with open('modlog.json', 'w') as f:
+                _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        return jsonify(data.get('config', {}).get(str(server_id), {}))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== AUTOMOD API =====
+
+@app.route('/api/server/<server_id>/automod/config', methods=['GET', 'POST'])
+@require_auth
+def automod_config_api(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('automod.json'):
+            with open('automod.json') as f:
+                data = _json.load(f)
+        if request.method == 'POST':
+            body = request.json or {}
+            data.setdefault(str(server_id), {}).update(body)
+            with open('automod.json', 'w') as f:
+                _json.dump(data, f, indent=2)
+            # Reload in-memory config if cog is loaded
+            if bot_instance:
+                cog = bot_instance.get_cog('AutoMod')
+                # Config is read fresh each time from file, no reload needed
+            return jsonify({'success': True})
+        from cogs.automod import DEFAULT_CFG
+        cfg = {**DEFAULT_CFG, **data.get(str(server_id), {})}
+        return jsonify(cfg)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== SERVERSTATS API =====
+
+@app.route('/api/server/<server_id>/serverstats')
+@require_auth
+def serverstats_api(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('serverstats.json'):
+            with open('serverstats.json') as f:
+                data = _json.load(f)
+        channels = data.get(str(server_id), {})
+        result = []
+        if bot_instance:
+            guild = bot_instance.get_guild(int(server_id))
+            for ch_id, stat_type in channels.items():
+                ch = guild.get_channel(int(ch_id)) if guild else None
+                result.append({'channel_id': ch_id, 'name': ch.name if ch else ch_id, 'stat': stat_type})
+        return jsonify({'channels': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/serverstats/add', methods=['POST'])
+@require_auth
+def serverstats_add(server_id):
+    try:
+        body = request.json or {}
+        stat = body.get('stat')
+        if not stat or not bot_instance:
+            return jsonify({'error': 'stat required or bot not ready'}), 400
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Guild not found'}), 404
+
+        from cogs.serverstats import STAT_TYPES
+        fn = STAT_TYPES.get(stat)
+        if not fn:
+            return jsonify({'error': 'Invalid stat type'}), 400
+
+        async def _create():
+            overwrites = {guild.default_role: discord.PermissionOverwrite(connect=False)}
+            ch = await guild.create_voice_channel(fn(guild), overwrites=overwrites, reason='Stats channel via dashboard')
+            import json as _json
+            data = {}
+            if os.path.exists('serverstats.json'):
+                with open('serverstats.json') as f:
+                    data = _json.load(f)
+            data.setdefault(str(server_id), {})[str(ch.id)] = stat
+            with open('serverstats.json', 'w') as f:
+                _json.dump(data, f, indent=2)
+            return ch.id
+
+        future = asyncio.run_coroutine_threadsafe(_create(), bot_instance.loop)
+        ch_id = future.result(timeout=10)
+        return jsonify({'success': True, 'channel_id': ch_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== SCHEDULER API =====
+
+@app.route('/api/server/<server_id>/scheduler/list')
+@require_auth
+def scheduler_list(server_id):
+    try:
+        import json as _json
+        jobs = []
+        if os.path.exists('scheduler.json'):
+            with open('scheduler.json') as f:
+                all_jobs = _json.load(f)
+            jobs = [j for j in all_jobs if j.get('guild_id') == str(server_id)]
+        return jsonify({'jobs': jobs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/scheduler/add', methods=['POST'])
+@require_auth
+def scheduler_add(server_id):
+    try:
+        import json as _json
+        from datetime import timezone as tz
+        body = request.json or {}
+        channel_id = body.get('channel_id')
+        message = body.get('message')
+        when = body.get('when')
+        recur = body.get('recur', 'once')
+        if not all([channel_id, message, when]):
+            return jsonify({'error': 'channel_id, message, when required'}), 400
+
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        try:
+            if when.endswith('m'):
+                run_at = now + timedelta(minutes=int(when[:-1]))
+            elif when.endswith('h'):
+                run_at = now + timedelta(hours=int(when[:-1]))
+            elif when.endswith('d'):
+                run_at = now + timedelta(days=int(when[:-1]))
+            else:
+                run_at = datetime.fromisoformat(when).replace(tzinfo=timezone.utc)
+        except:
+            return jsonify({'error': 'Invalid time format'}), 400
+
+        jobs = []
+        if os.path.exists('scheduler.json'):
+            with open('scheduler.json') as f:
+                jobs = _json.load(f)
+        job = {
+            'id': len(jobs) + 1,
+            'guild_id': str(server_id),
+            'channel_id': str(channel_id),
+            'message': message,
+            'run_at': run_at.isoformat(),
+            'recur': recur,
+            'created_by': 'dashboard',
+        }
+        jobs.append(job)
+        with open('scheduler.json', 'w') as f:
+            _json.dump(jobs, f, indent=2)
+        return jsonify({'success': True, 'job': job})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/scheduler/remove/<int:job_id>', methods=['DELETE'])
+@require_auth
+def scheduler_remove(server_id, job_id):
+    try:
+        import json as _json
+        if not os.path.exists('scheduler.json'):
+            return jsonify({'error': 'No jobs'}), 404
+        with open('scheduler.json') as f:
+            jobs = _json.load(f)
+        new_jobs = [j for j in jobs if not (j.get('guild_id') == str(server_id) and j['id'] == job_id)]
+        with open('scheduler.json', 'w') as f:
+            _json.dump(new_jobs, f, indent=2)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== TAGS API =====
+
+@app.route('/api/server/<server_id>/tags')
+@require_auth
+def tags_list(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('tags.json'):
+            with open('tags.json') as f:
+                data = _json.load(f)
+        tags = data.get(str(server_id), {})
+        return jsonify({'tags': [{'name': k, **v} for k, v in tags.items()]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/tags/add', methods=['POST'])
+@require_auth
+def tags_add(server_id):
+    try:
+        import json as _json
+        body = request.json or {}
+        name = body.get('name', '').lower()
+        content = body.get('content')
+        aliases = body.get('aliases', [])
+        if not name or not content:
+            return jsonify({'error': 'name and content required'}), 400
+        data = {}
+        if os.path.exists('tags.json'):
+            with open('tags.json') as f:
+                data = _json.load(f)
+        data.setdefault(str(server_id), {})[name] = {
+            'content': content, 'aliases': aliases, 'author_id': 'dashboard', 'uses': 0
+        }
+        with open('tags.json', 'w') as f:
+            _json.dump(data, f, indent=2)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/tags/delete/<tag_name>', methods=['DELETE'])
+@require_auth
+def tags_delete(server_id, tag_name):
+    try:
+        import json as _json
+        if not os.path.exists('tags.json'):
+            return jsonify({'error': 'Not found'}), 404
+        with open('tags.json') as f:
+            data = _json.load(f)
+        gid = str(server_id)
+        if gid in data and tag_name.lower() in data[gid]:
+            del data[gid][tag_name.lower()]
+            with open('tags.json', 'w') as f:
+                _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        return jsonify({'error': 'Tag not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== ANTIRAID API =====
+
+@app.route('/api/server/<server_id>/antiraid/config', methods=['GET', 'POST'])
+@require_auth
+def antiraid_config_api(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('antiraid.json'):
+            with open('antiraid.json') as f:
+                data = _json.load(f)
+        from cogs.antiraid import DEFAULT_CFG as AR_DEFAULT
+        if request.method == 'POST':
+            body = request.json or {}
+            data.setdefault(str(server_id), {}).update(body)
+            with open('antiraid.json', 'w') as f:
+                _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        cfg = {**AR_DEFAULT, **data.get(str(server_id), {})}
+        return jsonify(cfg)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== VOICE XP API =====
+
+@app.route('/api/server/<server_id>/voicexp/leaderboard')
+@require_auth
+def voicexp_leaderboard(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('voicexp.json'):
+            with open('voicexp.json') as f:
+                data = _json.load(f)
+        users = data.get(str(server_id), {})
+        guild = bot_instance.get_guild(int(server_id)) if bot_instance else None
+        entries = []
+        for uid, u in sorted(users.items(), key=lambda x: x[1].get('xp', 0), reverse=True)[:20]:
+            member = guild.get_member(int(uid)) if guild else None
+            from cogs.voicexp import _level_from_xp
+            level, _, _ = _level_from_xp(u.get('xp', 0))
+            entries.append({
+                'user_id': uid,
+                'name': member.display_name if member else f'User {uid}',
+                'avatar': str(member.display_avatar.url) if member else None,
+                'level': level,
+                'xp': u.get('xp', 0),
+                'minutes': u.get('minutes', 0),
+            })
+        return jsonify({'leaderboard': entries})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== HIGHLIGHTS API =====
+
+@app.route('/api/server/<server_id>/highlights')
+@require_auth
+def highlights_api(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('highlights.json'):
+            with open('highlights.json') as f:
+                data = _json.load(f)
+        guild_hl = data.get(str(server_id), {})
+        guild = bot_instance.get_guild(int(server_id)) if bot_instance else None
+        result = []
+        for uid, kws in guild_hl.items():
+            member = guild.get_member(int(uid)) if guild else None
+            result.append({
+                'user_id': uid,
+                'name': member.display_name if member else f'User {uid}',
+                'keywords': kws,
+            })
+        return jsonify({'highlights': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== TICKETS API =====
+
+@app.route('/api/server/<server_id>/tickets/config', methods=['GET', 'POST'])
+@require_auth
+def tickets_config_api(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('tickets.json'):
+            with open('tickets.json') as f:
+                data = _json.load(f)
+        if request.method == 'POST':
+            body = request.json or {}
+            data.setdefault(str(server_id), {}).update(body)
+            with open('tickets.json', 'w') as f:
+                _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        return jsonify(data.get(str(server_id), {}))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
