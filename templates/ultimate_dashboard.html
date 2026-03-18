@@ -119,6 +119,8 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('modlog',this)"><i class="fas fa-gavel"></i><span>Mod Log</span></button>
     <button class="menu-item" onclick="show('automod2',this)"><i class="fas fa-shield-virus"></i><span>AutoMod</span></button>
     <button class="menu-item" onclick="show('antiraid',this)"><i class="fas fa-user-shield"></i><span>Anti-Raid</span></button>
+    <button class="menu-item" onclick="show('smartmod',this)"><i class="fas fa-brain"></i><span>SmartMod</span></button>
+    <button class="menu-item" onclick="show('channelguard',this)"><i class="fas fa-lock"></i><span>Channel Guard</span></button>
     <button class="menu-item" onclick="show('settings',this)"><i class="fas fa-cog"></i><span>Settings</span></button>
     <a href="/logout" class="menu-item" style="color:#ef4444;margin-top:auto;"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
   </div>
@@ -710,6 +712,55 @@ select.form-control option{background:var(--surface2);}
     </div>
   </div>
 
+  <div id="sec-smartmod" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-brain"></i> SmartMod — Toxicity Detection</h3><button class="btn btn-primary btn-sm" onclick="saveSmartModConfig()"><i class="fas fa-save"></i> Save</button></div>
+      <p style="color:var(--text-muted);margin-bottom:16px;">Automatically detects toxic language in any language. Escalates: Warn → Warn → Timeout 2h → Timeout 24h → Ban.</p>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">SmartMod</label>
+          <select id="sm_enabled" class="form-control"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Log Channel ID</label>
+          <input id="sm_log_channel" class="form-control" placeholder="Channel ID for SmartMod logs">
+        </div>
+        <div class="form-group"><label class="form-label">Strike Decay (days)</label>
+          <input id="sm_decay" type="number" class="form-control" value="30" min="1" max="365">
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Active Strikes</h3><button class="btn btn-ghost btn-sm" onclick="loadSmartModStrikes()"><i class="fas fa-sync"></i> Refresh</button></div>
+      <div id="smStrikesList"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="sec-channelguard" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-lock"></i> Channel Guard</h3><button class="btn btn-primary btn-sm" onclick="saveChannelGuardConfig()"><i class="fas fa-save"></i> Save</button></div>
+      <p style="color:var(--text-muted);margin-bottom:16px;">Enforces channel purpose. Auto-detects from channel name/topic. Off-topic messages are deleted automatically.</p>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">Channel Guard</label>
+          <select id="cg_enabled" class="form-control"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Auto-detect from channel name</label>
+          <select id="cg_auto" class="form-control"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Log Channel ID</label>
+          <input id="cg_log_channel" class="form-control" placeholder="Channel ID for guard logs">
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Auto-detected Channels</h3><button class="btn btn-ghost btn-sm" onclick="scanChannelGuard()"><i class="fas fa-search"></i> Scan</button></div>
+      <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">Channels detected by name/topic. Use the dropdowns to manually override or assign profiles.</p>
+      <div id="cgScanList"><p style="color:var(--text-muted)">Click Scan to detect channels.</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Manual Channel Rules</h3><button class="btn btn-primary btn-sm" onclick="openAddChannelRule()"><i class="fas fa-plus"></i> Add Rule</button></div>
+      <div id="cgManualList"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
   <!-- SETTINGS -->
   <div id="sec-settings" class="section">
     <div class="card">
@@ -774,6 +825,8 @@ function show(name,el){
   if(name==='modlog'&&currentServer){loadModLog();loadModLogConfig();}
   if(name==='automod2'&&currentServer)loadAutoModConfig();
   if(name==='antiraid'&&currentServer)loadAntiRaidConfig();
+  if(name==='smartmod'&&currentServer){loadSmartModConfig();}
+  if(name==='channelguard'&&currentServer)loadChannelGuardConfig();
 }
 
 // SERVER SELECT
@@ -1774,6 +1827,108 @@ async function saveAntiRaidConfig(){
   const r=await fetch(`/api/server/${currentServer}/antiraid/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'Anti-raid config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
+
+// ===== SMARTMOD =====
+async function loadSmartModConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/smartmod/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    document.getElementById('sm_enabled').value=String(d.enabled!==false);
+    if(d.log_channel)document.getElementById('sm_log_channel').value=d.log_channel;
+    if(d.strike_decay_days)document.getElementById('sm_decay').value=d.strike_decay_days;
+    loadSmartModStrikes();
+  }catch(e){}
+}
+async function saveSmartModConfig(){
+  if(!currentServer)return;
+  const body={
+    enabled:document.getElementById('sm_enabled').value==='true',
+    log_channel:document.getElementById('sm_log_channel').value||null,
+    strike_decay_days:parseInt(document.getElementById('sm_decay').value),
+  };
+  const r=await fetch(`/api/server/${currentServer}/smartmod/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'SmartMod config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
+async function loadSmartModStrikes(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/smartmod/strikes`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const el=document.getElementById('smStrikesList');
+    if(!d.strikes||!d.strikes.length){el.innerHTML='<p style="color:var(--text-muted)">No active strikes.</p>';return;}
+    const labels={1:'⚠️ 1 — Warned',2:'⚠️ 2 — Final Warn',3:'⏱️ 3 — Timeout 2h',4:'⏱️ 4 — Timeout 24h',5:'🔨 5+ — Ban'};
+    el.innerHTML='<table class="table"><thead><tr><th>Member</th><th>Strikes</th><th>Status</th><th>Last Strike</th><th>Action</th></tr></thead><tbody>'+
+      d.strikes.map(u=>`<tr><td>${escHtml(u.name)}</td><td>${u.strikes}/5</td><td>${labels[Math.min(u.strikes,5)]||'🔨 Ban'}</td><td>${u.last||'—'}</td><td><button class="btn btn-danger btn-sm" onclick="clearSmartModStrikes('${u.user_id}','${escHtml(u.name)}')">Clear</button></td></tr>`).join('')+'</tbody></table>';
+  }catch(e){}
+}
+async function clearSmartModStrikes(uid,name){
+  if(!confirm('Clear all strikes for '+name+'?'))return;
+  const r=await fetch(`/api/server/${currentServer}/smartmod/clearstrikes/${uid}`,{method:'DELETE',headers:{'X-Session-Token':sessionToken}});
+  const d=await r.json();
+  notify(d.success?'Strikes cleared':'Error: '+d.error,d.success?'success':'danger');
+  loadSmartModStrikes();
+}
+
+// ===== CHANNELGUARD =====
+const CG_PROFILES=['voting','announcements','rules','media','introductions','bot_commands','music','lfg','logs'];
+async function loadChannelGuardConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/channelguard/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    document.getElementById('cg_enabled').value=String(!!d.enabled);
+    document.getElementById('cg_auto').value=String(d.auto_detect!==false);
+    if(d.log_channel)document.getElementById('cg_log_channel').value=d.log_channel;
+    loadChannelGuardManual(d);
+  }catch(e){}
+}
+function loadChannelGuardManual(d){
+  const manual=d.channels||{};
+  const el=document.getElementById('cgManualList');
+  const entries=Object.entries(manual);
+  if(!entries.length){el.innerHTML='<p style="color:var(--text-muted)">No manual rules set.</p>';return;}
+  el.innerHTML='<table class="table"><thead><tr><th>Channel ID</th><th>Profile</th><th>Action</th></tr></thead><tbody>'+
+    entries.map(([cid,rule])=>`<tr><td><code>${cid}</code></td><td><span class="badge badge-info">${rule.profile}</span></td><td><button class="btn btn-danger btn-sm" onclick="removeChannelRule('${cid}')">Remove</button></td></tr>`).join('')+'</tbody></table>';
+}
+async function saveChannelGuardConfig(){
+  if(!currentServer)return;
+  const body={
+    enabled:document.getElementById('cg_enabled').value==='true',
+    auto_detect:document.getElementById('cg_auto').value==='true',
+    log_channel:document.getElementById('cg_log_channel').value||null,
+  };
+  const r=await fetch(`/api/server/${currentServer}/channelguard/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'Channel Guard config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
+async function scanChannelGuard(){
+  if(!currentServer)return;
+  const el=document.getElementById('cgScanList');
+  el.innerHTML='<p style="color:var(--text-muted)">Scanning...</p>';
+  try{
+    const r=await fetch(`/api/server/${currentServer}/channelguard/scan`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    if(!d.channels||!d.channels.length){el.innerHTML='<p style="color:var(--text-muted)">No channels auto-detected. Use manual rules below.</p>';return;}
+    el.innerHTML='<table class="table"><thead><tr><th>Channel</th><th>Detected Profile</th><th>Rule</th></tr></thead><tbody>'+
+      d.channels.map(c=>`<tr><td>#${escHtml(c.channel_name)}</td><td><span class="badge badge-warning">${c.profile}</span></td><td style="font-size:11px;color:var(--text-muted)">${escHtml(c.hint)}</td></tr>`).join('')+'</tbody></table>';
+  }catch(e){el.innerHTML='<p style="color:var(--danger)">Error scanning channels.</p>';}
+}
+async function removeChannelRule(cid){
+  const r=await fetch(`/api/server/${currentServer}/channelguard/remove/${cid}`,{method:'DELETE',headers:{'X-Session-Token':sessionToken}});
+  const d=await r.json();
+  notify(d.success?'Rule removed':'Error: '+d.error,d.success?'success':'danger');
+  loadChannelGuardConfig();
+}
+function openAddChannelRule(){
+  const cid=prompt('Channel ID:');if(!cid)return;
+  const profile=prompt('Profile ('+CG_PROFILES.join('/')+'):');
+  if(!profile||!CG_PROFILES.includes(profile))return notify('Invalid profile','danger');
+  fetch(`/api/server/${currentServer}/channelguard/set`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
+    body:JSON.stringify({channel_id:cid,profile})})
+    .then(r=>r.json()).then(d=>{notify(d.success?'Rule added!':'Error: '+d.error,d.success?'success':'danger');loadChannelGuardConfig();});
 }
   // Populate leveling role select when section loads
   const origShow=window.show;

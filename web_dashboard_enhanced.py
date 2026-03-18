@@ -1953,3 +1953,164 @@ def tickets_config_api(server_id):
         return jsonify(data.get(str(server_id), {}))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ===== SMARTMOD API =====
+
+@app.route('/api/server/<server_id>/smartmod/config', methods=['GET', 'POST'])
+@require_auth
+def smartmod_config(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('smartmod.json'):
+            with open('smartmod.json') as f:
+                data = _json.load(f)
+        if request.method == 'POST':
+            body = request.json or {}
+            g = data.setdefault(str(server_id), {})
+            if 'enabled' in body: g['enabled'] = body['enabled']
+            if 'log_channel' in body: g['log_channel'] = body['log_channel']
+            if 'strike_decay_days' in body: g['strike_decay_days'] = int(body['strike_decay_days'])
+            with open('smartmod.json', 'w') as f:
+                _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        g = data.get(str(server_id), {'enabled': True, 'log_channel': None, 'strike_decay_days': 30})
+        return jsonify(g)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/smartmod/strikes')
+@require_auth
+def smartmod_strikes(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('smartmod.json'):
+            with open('smartmod.json') as f:
+                data = _json.load(f)
+        g = data.get(str(server_id), {})
+        strikes = g.get('strikes', {})
+        guild = bot_instance.get_guild(int(server_id)) if bot_instance else None
+        result = []
+        for uid, count in sorted(strikes.items(), key=lambda x: x[1], reverse=True):
+            member = guild.get_member(int(uid)) if guild else None
+            result.append({
+                'user_id': uid,
+                'name': member.display_name if member else f'User {uid}',
+                'strikes': count,
+                'last': g.get('last_strike', {}).get(uid, '')[:10],
+            })
+        return jsonify({'strikes': result})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/smartmod/clearstrikes/<user_id>', methods=['DELETE'])
+@require_auth
+def smartmod_clear_strikes(server_id, user_id):
+    try:
+        import json as _json
+        if not os.path.exists('smartmod.json'):
+            return jsonify({'error': 'No data'}), 404
+        with open('smartmod.json') as f:
+            data = _json.load(f)
+        g = data.get(str(server_id), {})
+        g.get('strikes', {}).pop(str(user_id), None)
+        g.get('last_strike', {}).pop(str(user_id), None)
+        with open('smartmod.json', 'w') as f:
+            _json.dump(data, f, indent=2)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== CHANNELGUARD API =====
+
+@app.route('/api/server/<server_id>/channelguard/config', methods=['GET', 'POST'])
+@require_auth
+def channelguard_config(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('channelguard.json'):
+            with open('channelguard.json') as f:
+                data = _json.load(f)
+        if request.method == 'POST':
+            body = request.json or {}
+            g = data.setdefault(str(server_id), {})
+            for k in ('enabled', 'auto_detect', 'log_channel'):
+                if k in body: g[k] = body[k]
+            with open('channelguard.json', 'w') as f:
+                _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        return jsonify(data.get(str(server_id), {'enabled': False, 'auto_detect': True}))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/channelguard/scan')
+@require_auth
+def channelguard_scan(server_id):
+    try:
+        if not bot_instance:
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Guild not found'}), 404
+        from cogs.channelguard import _detect_profile, PROFILES
+        results = []
+        for ch in guild.text_channels:
+            p = _detect_profile(ch)
+            if p:
+                results.append({
+                    'channel_id': str(ch.id),
+                    'channel_name': ch.name,
+                    'profile': p,
+                    'hint': PROFILES[p]['hint'],
+                })
+        return jsonify({'channels': results})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/channelguard/set', methods=['POST'])
+@require_auth
+def channelguard_set(server_id):
+    try:
+        import json as _json
+        body = request.json or {}
+        channel_id = body.get('channel_id')
+        profile = body.get('profile')
+        if not channel_id or not profile:
+            return jsonify({'error': 'channel_id and profile required'}), 400
+        data = {}
+        if os.path.exists('channelguard.json'):
+            with open('channelguard.json') as f:
+                data = _json.load(f)
+        g = data.setdefault(str(server_id), {'enabled': True, 'auto_detect': True})
+        g.setdefault('channels', {})[str(channel_id)] = {'profile': profile}
+        with open('channelguard.json', 'w') as f:
+            _json.dump(data, f, indent=2)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/channelguard/remove/<channel_id>', methods=['DELETE'])
+@require_auth
+def channelguard_remove(server_id, channel_id):
+    try:
+        import json as _json
+        if not os.path.exists('channelguard.json'):
+            return jsonify({'error': 'No data'}), 404
+        with open('channelguard.json') as f:
+            data = _json.load(f)
+        g = data.get(str(server_id), {})
+        g.get('channels', {}).pop(str(channel_id), None)
+        with open('channelguard.json', 'w') as f:
+            _json.dump(data, f, indent=2)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

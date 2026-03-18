@@ -88,6 +88,8 @@ class GamingBot(commands.Bot):
             'cogs.antiraid',        # antiraid-config, antiraid-toggle, antiraid-status
             'cogs.tags',            # tag, tag-create, tag-edit, tag-delete, tag-list
             'cogs.voicexp',         # voicexp-rank, voicexp-leaderboard, voicexp-config
+            'cogs.smartmod',        # smartmod-toggle, smartmod-setlog, smartmod-strikes, smartmod-clearstrikes
+            'cogs.channelguard',    # channelguard-enable/disable, channelguard-set, channelguard-scan
             # ── Dashboard ─────────────────────────────────────────────────
             'cogs.webdashboard',    # web
             'cogs.dashboard',       # wan, dashboard, help
