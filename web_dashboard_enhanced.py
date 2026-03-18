@@ -717,6 +717,183 @@ if __name__ == '__main__':
     print("The enhanced web dashboard will start automatically with the bot.")
 
 
+# ===== GIVEAWAYS API =====
+
+@app.route('/api/server/<server_id>/giveaways')
+@require_auth
+def get_giveaways(server_id):
+    import json as _json, os as _os
+    try:
+        data = {}
+        if _os.path.exists('giveaways.json'):
+            with open('giveaways.json') as f:
+                data = _json.load(f)
+        active = []
+        for msg_id, g in data.items():
+            if g.get('guild_id') == server_id and not g.get('ended'):
+                from datetime import datetime
+                ends_at = datetime.fromisoformat(g['ends_at'])
+                active.append({
+                    'msg_id': msg_id,
+                    'prize': g['prize'],
+                    'winners': g['winners'],
+                    'entries': len(g.get('entries', [])),
+                    'ends_ts': int(ends_at.timestamp()),
+                })
+        return jsonify({'giveaways': active})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<server_id>/giveaway/start', methods=['POST'])
+@require_auth
+def start_giveaway(server_id):
+    try:
+        data = request.json
+        prize = data.get('prize', '').strip()
+        duration = data.get('duration', '').strip()
+        winners = int(data.get('winners', 1))
+        channel_id = data.get('channel_id')
+        if not prize or not duration:
+            return jsonify({'error': 'Prize and duration required'}), 400
+
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        giveaway_cog = bot_instance.get_cog('Giveaways')
+        if not giveaway_cog:
+            return jsonify({'error': 'Giveaway cog not loaded'}), 503
+
+        async def _start():
+            ch = guild.get_channel(int(channel_id)) if channel_id else guild.text_channels[0]
+            if not ch:
+                return {'error': 'Channel not found'}
+            # Use cog's parse + create logic
+            from cogs.giveaways import _parse_duration, _giveaway_embed, GiveawayView, _save, _load
+            from datetime import datetime, timezone, timedelta
+            secs = _parse_duration(duration)
+            ends_at = datetime.now(timezone.utc) + timedelta(seconds=secs)
+            g_data = {
+                'prize': prize, 'winners': winners,
+                'host_id': str(guild.me.id),
+                'guild_id': server_id, 'channel_id': str(ch.id),
+                'ends_at': ends_at.isoformat(),
+                'entries': [], 'ended': False,
+            }
+            msg = await ch.send(embed=_giveaway_embed(g_data), view=GiveawayView())
+            giveaways = _load()
+            giveaways[str(msg.id)] = g_data
+            _save(giveaways)
+            return {'status': 'started', 'prize': prize}
+
+        future = asyncio.run_coroutine_threadsafe(_start(), bot_instance.loop)
+        result = future.result(timeout=15)
+        if 'error' in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<server_id>/giveaway/end', methods=['POST'])
+@require_auth
+def end_giveaway_api(server_id):
+    try:
+        msg_id = request.json.get('message_id')
+        giveaway_cog = bot_instance.get_cog('Giveaways') if bot_instance else None
+        if not giveaway_cog:
+            return jsonify({'error': 'Giveaway cog not loaded'}), 503
+        from cogs.giveaways import _load, _save
+        giveaways = _load()
+        g = giveaways.get(msg_id)
+        if not g:
+            return jsonify({'error': 'Giveaway not found'}), 404
+        async def _end():
+            await giveaway_cog._end_giveaway(msg_id, g, giveaways)
+            _save(giveaways)
+            return {'status': 'ended'}
+        future = asyncio.run_coroutine_threadsafe(_end(), bot_instance.loop)
+        return jsonify(future.result(timeout=15))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<server_id>/giveaway/reroll', methods=['POST'])
+@require_auth
+def reroll_giveaway_api(server_id):
+    try:
+        msg_id = request.json.get('message_id')
+        from cogs.giveaways import _load, _save
+        import random
+        giveaways = _load()
+        g = giveaways.get(msg_id)
+        if not g or not g.get('ended'):
+            return jsonify({'error': 'Giveaway not found or not ended'}), 404
+        entries = g.get('entries', [])
+        if not entries:
+            return jsonify({'error': 'No entries'}), 400
+        new_winners = random.sample(entries, min(g['winners'], len(entries)))
+        g['winner_ids'] = new_winners
+        _save(giveaways)
+        return jsonify({'status': 'rerolled', 'winners': new_winners})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ===== POLLS API =====
+
+@app.route('/api/server/<server_id>/poll/create', methods=['POST'])
+@require_auth
+def create_poll_api(server_id):
+    try:
+        data = request.json
+        question = data.get('question', '').strip()
+        options = data.get('options', [])
+        duration = data.get('duration')
+        channel_id = data.get('channel_id')
+        if not question or len(options) < 2:
+            return jsonify({'error': 'Question and at least 2 options required'}), 400
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        async def _create():
+            ch = guild.get_channel(int(channel_id)) if channel_id else guild.text_channels[0]
+            from cogs.polls import PollView, _results_embed, _load, _save
+            from datetime import datetime, timezone, timedelta
+            ends_at = None
+            if duration:
+                units = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
+                try:
+                    secs = int(duration[:-1]) * units[duration[-1].lower()]
+                    ends_at = (datetime.now(timezone.utc) + timedelta(seconds=secs)).isoformat()
+                except Exception:
+                    pass
+            p = {
+                'question': question, 'options': options,
+                'votes': {str(i): [] for i in range(len(options))},
+                'guild_id': server_id, 'channel_id': str(ch.id),
+                'host_id': str(guild.me.id),
+                'ends_at': ends_at, 'ended': False,
+            }
+            view = PollView(options)
+            msg = await ch.send(embed=_results_embed(p), view=view)
+            view2 = PollView(options, str(msg.id))
+            await msg.edit(view=view2)
+            polls = _load()
+            polls[str(msg.id)] = p
+            _save(polls)
+            return {'status': 'created', 'question': question}
+
+        future = asyncio.run_coroutine_threadsafe(_create(), bot_instance.loop)
+        result = future.result(timeout=15)
+        if 'error' in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ===== ANNOUNCEMENTS API =====
 
 @app.route('/api/server/<server_id>/announce', methods=['POST'])

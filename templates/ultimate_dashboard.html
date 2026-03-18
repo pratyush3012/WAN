@@ -111,6 +111,8 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('leveling',this)"><i class="fas fa-star"></i><span>Leveling</span></button>
     <button class="menu-item" onclick="show('translation',this)"><i class="fas fa-language"></i><span>Translation</span></button>
     <button class="menu-item" onclick="show('music',this)"><i class="fas fa-music"></i><span>Music</span></button>
+    <button class="menu-item" onclick="show('giveaways',this)"><i class="fas fa-gift"></i><span>Giveaways</span></button>
+    <button class="menu-item" onclick="show('polls',this)"><i class="fas fa-poll"></i><span>Polls</span></button>
     <button class="menu-item" onclick="show('announce',this)"><i class="fas fa-bullhorn"></i><span>Announce</span></button>
     <button class="menu-item" onclick="show('badges',this)"><i class="fas fa-award"></i><span>Badges</span></button>
     <button class="menu-item" onclick="show('settings',this)"><i class="fas fa-cog"></i><span>Settings</span></button>
@@ -478,6 +480,40 @@ select.form-control option{background:var(--surface2);}
   </div>
 
   <!-- ANNOUNCE -->
+  <div id="sec-giveaways" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-gift"></i> Giveaways</h3><button class="btn btn-primary" onclick="openCreateGiveaway()"><i class="fas fa-plus"></i> New Giveaway</button></div>
+      <div id="giveawaysList" style="padding:16px;"><p style="color:var(--text-muted)">Loading giveaways...</p></div>
+    </div>
+    <div class="card" id="createGiveawayCard" style="display:none;">
+      <div class="card-header"><h3 class="card-title">Create Giveaway</h3></div>
+      <div style="padding:16px;">
+        <div class="form-group"><label class="form-label">Prize</label><input type="text" id="gwPrize" class="form-control" placeholder="What are you giving away?"></div>
+        <div class="grid2" style="gap:12px;">
+          <div class="form-group"><label class="form-label">Duration</label><input type="text" id="gwDuration" class="form-control" placeholder="e.g. 10m, 2h, 1d"></div>
+          <div class="form-group"><label class="form-label">Winners</label><input type="number" id="gwWinners" class="form-control" value="1" min="1" max="20"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Channel</label><select id="gwChannel" class="form-control"><option value="">Current channel</option></select></div>
+        <div style="display:flex;gap:10px;"><button class="btn btn-primary" onclick="startGiveaway()"><i class="fas fa-gift"></i> Start Giveaway</button><button class="btn btn-ghost" onclick="document.getElementById('createGiveawayCard').style.display='none'">Cancel</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sec-polls" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-poll"></i> Create Poll</h3></div>
+      <div style="padding:16px;">
+        <div class="form-group"><label class="form-label">Question</label><input type="text" id="pollQuestion" class="form-control" placeholder="What do you want to ask?"></div>
+        <div class="form-group"><label class="form-label">Option 1</label><input type="text" id="pollOpt1" class="form-control" placeholder="Option 1"></div>
+        <div class="form-group"><label class="form-label">Option 2</label><input type="text" id="pollOpt2" class="form-control" placeholder="Option 2"></div>
+        <div class="form-group"><label class="form-label">Option 3 (optional)</label><input type="text" id="pollOpt3" class="form-control" placeholder="Option 3"></div>
+        <div class="form-group"><label class="form-label">Option 4 (optional)</label><input type="text" id="pollOpt4" class="form-control" placeholder="Option 4"></div>
+        <div class="form-group"><label class="form-label">Duration (optional)</label><input type="text" id="pollDuration" class="form-control" placeholder="e.g. 1h, 1d (leave blank for no expiry)"></div>
+        <button class="btn btn-primary" onclick="createPoll()"><i class="fas fa-poll"></i> Create Poll</button>
+      </div>
+    </div>
+  </div>
+
   <div id="sec-announce" class="section">
     <div class="card">
       <div class="card-header"><h3 class="card-title"><i class="fas fa-bullhorn"></i> Send Announcement</h3></div>
@@ -1221,7 +1257,95 @@ async function saveSettings(){
 }
 
 // MODAL
-function showModal(title,body,onConfirm){
+// ── Giveaways ─────────────────────────────────────────────────────────────
+function openCreateGiveaway(){
+  document.getElementById('createGiveawayCard').style.display='block';
+  loadChannels('gwChannel');
+}
+async function startGiveaway(){
+  const sid = currentServer;
+  if(!sid) return showToast('Select a server first','error');
+  const prize = document.getElementById('gwPrize').value.trim();
+  const duration = document.getElementById('gwDuration').value.trim();
+  const winners = document.getElementById('gwWinners').value;
+  const channel = document.getElementById('gwChannel').value;
+  if(!prize||!duration) return showToast('Fill in prize and duration','error');
+  const r = await fetch(`/api/server/${sid}/giveaway/start`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({prize,duration,winners:parseInt(winners),channel_id:channel||null})
+  });
+  const d = await r.json();
+  if(d.error) return showToast(d.error,'error');
+  showToast('Giveaway started!','success');
+  document.getElementById('createGiveawayCard').style.display='none';
+  loadGiveaways();
+}
+async function loadGiveaways(){
+  const sid = currentServer;
+  if(!sid) return;
+  const r = await fetch(`/api/server/${sid}/giveaways`);
+  const d = await r.json();
+  const el = document.getElementById('giveawaysList');
+  if(!d.giveaways||!d.giveaways.length){
+    el.innerHTML='<p style="color:var(--text-muted)">No active giveaways.</p>'; return;
+  }
+  el.innerHTML = d.giveaways.map(g=>`
+    <div class="card" style="margin-bottom:12px;padding:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div><strong>${g.prize}</strong><br>
+          <span style="color:var(--text-muted);font-size:13px;">${g.entries} entries • ${g.winners} winner(s) • ends <span class="ts" data-ts="${g.ends_ts}"></span></span>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-danger btn-sm" onclick="endGiveaway('${g.msg_id}')">End</button>
+          <button class="btn btn-ghost btn-sm" onclick="rerollGiveaway('${g.msg_id}')">Reroll</button>
+        </div>
+      </div>
+    </div>`).join('');
+  document.querySelectorAll('.ts').forEach(el=>{
+    const ts = parseInt(el.dataset.ts);
+    el.textContent = ts ? new Date(ts*1000).toLocaleString() : '?';
+  });
+}
+async function endGiveaway(msgId){
+  const sid = currentServer;
+  const r = await fetch(`/api/server/${sid}/giveaway/end`,{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message_id:msgId})
+  });
+  const d = await r.json();
+  showToast(d.error||'Giveaway ended','success');
+  loadGiveaways();
+}
+async function rerollGiveaway(msgId){
+  const sid = currentServer;
+  const r = await fetch(`/api/server/${sid}/giveaway/reroll`,{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message_id:msgId})
+  });
+  const d = await r.json();
+  showToast(d.error||'Rerolled!','success');
+}
+
+// ── Polls ─────────────────────────────────────────────────────────────────
+async function createPoll(){
+  const sid = currentServer;
+  if(!sid) return showToast('Select a server first','error');
+  const question = document.getElementById('pollQuestion').value.trim();
+  const opts = ['pollOpt1','pollOpt2','pollOpt3','pollOpt4']
+    .map(id=>document.getElementById(id).value.trim()).filter(Boolean);
+  const duration = document.getElementById('pollDuration').value.trim();
+  if(!question||opts.length<2) return showToast('Need a question and at least 2 options','error');
+  const r = await fetch(`/api/server/${sid}/poll/create`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question,options:opts,duration:duration||null})
+  });
+  const d = await r.json();
+  if(d.error) return showToast(d.error,'error');
+  showToast('Poll created!','success');
+  ['pollQuestion','pollOpt1','pollOpt2','pollOpt3','pollOpt4','pollDuration'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+}
+
+
   document.getElementById('modalTitle').textContent=title;
   document.getElementById('modalBody').innerHTML=body;
   const btn=document.getElementById('modalConfirm');

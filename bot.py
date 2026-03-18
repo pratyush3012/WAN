@@ -81,6 +81,11 @@ class GamingBot(commands.Bot):
             'cogs.translation',     # translate, languages
             'cogs.ai',              # ai, ai-personality, ai-clear, ai-image, ai-translate, ai-summarize, ai-code, ai-analyze, ai-stats
             'cogs.roblox',          # roblox-link, roblox-stats, clan-stats, roblox-leaderboard, roblox-unlink, roblox-sync-bloxlink
+            'cogs.giveaways',       # giveaway start/end/reroll/list
+            'cogs.polls',           # poll, poll-end
+            'cogs.afk',             # afk (auto-reply on mention)
+            'cogs.reminders',       # remind, reminders
+            'cogs.info',            # serverinfo, userinfo, roleinfo, avatar, banner, ping, botinfo
             # ── Dashboard ─────────────────────────────────────────────────
             'cogs.webdashboard',    # web (dashboard link)
             'cogs.dashboard',       # wan, dashboard, help
