@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 # Install system dependencies including ffmpeg and libopus for voice/music
-# cache-bust: v2
+# cache-bust: v3
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
@@ -15,7 +15,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY requirements.txt .
-# cache-bust: v4 - use discord.py[voice] to fix PyNaCl voice error
+# cache-bust: v5 - yt-dlp>=2026.3.17 fixes YouTube signature extraction
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .

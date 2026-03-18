@@ -788,6 +788,8 @@ class Music(commands.Cog):
                 vc = await interaction.user.voice.channel.connect()
             except Exception as e:
                 return await interaction.followup.send(f"❌ Could not connect: {e}", ephemeral=True)
+        elif vc.channel != interaction.user.voice.channel:
+            await vc.move_to(interaction.user.voice.channel)
 
         song = await self._extract(query)
         if not song:
