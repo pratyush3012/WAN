@@ -77,7 +77,7 @@ class GamingBot(commands.Bot):
             'cogs.tickets',         # ticket-setup, ticket-close, ticket-add, ticket-remove
             'cogs.tempvoice',       # tempvoice-setup, voice-lock, voice-unlock, voice-limit, voice-rename
             # ── Features ──────────────────────────────────────────────────
-            'cogs.music',           # play, skip, pause, resume, stop, queue, nowplaying, loop, volume, shuffle, remove
+            # 'cogs.music',          # disabled — music being rebuilt
             'cogs.translation',     # translate, languages
             'cogs.ai',              # ai, ai-personality, ai-clear, ai-image, ai-translate, ai-summarize, ai-code, ai-analyze, ai-stats
             'cogs.roblox',          # roblox-link, roblox-stats, clan-stats, roblox-leaderboard, roblox-unlink, roblox-sync-bloxlink

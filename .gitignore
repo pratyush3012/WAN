@@ -65,3 +65,4 @@ WAN Bot.app/
 # Bot data files (generated at runtime)
 leaderboard_data.json
 badge_config.json
+youtube_cookies.txt
