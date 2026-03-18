@@ -695,7 +695,7 @@ def broadcast_update(event_type: str, data: dict, room: str = None):
         if room:
             socketio.emit(event_type, data, room=room)
         else:
-            socketio.emit(event_type, data, broadcast=True)
+            socketio.emit(event_type, data)
     except Exception as e:
         logger.error(f"Error broadcasting update: {e}")
 

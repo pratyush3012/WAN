@@ -48,8 +48,6 @@ def _build_opts(extra: dict = {}) -> dict:
         "no_warnings": True,
         "default_search": "ytsearch",
         "source_address": "0.0.0.0",
-        # tv_embedded is the most reliable client for audio extraction
-        "extractor_args": {"youtube": {"player_client": ["tv_embedded", "web"]}},
         **extra,
     }
     if os.path.isfile(COOKIES_FILE):
