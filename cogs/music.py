@@ -19,9 +19,12 @@ All v3 fixes retained:
 """
 
 import asyncio
+import json
 import logging
 import os
+import random
 import re
+import time
 from collections import deque
 from typing import Optional
 
@@ -60,6 +63,15 @@ FFMPEG_OPTS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
 }
+
+# Rotating lofi fallbacks — keeps 24/7 mode feeling alive
+_LOFI_FALLBACKS = [
+    "lofi chill beats",
+    "ambient study music",
+    "soft piano music",
+    "chill instrumental beats",
+    "lofi hip hop radio",
+]
 
 
 # ── Song ──────────────────────────────────────────────────────────────────────
@@ -259,8 +271,8 @@ class SongRequestModal(discord.ui.Modal, title="🎵 Request a Song"):
         song.requester = interaction.user
 
         # Save user profile
-        self.cog._user_profiles[interaction.user.id] = self.cog._analyze_song(song)
-        self.cog._active_user[self.guild.id] = interaction.user.id
+        self.cog._update_profile(interaction.user.id, song)
+        self.cog._track_activity(self.guild.id, interaction.user.id)
 
         state = self.cog._state(self.guild.id)
         state._q.append(song)
@@ -305,12 +317,19 @@ class Music(commands.Cog):
         self.bot = bot
         self._states: dict[int, GuildMusicState] = {}
 
-        # Per-user taste profiles  {user_id: {mood, language, query, channel}}
+        # Per-user taste profiles  {user_id: {moods, languages, artists, last_query}}
         self._user_profiles: dict[int, dict] = {}
 
         # Active user per guild  {guild_id: user_id}
         self._active_user: dict[int, int] = {}
 
+        # Activity score per guild  {guild_id: {user_id: count}}  — dominant user detection
+        self._user_activity: dict[int, dict] = {}
+
+        # Prompt cooldown per guild  {guild_id: timestamp}
+        self._last_prompt_time: dict[int, float] = {}
+
+        self.load_profiles()
         self._watchdog.start()
 
     def cog_unload(self):
@@ -348,7 +367,7 @@ class Music(commands.Cog):
     # ── User profile ──────────────────────────────────────────────────────
 
     def _analyze_song(self, song: Song) -> dict:
-        """Extract taste profile from a song."""
+        """Extract taste data from a song (used internally by _update_profile)."""
         text = f"{song.title} {song.channel}".lower()
         return {
             "mood":     _detect_mood(text),
@@ -356,6 +375,49 @@ class Music(commands.Cog):
             "query":    song.title,
             "channel":  song.channel,
         }
+
+    def _update_profile(self, user_id: int, song: Song):
+        """Update frequency-based taste profile for a user."""
+        data = self._analyze_song(song)
+        profile = self._user_profiles.setdefault(user_id, {
+            "moods": {}, "languages": {}, "artists": {}, "last_query": ""
+        })
+        if data["mood"]:
+            profile["moods"][data["mood"]] = profile["moods"].get(data["mood"], 0) + 1
+        lang = data["language"]
+        profile["languages"][lang] = profile["languages"].get(lang, 0) + 1
+        artist = data["channel"]
+        if artist and artist != "Unknown":
+            profile["artists"][artist] = profile["artists"].get(artist, 0) + 1
+        profile["last_query"] = data["query"]
+        self.save_profiles()
+
+    def _track_activity(self, guild_id: int, user_id: int):
+        """Increment activity score for a user in a guild."""
+        guild_activity = self._user_activity.setdefault(guild_id, {})
+        guild_activity[user_id] = guild_activity.get(user_id, 0) + 1
+        # Update active user to most engaged, not just last join
+        self._active_user[guild_id] = max(guild_activity, key=guild_activity.get)
+
+    # ── Profile persistence ───────────────────────────────────────────────
+
+    def save_profiles(self):
+        try:
+            with open("profiles.json", "w") as f:
+                json.dump(self._user_profiles, f)
+        except Exception as e:
+            logger.warning(f"[profiles] Save failed: {e}")
+
+    def load_profiles(self):
+        if os.path.exists("profiles.json"):
+            try:
+                with open("profiles.json") as f:
+                    # JSON keys are strings — convert back to int
+                    raw = json.load(f)
+                    self._user_profiles = {int(k): v for k, v in raw.items()}
+                logger.info(f"[profiles] Loaded {len(self._user_profiles)} user profiles")
+            except Exception as e:
+                logger.warning(f"[profiles] Load failed: {e}")
 
     # ── Extraction ────────────────────────────────────────────────────────
 
@@ -422,9 +484,9 @@ class Music(commands.Cog):
                     self._play_song(guild, vc, song, state)
                     return
 
-            # Absolute fallback — lofi 24/7
+            # Absolute fallback — rotating lofi 24/7
             logger.info(f"[{guild.name}] Falling back to lofi radio")
-            song = await self._extract("lofi chill beats study")
+            song = await self._extract(random.choice(_LOFI_FALLBACKS))
             if song:
                 state.current = song
                 self._play_song(guild, vc, song, state)
@@ -464,21 +526,24 @@ class Music(commands.Cog):
         last = state.current
         history_ids = set(state._history)
 
-        # Build search query — prefer active user's profile
+        # Build search query from dominant user taste
         active_uid = self._active_user.get(guild_id)
         profile    = self._user_profiles.get(active_uid) if active_uid else None
 
         if profile:
-            # Personalized: use user's taste
-            q = profile["query"]
-            if profile["mood"]:
-                q += f" {profile['mood']}"
-            if profile["language"] == "hindi":
+            top_mood   = max(profile["moods"],     key=profile["moods"].get)     if profile.get("moods")     else None
+            top_lang   = max(profile["languages"], key=profile["languages"].get) if profile.get("languages") else "global"
+            top_artist = max(profile["artists"],   key=profile["artists"].get)   if profile.get("artists")   else None
+
+            q = top_artist or profile.get("last_query", "")
+            if top_mood:
+                q += f" {top_mood}"
+            if top_lang == "hindi":
                 q += " hindi songs"
-            elif profile["language"] == "kpop":
+            elif top_lang == "kpop":
                 q += " kpop"
             search_query = f"ytsearch5:{q}"
-            logger.info(f"[autoplay] Personalized for user {active_uid}: {search_query!r}")
+            logger.info(f"[autoplay] Personalized (dominant taste) for {active_uid}: {search_query!r}")
         elif last:
             search_query = (
                 f"ytsearch5:{last.channel} {last.title}"
@@ -487,7 +552,7 @@ class Music(commands.Cog):
             )
             logger.info(f"[autoplay] Last-track based: {search_query!r}")
         else:
-            return await self._extract("lofi chill beats")
+            return await self._extract(random.choice(_LOFI_FALLBACKS))
 
         last_dict = {
             "title": last.title if last else "",
@@ -533,41 +598,48 @@ class Music(commands.Cog):
                 logger.info(f"[autoplay] ✅ {full.title!r} (score={best_score})")
                 return full
 
-        # Fallback: lofi
+        # Fallback: rotating lofi
         logger.warning("[autoplay] No match — falling back to lofi")
-        return await self._extract("lofi chill beats")
+        return await self._extract(random.choice(_LOFI_FALLBACKS))
 
     # ── 24/7 lofi fallback helpers ────────────────────────────────────────
 
     async def _play_lofi(self, guild: discord.Guild):
-        """Play lofi if nothing is currently playing."""
+        """Play a random lofi track if nothing is currently playing."""
         state = self._state(guild.id)
         vc = guild.voice_client
         if not vc or not vc.is_connected() or vc.is_playing():
             return
-        song = await self._extract("lofi chill beats study")
+        song = await self._extract(random.choice(_LOFI_FALLBACKS))
         if song:
             state.current = song
             self._play_song(guild, vc, song, state)
 
     async def _play_user_pref(self, guild: discord.Guild, profile: dict):
-        """Switch to a user's preferred music style."""
+        """Switch to a user's preferred music style using dominant taste."""
         vc = guild.voice_client
         state = self._state(guild.id)
         if not vc or not vc.is_connected():
             return
 
-        q = profile["query"]
-        if profile.get("mood"):
-            q += f" {profile['mood']}"
-        if profile.get("language") == "hindi":
+        # Build query from dominant taste (not just last song)
+        top_mood   = max(profile["moods"],     key=profile["moods"].get)     if profile.get("moods")     else None
+        top_lang   = max(profile["languages"], key=profile["languages"].get) if profile.get("languages") else "global"
+        top_artist = max(profile["artists"],   key=profile["artists"].get)   if profile.get("artists")   else None
+
+        q = top_artist or profile.get("last_query", "")
+        if top_mood:
+            q += f" {top_mood}"
+        if top_lang == "hindi":
             q += " hindi songs"
-        elif profile.get("language") == "kpop":
+        elif top_lang == "kpop":
             q += " kpop"
 
         song = await self._extract(q)
         if song:
-            # Interrupt current playback and switch
+            # FIX #5: clear queue + null current BEFORE stop to prevent _advance race
+            state._q.clear()
+            state.current = None
             if vc.is_playing():
                 vc.stop()
             state.current = song
@@ -577,9 +649,13 @@ class Music(commands.Cog):
             logger.info(f"[{guild.name}] Switched to user profile: {q!r}")
 
     async def _send_prompt(self, channel: discord.VoiceChannel):
-        """Send welcome embed with song request button to the text channel."""
-        # Find a text channel to send to (same name or general)
+        """Send welcome embed with song request button. 30s cooldown per guild."""
         guild = channel.guild
+        now   = time.time()
+        if now - self._last_prompt_time.get(guild.id, 0) < 30:
+            return                                          # cooldown — don't spam
+        self._last_prompt_time[guild.id] = now
+
         text_ch = discord.utils.find(
             lambda c: isinstance(c, discord.TextChannel) and c.permissions_for(guild.me).send_messages,
             guild.text_channels,
@@ -646,7 +722,7 @@ class Music(commands.Cog):
 
         # ── Someone joined the bot's channel ─────────────────────────────
         if after.channel and after.channel == vc.channel:
-            self._active_user[guild.id] = member.id
+            self._track_activity(guild.id, member.id)
             profile = self._user_profiles.get(member.id)
 
             if profile:
@@ -691,9 +767,9 @@ class Music(commands.Cog):
 
         song.requester = interaction.user
 
-        # Save user profile + set as active
-        self._user_profiles[interaction.user.id] = self._analyze_song(song)
-        self._active_user[interaction.guild.id]  = interaction.user.id
+        # Save user profile + track activity (dominant user detection)
+        self._update_profile(interaction.user.id, song)
+        self._track_activity(interaction.guild.id, interaction.user.id)
 
         state = self._state(interaction.guild.id)
         state._q.append(song)
@@ -800,9 +876,10 @@ class Music(commands.Cog):
         if profile:
             active_member = interaction.guild.get_member(active_uid)
             name = active_member.display_name if active_member else "Unknown"
+            def _top(d: dict): return max(d, key=d.get) if d else "mixed"
             embed.add_field(
                 name="🎧 Active Vibe",
-                value=f"{name} — {profile.get('mood') or 'mixed'} / {profile.get('language', 'global')}",
+                value=f"{name} — {_top(profile.get('moods', {}))} / {_top(profile.get('languages', {}))}",
                 inline=False,
             )
         if t.requester:
@@ -869,11 +946,12 @@ class Music(commands.Cog):
             return await interaction.response.send_message(
                 "No profile yet — play a song first and I'll learn your taste!", ephemeral=True
             )
+        def _top(d: dict): return max(d, key=d.get) if d else "?"
         embed = discord.Embed(title=f"🎧 {interaction.user.display_name}'s Vibe", color=0x7C3AED)
-        embed.add_field(name="Mood",     value=profile.get("mood") or "mixed",    inline=True)
-        embed.add_field(name="Language", value=profile.get("language", "global"), inline=True)
-        embed.add_field(name="Artist",   value=profile.get("channel", "?"),       inline=True)
-        embed.add_field(name="Last Song", value=profile.get("query", "?"),        inline=False)
+        embed.add_field(name="Top Mood",     value=_top(profile.get("moods", {})),     inline=True)
+        embed.add_field(name="Top Language", value=_top(profile.get("languages", {})), inline=True)
+        embed.add_field(name="Top Artist",   value=_top(profile.get("artists", {})),   inline=True)
+        embed.add_field(name="Last Song",    value=profile.get("last_query", "?"),     inline=False)
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="request", description="Open the song request box")
