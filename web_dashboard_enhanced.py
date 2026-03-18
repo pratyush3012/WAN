@@ -2114,3 +2114,135 @@ def channelguard_remove(server_id, channel_id):
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ===== JOIN/LEAVE API =====
+
+@app.route('/api/server/<server_id>/joinleave/config', methods=['GET', 'POST'])
+@require_auth
+def joinleave_config(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('joinleave.json'):
+            with open('joinleave.json') as f: data = _json.load(f)
+        if request.method == 'POST':
+            body = request.json or {}
+            data.setdefault(str(server_id), {}).update(body)
+            with open('joinleave.json', 'w') as f: _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        return jsonify(data.get(str(server_id), {}))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== STARBOARD API =====
+
+@app.route('/api/server/<server_id>/starboard/config', methods=['GET', 'POST'])
+@require_auth
+def starboard_config(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('starboard.json'):
+            with open('starboard.json') as f: data = _json.load(f)
+        if request.method == 'POST':
+            body = request.json or {}
+            cfg = data.setdefault(str(server_id), {})
+            for k in ('channel_id', 'threshold', 'enabled'):
+                if k in body: cfg[k] = body[k]
+            with open('starboard.json', 'w') as f: _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        cfg = data.get(str(server_id), {})
+        return jsonify({k: v for k, v in cfg.items() if k != 'posted'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== TIMED ACTIONS API =====
+
+@app.route('/api/server/<server_id>/timedactions/list')
+@require_auth
+def timedactions_list(server_id):
+    try:
+        import json as _json
+        data = {'timed_roles': [], 'timed_mutes': []}
+        if os.path.exists('timedactions.json'):
+            with open('timedactions.json') as f: data = _json.load(f)
+        guild = bot_instance.get_guild(int(server_id)) if bot_instance else None
+        roles = []
+        for e in data.get('timed_roles', []):
+            if e.get('guild_id') != str(server_id): continue
+            member = guild.get_member(int(e['user_id'])) if guild else None
+            role = guild.get_role(int(e['role_id'])) if guild else None
+            roles.append({**e, 'member_name': member.display_name if member else e['user_id'],
+                          'role_name': role.name if role else e['role_id']})
+        mutes = [e for e in data.get('timed_mutes', []) if e.get('guild_id') == str(server_id)]
+        return jsonify({'timed_roles': roles, 'timed_mutes': mutes})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== EMBED BUILDER API =====
+
+@app.route('/api/server/<server_id>/embeds', methods=['GET'])
+@require_auth
+def embeds_list(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('saved_embeds.json'):
+            with open('saved_embeds.json') as f: data = _json.load(f)
+        templates = data.get(str(server_id), {})
+        return jsonify({'templates': [{'name': k, **v} for k, v in templates.items()]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/embeds/post', methods=['POST'])
+@require_auth
+def embeds_post(server_id):
+    try:
+        body = request.json or {}
+        channel_id = body.get('channel_id')
+        embed_data = body.get('embed', {})
+        if not channel_id or not bot_instance:
+            return jsonify({'error': 'channel_id required or bot not ready'}), 400
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Guild not found'}), 404
+        channel = guild.get_channel(int(channel_id))
+        if not channel:
+            return jsonify({'error': 'Channel not found'}), 404
+
+        from cogs.embedbuilder import _build_embed
+        embed = _build_embed(embed_data)
+
+        async def _send():
+            await channel.send(embed=embed)
+
+        future = asyncio.run_coroutine_threadsafe(_send(), bot_instance.loop)
+        future.result(timeout=10)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== LOGGING CONFIG API =====
+
+@app.route('/api/server/<server_id>/logging/config', methods=['GET', 'POST'])
+@require_auth
+def logging_config_api(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('logging_config.json'):
+            with open('logging_config.json') as f: data = _json.load(f)
+        if request.method == 'POST':
+            body = request.json or {}
+            data.setdefault(str(server_id), {}).update(body)
+            with open('logging_config.json', 'w') as f: _json.dump(data, f, indent=2)
+            return jsonify({'success': True})
+        return jsonify(data.get(str(server_id), {}))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

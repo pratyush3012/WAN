@@ -121,6 +121,11 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('antiraid',this)"><i class="fas fa-user-shield"></i><span>Anti-Raid</span></button>
     <button class="menu-item" onclick="show('smartmod',this)"><i class="fas fa-brain"></i><span>SmartMod</span></button>
     <button class="menu-item" onclick="show('channelguard',this)"><i class="fas fa-lock"></i><span>Channel Guard</span></button>
+    <button class="menu-item" onclick="show('joinleave',this)"><i class="fas fa-door-open"></i><span>Join DM</span></button>
+    <button class="menu-item" onclick="show('starboard',this)"><i class="fas fa-star"></i><span>Starboard</span></button>
+    <button class="menu-item" onclick="show('timedactions',this)"><i class="fas fa-hourglass-half"></i><span>Timed Actions</span></button>
+    <button class="menu-item" onclick="show('embedbuilder',this)"><i class="fas fa-palette"></i><span>Embed Builder</span></button>
+    <button class="menu-item" onclick="show('logconfig',this)"><i class="fas fa-file-alt"></i><span>Log Config</span></button>
     <button class="menu-item" onclick="show('settings',this)"><i class="fas fa-cog"></i><span>Settings</span></button>
     <a href="/logout" class="menu-item" style="color:#ef4444;margin-top:auto;"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
   </div>
@@ -761,6 +766,95 @@ select.form-control option{background:var(--surface2);}
     </div>
   </div>
 
+  <!-- NEW FEATURE SECTIONS -->
+  <div id="sec-joinleave" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-door-open"></i> Join DM & Role Persistence</h3><button class="btn btn-primary btn-sm" onclick="saveJoinLeaveConfig()"><i class="fas fa-save"></i> Save</button></div>
+      <p style="color:var(--text-muted);margin-bottom:16px;">Send a DM to new members when they join. Variables: <code>{user} {username} {server} {count} {id}</code></p>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">Join DM</label>
+          <select id="jl_dm_enabled" class="form-control"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Role Persistence (restore roles on rejoin)</label>
+          <select id="jl_role_persist" class="form-control"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">DM Title</label>
+          <input id="jl_dm_title" class="form-control" placeholder="Welcome to {server}!">
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">DM Message</label>
+        <textarea id="jl_dm_message" class="form-control" rows="4" placeholder="Hey {user}, welcome to {server}! You are member #{count}."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div id="sec-starboard" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-star"></i> Starboard</h3><button class="btn btn-primary btn-sm" onclick="saveStarboardConfig()"><i class="fas fa-save"></i> Save</button></div>
+      <p style="color:var(--text-muted);margin-bottom:16px;">Messages that get enough ⭐ reactions are posted to the starboard channel.</p>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">Starboard</label>
+          <select id="sb_enabled" class="form-control"><option value="true">Enabled</option><option value="false">Disabled</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Star Threshold</label>
+          <input id="sb_threshold" type="number" class="form-control" value="3" min="1" max="50">
+        </div>
+        <div class="form-group"><label class="form-label">Starboard Channel ID</label>
+          <input id="sb_channel" class="form-control" placeholder="Channel ID">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sec-timedactions" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-hourglass-half"></i> Active Timed Actions</h3><button class="btn btn-ghost btn-sm" onclick="loadTimedActions()"><i class="fas fa-sync"></i> Refresh</button></div>
+      <p style="color:var(--text-muted);margin-bottom:12px;">Use <code>/mute</code>, <code>/role-add-timed</code>, <code>/softban</code>, <code>/massban</code> in Discord. Active timed roles shown below.</p>
+      <div id="timedActionsList"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="sec-embedbuilder" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-palette"></i> Embed Builder</h3></div>
+      <p style="color:var(--text-muted);margin-bottom:16px;">Build and post rich embeds to any channel.</p>
+      <div class="grid2">
+        <div class="form-group"><label class="form-label">Title</label><input id="eb_title" class="form-control" placeholder="Embed title"></div>
+        <div class="form-group"><label class="form-label">Color (hex)</label><input id="eb_color" type="color" class="form-control" value="#5865f2" style="height:42px;padding:4px;"></div>
+        <div class="form-group"><label class="form-label">Thumbnail URL</label><input id="eb_thumbnail" class="form-control" placeholder="https://..."></div>
+        <div class="form-group"><label class="form-label">Image URL</label><input id="eb_image" class="form-control" placeholder="https://..."></div>
+        <div class="form-group"><label class="form-label">Footer Text</label><input id="eb_footer" class="form-control" placeholder="Footer text"></div>
+        <div class="form-group"><label class="form-label">Author Name</label><input id="eb_author" class="form-control" placeholder="Author name"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Description (markdown supported)</label>
+        <textarea id="eb_description" class="form-control" rows="5" placeholder="Your embed description here..."></textarea>
+      </div>
+      <div class="form-group"><label class="form-label">Post to Channel ID</label>
+        <input id="eb_channel" class="form-control" placeholder="Channel ID">
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="postEmbed()"><i class="fas fa-paper-plane"></i> Post Embed</button>
+        <button class="btn btn-ghost" onclick="previewEmbed()"><i class="fas fa-eye"></i> Preview</button>
+      </div>
+      <div id="embedPreview" style="margin-top:16px;display:none;"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Saved Templates</h3><button class="btn btn-ghost btn-sm" onclick="loadEmbedTemplates()"><i class="fas fa-sync"></i> Refresh</button></div>
+      <div id="embedTemplatesList"><p style="color:var(--text-muted)">Loading...</p></div>
+    </div>
+  </div>
+
+  <div id="sec-logconfig" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-file-alt"></i> Logging Configuration</h3><button class="btn btn-primary btn-sm" onclick="saveLogConfig()"><i class="fas fa-save"></i> Save</button></div>
+      <p style="color:var(--text-muted);margin-bottom:16px;">Set a default log channel, or configure separate channels per event type.</p>
+      <div class="form-group"><label class="form-label">Default Log Channel ID (all events)</label>
+        <input id="log_default" class="form-control" placeholder="Channel ID">
+      </div>
+      <div id="logCategoryGrid" class="grid2" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
   <!-- SETTINGS -->
   <div id="sec-settings" class="section">
     <div class="card">
@@ -827,6 +921,11 @@ function show(name,el){
   if(name==='antiraid'&&currentServer)loadAntiRaidConfig();
   if(name==='smartmod'&&currentServer){loadSmartModConfig();}
   if(name==='channelguard'&&currentServer)loadChannelGuardConfig();
+  if(name==='joinleave'&&currentServer)loadJoinLeaveConfig();
+  if(name==='starboard'&&currentServer)loadStarboardConfig();
+  if(name==='timedactions'&&currentServer)loadTimedActions();
+  if(name==='embedbuilder'&&currentServer)loadEmbedTemplates();
+  if(name==='logconfig'&&currentServer)loadLogConfig();
 }
 
 // SERVER SELECT
@@ -1929,6 +2028,155 @@ function openAddChannelRule(){
   fetch(`/api/server/${currentServer}/channelguard/set`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
     body:JSON.stringify({channel_id:cid,profile})})
     .then(r=>r.json()).then(d=>{notify(d.success?'Rule added!':'Error: '+d.error,d.success?'success':'danger');loadChannelGuardConfig();});
+}
+
+// ===== JOIN/LEAVE =====
+async function loadJoinLeaveConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/joinleave/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    document.getElementById('jl_dm_enabled').value=String(!!d.join_dm_enabled);
+    document.getElementById('jl_role_persist').value=String(!!d.role_persistence);
+    if(d.join_dm_title)document.getElementById('jl_dm_title').value=d.join_dm_title;
+    if(d.join_dm_message)document.getElementById('jl_dm_message').value=d.join_dm_message;
+  }catch(e){}
+}
+async function saveJoinLeaveConfig(){
+  if(!currentServer)return;
+  const body={
+    join_dm_enabled:document.getElementById('jl_dm_enabled').value==='true',
+    role_persistence:document.getElementById('jl_role_persist').value==='true',
+    join_dm_title:document.getElementById('jl_dm_title').value,
+    join_dm_message:document.getElementById('jl_dm_message').value,
+  };
+  const r=await fetch(`/api/server/${currentServer}/joinleave/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'Join DM config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
+
+// ===== STARBOARD =====
+async function loadStarboardConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/starboard/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    document.getElementById('sb_enabled').value=String(d.enabled!==false);
+    if(d.threshold)document.getElementById('sb_threshold').value=d.threshold;
+    if(d.channel_id)document.getElementById('sb_channel').value=d.channel_id;
+  }catch(e){}
+}
+async function saveStarboardConfig(){
+  if(!currentServer)return;
+  const body={
+    enabled:document.getElementById('sb_enabled').value==='true',
+    threshold:parseInt(document.getElementById('sb_threshold').value),
+    channel_id:document.getElementById('sb_channel').value||null,
+  };
+  const r=await fetch(`/api/server/${currentServer}/starboard/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'Starboard config saved!':'Error: '+d.error,d.success?'success':'danger');
+}
+
+// ===== TIMED ACTIONS =====
+async function loadTimedActions(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/timedactions/list`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const el=document.getElementById('timedActionsList');
+    const roles=d.timed_roles||[];
+    const mutes=d.timed_mutes||[];
+    if(!roles.length&&!mutes.length){el.innerHTML='<p style="color:var(--text-muted)">No active timed actions.</p>';return;}
+    let html='';
+    if(roles.length){
+      html+='<h4 style="margin-bottom:8px;color:var(--text-muted);font-size:12px;text-transform:uppercase;">Timed Roles</h4>';
+      html+='<table class="table"><thead><tr><th>Member</th><th>Role</th><th>Expires</th></tr></thead><tbody>'+
+        roles.map(e=>`<tr><td>${escHtml(e.member_name)}</td><td>${escHtml(e.role_name)}</td><td>${e.expires.slice(0,16)}</td></tr>`).join('')+'</tbody></table>';
+    }
+    if(mutes.length){
+      html+='<h4 style="margin:16px 0 8px;color:var(--text-muted);font-size:12px;text-transform:uppercase;">Active Mutes</h4>';
+      html+='<table class="table"><thead><tr><th>User ID</th><th>Reason</th><th>Expires</th></tr></thead><tbody>'+
+        mutes.map(e=>`<tr><td>${e.user_id}</td><td>${escHtml(e.reason||'')}</td><td>${e.expires.slice(0,16)}</td></tr>`).join('')+'</tbody></table>';
+    }
+    el.innerHTML=html;
+  }catch(e){}
+}
+
+// ===== EMBED BUILDER =====
+async function loadEmbedTemplates(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/embeds`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    const el=document.getElementById('embedTemplatesList');
+    if(!d.templates||!d.templates.length){el.innerHTML='<p style="color:var(--text-muted)">No saved templates.</p>';return;}
+    el.innerHTML='<table class="table"><thead><tr><th>Name</th><th>Title</th><th>Action</th></tr></thead><tbody>'+
+      d.templates.map(t=>`<tr><td><code>${escHtml(t.name)}</code></td><td>${escHtml(t.title||'—')}</td><td><button class="btn btn-primary btn-sm" onclick="postSavedEmbed('${escHtml(t.name)}')">Post</button></td></tr>`).join('')+'</tbody></table>';
+  }catch(e){}
+}
+function previewEmbed(){
+  const title=document.getElementById('eb_title').value;
+  const desc=document.getElementById('eb_description').value;
+  const color=document.getElementById('eb_color').value;
+  const footer=document.getElementById('eb_footer').value;
+  const el=document.getElementById('embedPreview');
+  el.style.display='block';
+  el.innerHTML=`<div class="preview-embed" style="border-left-color:${color}">
+    ${title?`<div class="embed-title">${escHtml(title)}</div>`:''}
+    <div class="embed-desc">${escHtml(desc).replace(/\n/g,'<br>')}</div>
+    ${footer?`<div style="font-size:11px;color:#72767d;margin-top:8px">${escHtml(footer)}</div>`:''}
+  </div>`;
+}
+async function postEmbed(){
+  if(!currentServer)return;
+  const chId=document.getElementById('eb_channel').value;
+  if(!chId)return notify('Enter a channel ID','warning');
+  const embedData={
+    title:document.getElementById('eb_title').value,
+    description:document.getElementById('eb_description').value,
+    color:document.getElementById('eb_color').value.replace('#',''),
+    thumbnail:document.getElementById('eb_thumbnail').value,
+    image:document.getElementById('eb_image').value,
+    footer:document.getElementById('eb_footer').value,
+    author:document.getElementById('eb_author').value,
+  };
+  const r=await fetch(`/api/server/${currentServer}/embeds/post`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
+    body:JSON.stringify({channel_id:chId,embed:embedData})});
+  const d=await r.json();
+  notify(d.success?'Embed posted!':'Error: '+d.error,d.success?'success':'danger');
+}
+function postSavedEmbed(name){notify('Use /embed-post '+name+' in Discord to post saved templates.','info');}
+
+// ===== LOG CONFIG =====
+const LOG_CATEGORIES=['message_delete','message_edit','message_bulk_delete','member_join','member_leave',
+  'member_ban','member_unban','member_role_update','member_nickname','voice_join','voice_leave','voice_move',
+  'channel_create','channel_delete','channel_update','role_create','role_delete','role_update',
+  'invite_create','invite_delete','thread_create','thread_delete'];
+async function loadLogConfig(){
+  if(!currentServer)return;
+  try{
+    const r=await fetch(`/api/server/${currentServer}/logging/config`,{headers:{'X-Session-Token':sessionToken}});
+    const d=await r.json();
+    if(d.ch_default)document.getElementById('log_default').value=d.ch_default;
+    const grid=document.getElementById('logCategoryGrid');
+    grid.innerHTML=LOG_CATEGORIES.map(cat=>`
+      <div class="form-group">
+        <label class="form-label">${cat.replace(/_/g,' ')}</label>
+        <input id="log_${cat}" class="form-control" placeholder="Channel ID (optional)" value="${d['ch_'+cat]||''}">
+      </div>`).join('');
+  }catch(e){}
+}
+async function saveLogConfig(){
+  if(!currentServer)return;
+  const body={ch_default:document.getElementById('log_default').value||null};
+  LOG_CATEGORIES.forEach(cat=>{
+    const el=document.getElementById('log_'+cat);
+    if(el&&el.value)body['ch_'+cat]=el.value;
+  });
+  const r=await fetch(`/api/server/${currentServer}/logging/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const d=await r.json();
+  notify(d.success?'Logging config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
   // Populate leveling role select when section loads
   const origShow=window.show;

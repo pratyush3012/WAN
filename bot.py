@@ -90,6 +90,10 @@ class GamingBot(commands.Bot):
             'cogs.voicexp',         # voicexp-rank, voicexp-leaderboard, voicexp-config
             'cogs.smartmod',        # smartmod-toggle, smartmod-setlog, smartmod-strikes, smartmod-clearstrikes
             'cogs.channelguard',    # channelguard-enable/disable, channelguard-set, channelguard-scan
+            'cogs.joinleave',       # join-dm-set, join-dm-test, role-persistence
+            'cogs.starboard',       # starboard-setup, starboard-toggle, starboard-threshold
+            'cogs.timedactions',    # mute, unmute, role-add-timed, softban, massban
+            'cogs.embedbuilder',    # embed, embed-save, embed-post, embed-list
             # ── Dashboard ─────────────────────────────────────────────────
             'cogs.webdashboard',    # web
             'cogs.dashboard',       # wan, dashboard, help
