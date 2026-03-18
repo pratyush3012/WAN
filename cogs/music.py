@@ -775,17 +775,6 @@ class Music(commands.Cog):
 
     # ── Slash Commands ────────────────────────────────────────────────────
 
-    @app_commands.command(name="join", description="Join your voice channel")
-    async def join(self, interaction: discord.Interaction):
-        if not interaction.user.voice:
-            return await interaction.response.send_message("❌ Join a voice channel first!", ephemeral=True)
-        vc = interaction.guild.voice_client
-        if vc and vc.is_connected():
-            await vc.move_to(interaction.user.voice.channel)
-        else:
-            vc = await interaction.user.voice.channel.connect()
-        await interaction.response.send_message(f"✅ Joined **{interaction.user.voice.channel.name}**")
-
     @app_commands.command(name="play", description="Play a song — YouTube URL or search query")
     @app_commands.describe(query="YouTube URL or search terms")
     async def play(self, interaction: discord.Interaction, query: str):
@@ -974,54 +963,6 @@ class Music(commands.Cog):
             )
         removed = state._q.pop(position - 1)
         await interaction.response.send_message(f"🗑 Removed: **{removed.title}**")
-
-    @app_commands.command(name="autoplay", description="Toggle smart autoplay")
-    async def autoplay(self, interaction: discord.Interaction):
-        state = self._state(interaction.guild.id)
-        state.autoplay = not state.autoplay
-        icon = "🤖" if state.autoplay else "🔕"
-        await interaction.response.send_message(f"{icon} Autoplay: **{'on' if state.autoplay else 'off'}**")
-
-    @app_commands.command(name="vibe", description="Show your saved music taste profile")
-    async def vibe(self, interaction: discord.Interaction):
-        profile = self._user_profiles.get(interaction.user.id)
-        if not profile:
-            return await interaction.response.send_message(
-                "No profile yet — play a song first and I'll learn your taste!", ephemeral=True
-            )
-        def _top(d: dict): return max(d, key=d.get) if d else "?"
-        embed = discord.Embed(title=f"🎧 {interaction.user.display_name}'s Vibe", color=0x7C3AED)
-        embed.add_field(name="Top Mood",     value=_top(profile.get("moods", {})),     inline=True)
-        embed.add_field(name="Top Language", value=_top(profile.get("languages", {})), inline=True)
-        embed.add_field(name="Top Artist",   value=_top(profile.get("artists", {})),   inline=True)
-        embed.add_field(name="Last Song",    value=profile.get("last_query", "?"),     inline=False)
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="request", description="Open the song request box")
-    async def request(self, interaction: discord.Interaction):
-        if not interaction.user.voice:
-            return await interaction.response.send_message("❌ Join a voice channel first!", ephemeral=True)
-        vc = interaction.guild.voice_client
-        if not vc or not vc.is_connected():
-            try:
-                vc = await interaction.user.voice.channel.connect()
-            except Exception as e:
-                return await interaction.response.send_message(f"❌ Could not connect: {e}", ephemeral=True)
-        await interaction.response.send_modal(SongRequestModal(self, interaction.guild))
-
-    @app_commands.command(name="leave", description="Disconnect the bot from voice")
-    async def leave(self, interaction: discord.Interaction):
-        vc = interaction.guild.voice_client
-        if not vc:
-            return await interaction.response.send_message("❌ Not in a voice channel.", ephemeral=True)
-        state = self._state(interaction.guild.id)
-        state.reset()
-        if state._player_task:
-            state._player_task.cancel()
-            state._player_task = None
-        await vc.disconnect()
-        self._cleanup(interaction.guild.id)
-        await interaction.response.send_message("👋 Disconnected.")
 
 
 async def setup(bot: commands.Bot):

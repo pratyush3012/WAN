@@ -156,24 +156,6 @@ class WebDashboardCog(commands.Cog):
         
         # Log access
         print(f"🌐 Dashboard access granted to {interaction.user} ({role}) in {interaction.guild.name}")
-    
-    @app_commands.command(name="backend", description="🖥️ Open the bot dashboard in your browser")
-    async def backend(self, interaction: discord.Interaction):
-        """Send a clickable link to the dashboard"""
-        url = self.dashboard_url
-
-        embed = discord.Embed(
-            title="🖥️ WAN Bot Dashboard",
-            description=f"Click the button below to open the dashboard.\n\n🔗 **[Open Dashboard]({url})**",
-            color=discord.Color.from_rgb(102, 126, 234)
-        )
-        embed.add_field(name="📍 URL", value=f"`{url}`", inline=False)
-        embed.set_footer(text="Only visible to you", icon_url=self.bot.user.display_avatar.url)
-
-        view = discord.ui.View()
-        view.add_item(discord.ui.Button(label="Open Dashboard", url=url, emoji="🖥️", style=discord.ButtonStyle.link))
-
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     # web-status removed to stay under 100 command limit
     

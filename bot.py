@@ -58,31 +58,32 @@ class GamingBot(commands.Bot):
         
         # Load cogs — Discord hard limit is 100 slash commands
         cogs = [
-            'cogs.admin',           # ~6 commands
-            'cogs.moderation',      # ~6 commands
-            'cogs.utility',         # ~5 commands
-            'cogs.logging',         # 0 commands (background)
-            'cogs.fun',             # ~4 commands
-            'cogs.economy',         # ~7 commands
-            'cogs.social',          # ~5 commands
-            'cogs.roles',           # ~8 commands
-            'cogs.badges',          # ~4 commands
-            'cogs.automod',         # ~3 commands
-            'cogs.tickets',         # ~3 commands
-            'cogs.suggestions',     # 1 command
-            'cogs.birthdays',       # ~4 commands
-            'cogs.webdashboard',    # 3 commands (CRITICAL)
-            'cogs.leaderboard',     # 2 commands
-            'cogs.roblox',          # ~5 commands (CRITICAL)
-            'cogs.music',           # ~11 commands
-            'cogs.translation',     # 2 commands
-            # ── NEW power cogs ──────────────────────────────────────────
-            'cogs.leveling',        # 5 commands  (XP/levels — replaces MEE6)
-            'cogs.reactionroles',   # 4 commands  (reaction roles — replaces Carl-bot)
-            'cogs.welcome',         # 4 commands  (welcome/goodbye/autorole)
-            'cogs.autoresponder',   # 3 commands  (auto-reply to keywords — replaces Dyno)
-            'cogs.analytics',       # 2 commands  (server stats — replaces Statbot)
-            # Total ≈ 99 commands — just under the 100 limit
+            # ── Core ──────────────────────────────────────────────────────
+            'cogs.admin',           # addrole, removerole, setlogchannel, togglemodule, config, reload
+            'cogs.moderation',      # kick, ban, unban, timeout, lock, unlock, purge, lockdown
+            'cogs.utility',         # serverinfo, userinfo, avatar, poll, remind, ping, uptime, afk
+            'cogs.logging',         # 0 commands (background event logging)
+            'cogs.roles',           # slowmode, nickname, setup-roles, shutdown
+            # ── Automation ────────────────────────────────────────────────
+            'cogs.automod',         # automod-config, automod-toggle, automod-badword-add/remove
+            'cogs.autoresponder',   # ar-add, ar-remove, ar-list
+            'cogs.welcome',         # welcome-set, goodbye-set, autorole, welcome-test
+            'cogs.reactionroles',   # rr-add, rr-remove, rr-list, rr-panel
+            'cogs.leveling',        # rank, levels, set-level-role, xp-channel
+            'cogs.badges',          # badge, sync-badges, badge-stats, badge-setup
+            'cogs.birthdays',       # birthday-set, birthday-remove, birthday-list, birthday-setup
+            'cogs.suggestions',     # suggest, suggest-setup
+            'cogs.starboard',       # starboard-setup, starboard-disable, starboard-stats
+            'cogs.tickets',         # ticket-setup, ticket-close, ticket-add, ticket-remove
+            'cogs.tempvoice',       # tempvoice-setup, voice-lock, voice-unlock, voice-limit, voice-rename
+            # ── Features ──────────────────────────────────────────────────
+            'cogs.music',           # play, skip, pause, resume, stop, queue, nowplaying, loop, volume, shuffle, remove
+            'cogs.translation',     # translate, languages
+            'cogs.ai',              # ai, ai-personality, ai-clear, ai-image, ai-translate, ai-summarize, ai-code, ai-analyze, ai-stats
+            'cogs.roblox',          # roblox-link, roblox-stats, clan-stats, roblox-leaderboard, roblox-unlink, roblox-sync-bloxlink
+            # ── Dashboard ─────────────────────────────────────────────────
+            'cogs.webdashboard',    # web (dashboard link)
+            'cogs.dashboard',       # wan, dashboard, help
         ]
         
         self.cog_errors = {}  # store load errors for /api/health
