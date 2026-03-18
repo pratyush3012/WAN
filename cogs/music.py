@@ -58,7 +58,7 @@ if _COOKIES_FILE:
 
 FFMPEG_OPTS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn -af aresample=48000',
+    'options': '-vn',
 }
 
 AUTOPLAY_SEEDS = [
