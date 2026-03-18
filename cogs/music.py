@@ -390,18 +390,85 @@ class Music(commands.Cog):
         self._broadcast(guild, player, queue)
 
     async def _autoplay_next(self, guild: discord.Guild, _retries: int = 0):
+        """Pick a related song based on what was just played — same artist/vibe."""
         queue = self.get_queue(guild.id)
         vc = guild.voice_client
         if not vc or not vc.is_connected() or vc.is_playing():
             return
-        seed = queue.history[-1].title if (_retries == 0 and queue.history) else random.choice(AUTOPLAY_SEEDS)
+
+        # Build a smart search query from the last played song
+        last = queue.history[-1] if queue.history else None
+        if last and _retries < 3:
+            last_title = last.title
+            # Strip common suffixes to get a cleaner search
+            import re
+            clean = re.sub(r'\s*(\(.*?\)|\[.*?\]|official|video|audio|lyrics|hd|4k|mv)\s*',
+                           '', last_title, flags=re.IGNORECASE).strip()
+            # Search for similar songs — "songs like X" or "X similar"
+            queries = [
+                f"ytsearch5:{clean} similar songs",
+                f"ytsearch5:{clean} mix",
+                f"ytsearch5:songs like {clean}",
+            ]
+            search_q = queries[_retries % len(queries)]
+        else:
+            search_q = f"ytsearch5:{random.choice(AUTOPLAY_SEEDS)}"
+
+        # Collect already-played titles to avoid repeats
+        played_titles = {s.title.lower() for s in queue.history}
+
         try:
             vol = self.get_volume(guild.id)
-            player = await YTDLSource.from_query(seed, loop=self.bot.loop, volume=vol)
+
+            def _find_related():
+                for clients in _PLAYER_CLIENTS:
+                    opts = {**YTDL_BASE, 'noplaylist': False,
+                            'extractor_args': {'youtube': {'player_client': clients}}}
+                    try:
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            data = ydl.extract_info(search_q, download=False)
+                        if data and 'entries' in data:
+                            entries = [e for e in data['entries'] if e and e.get('url')]
+                            # Pick first entry that wasn't recently played
+                            for e in entries:
+                                if e.get('title', '').lower() not in played_titles:
+                                    return e
+                            # All were played — just return first
+                            return entries[0] if entries else None
+                    except Exception:
+                        continue
+                # SoundCloud fallback
+                try:
+                    sc_opts = {**YTDL_BASE, 'noplaylist': False}
+                    sc_opts.pop('extractor_args', None)
+                    with yt_dlp.YoutubeDL(sc_opts) as ydl:
+                        data = ydl.extract_info(
+                            f"scsearch5:{clean if last else random.choice(AUTOPLAY_SEEDS)}",
+                            download=False)
+                    if data and 'entries' in data:
+                        entries = [e for e in data['entries'] if e and e.get('url')]
+                        for e in entries:
+                            if e.get('title', '').lower() not in played_titles:
+                                return e
+                        return entries[0] if entries else None
+                except Exception:
+                    pass
+                return None
+
+            entry = await asyncio.wait_for(
+                self.bot.loop.run_in_executor(None, _find_related),
+                timeout=45.0
+            )
+            if not entry:
+                raise ValueError("No related tracks found")
+
+            src = discord.FFmpegPCMAudio(entry['url'], **FFMPEG_OPTS)
+            player = YTDLSource(src, data=entry, volume=vol)
             player.requester = None
             queue.current = player
             self._start_playing(guild, player, queue)
-            logger.info(f"Autoplay: {player.title} in {guild.name}")
+            logger.info(f"Autoplay: {player.title} (related to: {last.title if last else 'seed'}) in {guild.name}")
+
         except Exception as e:
             wait = min(5 * (2 ** min(_retries, 3)), 30)
             logger.warning(f"Autoplay failed (attempt {_retries+1}), retry in {wait}s: {e}")
