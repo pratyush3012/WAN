@@ -368,6 +368,164 @@ def server_settings(server_id):
     
     return jsonify(settings)
 
+@app.route('/api/server/<int:server_id>/music/status')
+@require_auth
+def music_status(server_id):
+    """Get current music state for a guild"""
+    if not bot_instance or not bot_instance.is_ready():
+        return jsonify({'error': 'Bot not ready'}), 503
+    guild = bot_instance.get_guild(server_id)
+    if not guild:
+        return jsonify({'error': 'Server not found'}), 404
+    music_cog = bot_instance.cogs.get('Music')
+    if not music_cog:
+        return jsonify({'current': None, 'queue': [], 'is_playing': False})
+    state = music_cog._state(server_id)
+    current = None
+    if state.current:
+        s = state.current
+        current = {
+            'title': s.title,
+            'channel': s.channel,
+            'duration': s.duration_str,
+            'thumbnail': s.thumbnail,
+            'url': s.url,
+        }
+    vc = guild.voice_client
+    return jsonify({
+        'current': current,
+        'queue': [{'title': s.title, 'duration': s.duration_str, 'channel': s.channel} for s in state._q],
+        'is_playing': bool(vc and vc.is_playing()),
+        'is_paused': bool(vc and vc.is_paused()),
+        'volume': int(state.volume * 100),
+        'autoplay': state.autoplay,
+        'loop': 'song' if state.loop_song else 'queue' if state.loop_queue else 'off',
+    })
+
+
+@app.route('/api/server/<int:server_id>/music/play', methods=['POST'])
+@require_auth
+def music_play(server_id):
+    """Search and play a song via the dashboard"""
+    if not bot_instance or not bot_instance.is_ready():
+        return jsonify({'error': 'Bot not ready'}), 503
+    guild = bot_instance.get_guild(server_id)
+    if not guild:
+        return jsonify({'error': 'Server not found'}), 404
+    music_cog = bot_instance.cogs.get('Music')
+    if not music_cog:
+        return jsonify({'error': 'Music cog not loaded'}), 503
+
+    data = request.json or {}
+    query = (data.get('query') or '').strip()
+    channel_id = data.get('channel_id')
+    if not query:
+        return jsonify({'error': 'No query provided'}), 400
+
+    async def _do_play():
+        # Resolve voice channel
+        vc = guild.voice_client
+        if not vc or not vc.is_connected():
+            target_ch = None
+            if channel_id:
+                target_ch = guild.get_channel(int(channel_id))
+            if not target_ch:
+                # Pick first non-empty voice channel, or first voice channel
+                for ch in guild.voice_channels:
+                    if len(ch.members) > 0:
+                        target_ch = ch
+                        break
+                if not target_ch and guild.voice_channels:
+                    target_ch = guild.voice_channels[0]
+            if not target_ch:
+                return {'error': 'No voice channel available'}
+            try:
+                vc = await target_ch.connect()
+            except Exception as e:
+                return {'error': f'Could not connect to voice: {e}'}
+
+        song = await music_cog._extract(query)
+        if not song:
+            return {'error': 'Could not find that track. Try a different search term.'}
+
+        state = music_cog._state(server_id)
+        state._q.append(song)
+
+        if not state._player_task or state._player_task.done():
+            state._player_task = bot_instance.loop.create_task(music_cog._player_loop(guild))
+
+        # Emit socket update
+        socketio.emit('music_update', {'guild_id': server_id})
+
+        queued = bool(state.current and (vc.is_playing() or vc.is_paused()))
+        return {
+            'title': song.title,
+            'channel': song.channel,
+            'duration': song.duration_str,
+            'thumbnail': song.thumbnail,
+            'status': 'queued' if queued else 'playing',
+        }
+
+    future = asyncio.run_coroutine_threadsafe(_do_play(), bot_instance.loop)
+    try:
+        result = future.result(timeout=35)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    if 'error' in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
+
+@app.route('/api/server/<int:server_id>/music/control', methods=['POST'])
+@require_auth
+def music_control(server_id):
+    """Pause / resume / skip / stop"""
+    if not bot_instance or not bot_instance.is_ready():
+        return jsonify({'error': 'Bot not ready'}), 503
+    guild = bot_instance.get_guild(server_id)
+    if not guild:
+        return jsonify({'error': 'Server not found'}), 404
+
+    data = request.json or {}
+    action = data.get('action', '')
+    vc = guild.voice_client
+    music_cog = bot_instance.cogs.get('Music')
+
+    if action == 'pause':
+        if vc and vc.is_playing():
+            vc.pause()
+            return jsonify({'ok': True})
+        return jsonify({'error': 'Nothing playing'}), 400
+
+    elif action == 'resume':
+        if vc and vc.is_paused():
+            vc.resume()
+            return jsonify({'ok': True})
+        return jsonify({'error': 'Not paused'}), 400
+
+    elif action == 'skip':
+        if vc and (vc.is_playing() or vc.is_paused()):
+            vc.stop()  # triggers _after → _advance
+            return jsonify({'ok': True})
+        return jsonify({'error': 'Nothing to skip'}), 400
+
+    elif action == 'stop':
+        async def _stop():
+            if music_cog:
+                state = music_cog._state(server_id)
+                state.reset()
+                if state._player_task:
+                    state._player_task.cancel()
+                    state._player_task = None
+            if vc:
+                vc.stop()
+                await vc.disconnect()
+        asyncio.run_coroutine_threadsafe(_stop(), bot_instance.loop).result(timeout=10)
+        return jsonify({'ok': True})
+
+    return jsonify({'error': f'Unknown action: {action}'}), 400
+
+
 @app.route('/api/logs')
 @require_auth
 def get_logs():

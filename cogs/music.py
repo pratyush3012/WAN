@@ -48,7 +48,8 @@ def _build_opts(extra: dict = {}) -> dict:
         "no_warnings": True,
         "default_search": "ytsearch",
         "source_address": "0.0.0.0",
-        "extractor_args": {"youtube": {"player_client": ["web", "android"]}},
+        # tv_embedded is the most reliable client for audio extraction
+        "extractor_args": {"youtube": {"player_client": ["tv_embedded", "web"]}},
         **extra,
     }
     if os.path.isfile(COOKIES_FILE):
@@ -114,7 +115,9 @@ class Song:
 def _fetch(query: str) -> Optional[dict]:
     """Sync yt-dlp extract. Called via run_in_executor from the dashboard."""
     try:
-        data = YTDL.extract_info(query, download=False)
+        # Fresh instance per call avoids stale state / rate-limit carryover
+        ytdl = yt_dlp.YoutubeDL(_build_opts())
+        data = ytdl.extract_info(query, download=False)
     except Exception as e:
         logger.error(f"[_fetch] {e}")
         return None
@@ -598,7 +601,7 @@ class Music(commands.Cog):
 
         try:
             raw = await asyncio.wait_for(
-                self.bot.loop.run_in_executor(None, lambda: YTDL.extract_info(search_query, download=False)),
+                self.bot.loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(_build_opts()).extract_info(search_query, download=False)),
                 timeout=20.0,
             )
         except Exception as e:
