@@ -49,6 +49,61 @@ FFMPEG_OPTS = {
     "options": "-vn",
 }
 
+# ── Song — thin wrapper the dashboard imports ─────────────────────────────────
+
+class Song:
+    """
+    Wraps a yt-dlp info dict.
+    Imported by web_dashboard_enhanced.py — keep this class and its attributes stable.
+    """
+    __slots__ = ("title", "url", "stream_url", "thumbnail", "duration", "channel",
+                 "video_id", "requester")
+
+    def __init__(self, data: dict, requester=None):
+        self.title: str      = data.get("title", "Unknown")
+        self.url: str        = data.get("webpage_url") or data.get("url", "")
+        self.stream_url: str = data.get("url", "")
+        self.thumbnail       = data.get("thumbnail")
+        self.duration        = data.get("duration")
+        self.channel: str    = data.get("uploader") or data.get("channel", "Unknown")
+        self.video_id        = data.get("id")
+        self.requester       = requester
+
+    @property
+    def duration_str(self) -> str:
+        if not self.duration:
+            return "?"
+        m, s = divmod(int(self.duration), 60)
+        h, m = divmod(m, 60)
+        return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+    def build_source(self, volume: float = 0.5) -> discord.PCMVolumeTransformer:
+        return discord.PCMVolumeTransformer(
+            discord.FFmpegPCMAudio(self.stream_url, **FFMPEG_OPTS),
+            volume=volume,
+        )
+
+
+# ── _fetch — module-level helper the dashboard imports ────────────────────────
+
+def _fetch(query: str) -> Optional[dict]:
+    """
+    Synchronous yt-dlp extract — called via run_in_executor from the dashboard.
+    Returns raw info dict or None.
+    """
+    ytdl = yt_dlp.YoutubeDL(_ytdl_opts())
+    try:
+        data = ytdl.extract_info(query, download=False)
+    except Exception as e:
+        logger.error(f"[_fetch] {e}")
+        return None
+    if not data:
+        return None
+    if "entries" in data:
+        entries = [e for e in data["entries"] if e]
+        return entries[0] if entries else None
+    return data
+
 
 # ── Autoplay scoring helpers ──────────────────────────────────────────────────
 
@@ -134,22 +189,48 @@ class GuildMusicState:
     """Holds all music state for one guild."""
 
     def __init__(self):
-        self.queue: asyncio.Queue = asyncio.Queue()
-        self.history: deque = deque(maxlen=20)   # last 20 video IDs
-        self.current: Optional[dict] = None       # currently playing track info
+        self._q: list[Song] = []          # dashboard reads queue._q
+        self.current: Optional[Song] = None
         self.volume: float = 0.5
         self.autoplay: bool = False
+        self.loop_song: bool = False       # dashboard reads queue.loop_song
+        self.loop_queue: bool = False      # dashboard reads queue.loop_queue
+        self._history: deque = deque(maxlen=20)  # last 20 video IDs for autoplay
         self._player_task: Optional[asyncio.Task] = None
-        self._skip_event = asyncio.Event()
+        self._next_event = asyncio.Event() # signals player loop to advance
+
+    # asyncio.Queue-compatible helpers used internally
+    def empty(self) -> bool:
+        return len(self._q) == 0
+
+    def put_nowait(self, song: Song):
+        self._q.append(song)
+
+    async def put(self, song: Song):
+        self._q.append(song)
+
+    def get_nowait(self) -> Song:
+        if not self._q:
+            raise asyncio.QueueEmpty
+        return self._q.pop(0)
+
+    def qsize(self) -> int:
+        return len(self._q)
+
+    def __len__(self) -> int:
+        return len(self._q)
+
+    def add(self, song: Song):
+        """Used by dashboard: queue.add(song)"""
+        self._q.append(song)
+
+    def clear(self):
+        """Used by dashboard: queue.clear()"""
+        self._q.clear()
+        self.current = None
 
     def reset(self):
-        # Drain queue
-        while not self.queue.empty():
-            try:
-                self.queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-        self.current = None
+        self.clear()
 
 
 # ── Music Cog ─────────────────────────────────────────────────────────────────
@@ -173,126 +254,133 @@ class Music(commands.Cog):
             self._states[guild_id] = GuildMusicState()
         return self._states[guild_id]
 
+    # Dashboard-facing API — these names are imported by web_dashboard_enhanced.py
+    def _q(self, guild_id: int) -> GuildMusicState:
+        """Return the GuildMusicState (acts as the queue object) for a guild."""
+        return self._state(guild_id)
+
+    async def _start(self, guild: discord.Guild, vc: discord.VoiceClient, song: Song):
+        """
+        Called by the dashboard to immediately start playing a song.
+        Sets it as current and kicks off the player loop if needed.
+        """
+        state = self._state(guild.id)
+        state.current = song
+        if vc.is_playing():
+            vc.stop()
+        self._play_song(guild, vc, song, state)
+        if not state._player_task or state._player_task.done():
+            state._player_task = self.bot.loop.create_task(self._player_loop(guild))
+
     # ── yt-dlp helpers (run in executor to avoid blocking) ────────────────
 
-    async def _extract(self, query: str, *, search: bool = True) -> Optional[dict]:
-        """Resolve a URL or search query to a track info dict."""
-        opts = _ytdl_opts({"default_search": "ytsearch" if search else "auto"})
-        ytdl = yt_dlp.YoutubeDL(opts)
+    async def _extract(self, query: str, *, search: bool = True) -> Optional[Song]:
+        """Resolve a URL or search query to a Song."""
         loop = self.bot.loop
         try:
             data = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False)),
+                loop.run_in_executor(None, lambda: _fetch(query)),
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
             logger.error(f"[extract] Timed out: {query}")
             return None
-        except Exception as e:
-            logger.error(f"[extract] Failed: {e}")
-            return None
+        return Song(data) if data else None
 
-        if not data:
-            return None
-        if "entries" in data:
-            entries = [e for e in data["entries"] if e]
-            return entries[0] if entries else None
-        return data
+    def _play_song(self, guild: discord.Guild, vc: discord.VoiceClient,
+                   song: Song, state: GuildMusicState):
+        """Build source and call vc.play(). Triggers _advance when done."""
+        source = song.build_source(state.volume)
 
-    async def _get_related(self, last: dict) -> Optional[dict]:
-        """
-        Fetch related videos for last track, score them, return best match.
-        Falls back to '<artist> similar songs' search if scraping fails.
-        """
-        vid_id = last.get("id")
-        history_ids = set(self.bot.get_guild(0) and [] or [])  # placeholder — passed in caller
-        return None  # implemented inline in _player_loop for access to state
+        def _after(err):
+            if err:
+                logger.error(f"[{guild.name}] Playback error: {err}")
+            asyncio.run_coroutine_threadsafe(self._advance(guild), self.bot.loop)
 
-    # ── Player loop ───────────────────────────────────────────────────────
+        vc.play(source, after=_after)
+        logger.info(f"[{guild.name}] ▶ {song.title} — {song.channel}")
+
+    async def _advance(self, guild: discord.Guild):
+        """Called after each track ends. Plays next in queue or triggers autoplay."""
+        state = self._state(guild.id)
+        vc = guild.voice_client
+        if not vc or not vc.is_connected():
+            return
+
+        # Loop single track
+        if state.loop_song and state.current:
+            self._play_song(guild, vc, state.current, state)
+            return
+
+        # Loop queue
+        if state.loop_queue and state.current:
+            state._q.append(state.current)
+
+        if state._q:
+            next_song = state._q.pop(0)
+            state.current = next_song
+            if next_song.video_id:
+                state._history.append(next_song.video_id)
+            self._play_song(guild, vc, next_song, state)
+            return
+
+        # Queue empty — try autoplay
+        if state.autoplay and state.current:
+            next_song = await self._autoplay_next(state)
+            if next_song:
+                state.current = next_song
+                if next_song.video_id:
+                    state._history.append(next_song.video_id)
+                self._play_song(guild, vc, next_song, state)
+                return
+
+        # Nothing left
+        state.current = None
+        logger.info(f"[{guild.name}] Queue exhausted")
 
     async def _player_loop(self, guild: discord.Guild):
-        """Main playback loop for a guild. Runs as a background task."""
+        """
+        Lightweight loop — just waits and lets _advance() drive playback.
+        Kicks off the first song if nothing is playing yet.
+        """
         state = self._state(guild.id)
-        vc: discord.VoiceClient = guild.voice_client
+        vc = guild.voice_client
+        if not vc or not vc.is_connected():
+            return
 
-        logger.info(f"[{guild.name}] Player loop started")
+        # If nothing is playing, start the first queued song
+        if not vc.is_playing() and not vc.is_paused() and state._q:
+            song = state._q.pop(0)
+            state.current = song
+            if song.video_id:
+                state._history.append(song.video_id)
+            self._play_song(guild, vc, song, state)
 
-        while True:
-            # Reconnect if dropped
+        # Keep task alive while connected and active
+        while vc and vc.is_connected():
+            await asyncio.sleep(2)
+            vc = guild.voice_client  # refresh reference
             if not vc or not vc.is_connected():
-                vc = guild.voice_client
-                if not vc or not vc.is_connected():
-                    await asyncio.sleep(3)
-                    vc = guild.voice_client
-                    if not vc or not vc.is_connected():
-                        logger.warning(f"[{guild.name}] VC gone — stopping loop")
-                        break
+                break
+            # If nothing playing and queue has items, advance
+            if not vc.is_playing() and not vc.is_paused() and state._q:
+                await self._advance(guild)
 
-            # If queue empty, try autoplay
-            if state.queue.empty():
-                if state.autoplay and state.current:
-                    next_track = await self._autoplay_next(state)
-                    if next_track:
-                        await state.queue.put(next_track)
-                        logger.info(f"[{guild.name}] Autoplay queued: {next_track.get('title')}")
-                    else:
-                        await asyncio.sleep(5)
-                        continue
-                else:
-                    await asyncio.sleep(2)
-                    continue
-
-            # Get next track
-            try:
-                track = await asyncio.wait_for(state.queue.get(), timeout=10.0)
-            except asyncio.TimeoutError:
-                continue
-
-            state.current = track
-            if track.get("id"):
-                state.history.append(track["id"])
-
-            # Build audio source
-            stream_url = track.get("url")
-            if not stream_url:
-                logger.warning(f"[{guild.name}] No stream URL for {track.get('title')} — skipping")
-                continue
-
-            source = discord.PCMVolumeTransformer(
-                discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTS),
-                volume=state.volume,
-            )
-
-            # Play
-            done_event = asyncio.Event()
-
-            def _after(err):
-                if err:
-                    logger.error(f"[{guild.name}] Playback error: {err}")
-                self.bot.loop.call_soon_threadsafe(done_event.set)
-
-            try:
-                vc.play(source, after=_after)
-            except Exception as e:
-                logger.error(f"[{guild.name}] vc.play failed: {e}")
-                continue
-
-            logger.info(f"[{guild.name}] ▶ {track.get('title')} — {track.get('uploader', '?')}")
-
-            # Wait until track ends or skip is triggered
-            await done_event.wait()
-
-        logger.info(f"[{guild.name}] Player loop ended")
         state._player_task = None
+        logger.info(f"[{guild.name}] Player loop ended")
 
-    async def _autoplay_next(self, state: GuildMusicState) -> Optional[dict]:
+    async def _autoplay_next(self, state: GuildMusicState) -> Optional[Song]:
         """Score and return the best related track for autoplay."""
         last = state.current
-        if not last or not last.get("id"):
+        if not last or not last.video_id:
             return None
 
-        history_ids = set(state.history)
-        vid_id = last["id"]
+        history_ids = set(getattr(state, "_history", deque()))
+        vid_id = last.video_id
+        last_dict = {
+            "title": last.title, "uploader": last.channel,
+            "duration": last.duration, "id": last.video_id,
+        }
 
         # Scrape related IDs from YouTube watch page
         import aiohttp
@@ -315,36 +403,42 @@ class Music(commands.Cog):
         except Exception as e:
             logger.warning(f"[autoplay] Scrape failed: {e}")
 
-        logger.info(f"[autoplay] {len(related_ids)} related IDs found for {last.get('title')!r}")
+        logger.info(f"[autoplay] {len(related_ids)} related IDs found for {last.title!r}")
 
         # Fetch metadata + score candidates
         best_score = -1
-        best_track = None
+        best_data: Optional[Song] = None
 
         async def _fetch_and_score(vid):
             info = await self._extract(f"https://www.youtube.com/watch?v={vid}", search=False)
             if not info:
                 return
-            nonlocal best_score, best_track
-            s = _score(info, last)
-            logger.debug(f"[autoplay] {info.get('title')!r} score={s}")
+            nonlocal best_score, best_data
+            info_dict = {
+                "title": info.title, "uploader": info.channel,
+                "duration": info.duration, "id": info.video_id,
+            }
+            s = _score(info_dict, last_dict)
+            logger.debug(f"[autoplay] {info.title!r} score={s}")
             if s > best_score:
                 best_score = s
-                best_track = info
+                best_data = info
 
-        tasks = [_fetch_and_score(i) for i in related_ids]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*[_fetch_and_score(i) for i in related_ids], return_exceptions=True)
 
-        if best_track and best_score >= 0:
-            logger.info(f"[autoplay] ✅ Selected: {best_track.get('title')!r} (score={best_score})")
-            return best_track
+        if best_data and best_score >= 0:
+            logger.info(f"[autoplay] ✅ Selected: {best_data.title!r} (score={best_score})")
+            return best_data
 
-        # Fallback: search "<artist> similar songs"
-        artist = last.get("uploader") or last.get("channel", "")
-        fallback_q = f"{artist} similar songs" if artist else f"{last.get('title', '')} similar"
+        # Fallback search
+        fallback_q = (
+            f"{last.channel} similar songs"
+            if last.channel and last.channel.lower() not in ("unknown", "")
+            else f"{last.title} similar"
+        )
         logger.info(f"[autoplay] Fallback search: {fallback_q!r}")
         result = await self._extract(fallback_q)
-        if result and result.get("id") not in history_ids:
+        if result and result.video_id not in history_ids:
             return result
 
         logger.warning("[autoplay] No suitable track found")
@@ -421,7 +515,7 @@ class Music(commands.Cog):
             return await interaction.followup.send("❌ Could not find that track.", ephemeral=True)
 
         state = self._state(interaction.guild.id)
-        await state.queue.put(info)
+        state._q.append(info)
 
         # Start player loop if not running
         if not state._player_task or state._player_task.done():
@@ -432,13 +526,13 @@ class Music(commands.Cog):
         embed = discord.Embed(color=0x7C3AED)
         if state.current and (vc.is_playing() or vc.is_paused()):
             embed.title = "📋 Added to Queue"
-            embed.description = f"**{info.get('title', 'Unknown')}**"
-            embed.set_footer(text=f"By {info.get('uploader', '?')}")
+            embed.description = f"**{info.title}**"
+            embed.set_footer(text=f"By {info.channel}")
         else:
             embed.title = "▶ Playing Soon"
-            embed.description = f"**{info.get('title', 'Unknown')}**"
-            if info.get("thumbnail"):
-                embed.set_thumbnail(url=info["thumbnail"])
+            embed.description = f"**{info.title}**"
+            if info.thumbnail:
+                embed.set_thumbnail(url=info.thumbnail)
 
         await interaction.followup.send(embed=embed)
 
@@ -479,21 +573,22 @@ class Music(commands.Cog):
             await vc.disconnect()
         if state._player_task:
             state._player_task.cancel()
+            state._player_task = None
         await interaction.response.send_message("⏹ Stopped and disconnected.")
 
     @app_commands.command(name="queue", description="Show the music queue")
     async def queue_cmd(self, interaction: discord.Interaction):
         state = self._state(interaction.guild.id)
-        items = list(state.queue._queue)
+        items = list(state._q)
         embed = discord.Embed(title="🎵 Music Queue", color=0x7C3AED)
         if state.current:
             embed.add_field(
                 name="Now Playing",
-                value=f"**{state.current.get('title', '?')}** — {state.current.get('uploader', '?')}",
+                value=f"**{state.current.title}** — {state.current.channel}",
                 inline=False,
             )
         if items:
-            lines = "\n".join(f"`{i+1}.` {t.get('title', '?')}" for i, t in enumerate(items[:10]))
+            lines = "\n".join(f"`{i+1}.` {s.title}" for i, s in enumerate(items[:10]))
             embed.add_field(name="Up Next", value=lines, inline=False)
             if len(items) > 10:
                 embed.set_footer(text=f"...and {len(items)-10} more")
@@ -510,17 +605,16 @@ class Music(commands.Cog):
         t = state.current
         embed = discord.Embed(
             title="▶ Now Playing",
-            description=f"**{t.get('title', '?')}**",
+            description=f"**{t.title}**",
             color=0x10B981,
         )
-        if t.get("thumbnail"):
-            embed.set_thumbnail(url=t["thumbnail"])
-        embed.add_field(name="Channel", value=t.get("uploader", "?"), inline=True)
-        dur = t.get("duration")
-        if dur:
-            m, s = divmod(int(dur), 60)
+        if t.thumbnail:
+            embed.set_thumbnail(url=t.thumbnail)
+        embed.add_field(name="Channel", value=t.channel or "?", inline=True)
+        if t.duration:
+            m, s = divmod(int(t.duration), 60)
             embed.add_field(name="Duration", value=f"{m}:{s:02d}", inline=True)
-        embed.add_field(name="Queue", value=f"{state.queue.qsize()} track(s) up next", inline=True)
+        embed.add_field(name="Queue", value=f"{len(state._q)} track(s) up next", inline=True)
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="volume", description="Set volume (0–100)")
