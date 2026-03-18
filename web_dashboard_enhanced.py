@@ -449,7 +449,7 @@ def health_check():
         'music_loaded': 'Music' in cogs_loaded,
         'cog_errors': getattr(bot_instance, 'cog_errors', {}),
         'nacl_installed': _check_nacl(),
-        'youtube_cookies': os.path.exists('/app/youtube_cookies.txt'),
+        'youtube_cookies': os.path.exists('/app/cookies.txt') or os.path.exists('/app/youtube_cookies.txt'),
         'timestamp': datetime.utcnow().isoformat()
     }
     status = 'healthy' if checks['bot'] else 'degraded'
@@ -464,8 +464,16 @@ def debug_ytdlp():
     query = request.args.get('q', 'ytsearch1:test song')
     result = {'version': _ytdlp.version.__version__, 'query': query}
     try:
-        opts = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True,
-                'no_warnings': True, 'default_search': 'ytsearch', 'source_address': '0.0.0.0'}
+        cookies_file = '/app/cookies.txt' if os.path.exists('/app/cookies.txt') else None
+        opts = {
+            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+            'noplaylist': True, 'quiet': True, 'no_warnings': True,
+            'default_search': 'ytsearch', 'source_address': '0.0.0.0',
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+        }
+        if cookies_file:
+            opts['cookiefile'] = cookies_file
+        result['cookies_used'] = cookies_file is not None
         ytdl = _ytdlp.YoutubeDL(opts)
         data = ytdl.extract_info(f'ytsearch1:{query}', download=False)
         if data and 'entries' in data and data['entries']:

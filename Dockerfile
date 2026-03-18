@@ -15,7 +15,7 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY requirements.txt .
-# cache-bust: v6 - include cookies.txt for YouTube bot-detection bypass
+# cache-bust: v7 - fix debug endpoint + health check cookie path
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
