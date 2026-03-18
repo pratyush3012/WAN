@@ -61,33 +61,28 @@ class GamingBot(commands.Bot):
             # ── Core ──────────────────────────────────────────────────────
             'cogs.admin',           # addrole, removerole, setlogchannel, togglemodule, config, reload
             'cogs.moderation',      # kick, ban, unban, timeout, lock, unlock, purge, lockdown
-            'cogs.utility',         # serverinfo, userinfo, avatar, poll, remind, ping, uptime, afk
-            'cogs.logging',         # 0 commands (background event logging)
-            'cogs.roles',           # slowmode, nickname, setup-roles, shutdown
+            'cogs.utility',         # ping, uptime
+            'cogs.logging',         # background event logging
+            'cogs.roles',           # slowmode, nickname, setup-roles
             # ── Automation ────────────────────────────────────────────────
             'cogs.automod',         # automod-config, automod-toggle, automod-badword-add/remove
             'cogs.autoresponder',   # ar-add, ar-remove, ar-list
             'cogs.welcome',         # welcome-set, goodbye-set, autorole, welcome-test
             'cogs.reactionroles',   # rr-add, rr-remove, rr-list, rr-panel
             'cogs.leveling',        # rank, levels, set-level-role, xp-channel
-            'cogs.badges',          # badge, sync-badges, badge-stats, badge-setup
-            'cogs.birthdays',       # birthday-set, birthday-remove, birthday-list, birthday-setup
-            'cogs.suggestions',     # suggest, suggest-setup
-            'cogs.starboard',       # starboard-setup, starboard-disable, starboard-stats
             'cogs.tickets',         # ticket-setup, ticket-close, ticket-add, ticket-remove
             'cogs.tempvoice',       # tempvoice-setup, voice-lock, voice-unlock, voice-limit, voice-rename
             # ── Features ──────────────────────────────────────────────────
             # 'cogs.music',          # disabled — music being rebuilt
             'cogs.translation',     # translate, languages
-            'cogs.ai',              # ai, ai-personality, ai-clear, ai-image, ai-translate, ai-summarize, ai-code, ai-analyze, ai-stats
             'cogs.roblox',          # roblox-link, roblox-stats, clan-stats, roblox-leaderboard, roblox-unlink, roblox-sync-bloxlink
             'cogs.giveaways',       # giveaway start/end/reroll/list
             'cogs.polls',           # poll, poll-end
-            'cogs.afk',             # afk (auto-reply on mention)
+            'cogs.afk',             # afk
             'cogs.reminders',       # remind, reminders
             'cogs.info',            # serverinfo, userinfo, roleinfo, avatar, banner, ping, botinfo
             # ── Dashboard ─────────────────────────────────────────────────
-            'cogs.webdashboard',    # web (dashboard link)
+            'cogs.webdashboard',    # web
             'cogs.dashboard',       # wan, dashboard, help
         ]
         
