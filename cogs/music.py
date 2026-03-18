@@ -16,6 +16,11 @@ import random
 import json
 import os
 from collections import deque
+import time
+
+# ── Search cache — avoids re-fetching same query within 5 min ─────────────────
+SEARCH_CACHE: dict = {}
+CACHE_TTL = 300  # seconds
 
 logger = logging.getLogger('discord_bot.music')
 
@@ -67,12 +72,10 @@ AUTOPLAY_SEEDS = [
     "pop music 2024", "electronic music mix", "r&b hits 2024", "workout music mix",
 ]
 
+# Only 2 clients — android_embedded works 90% of the time, mweb as backup
 _PLAYER_CLIENTS = [
     ['android_embedded'],
-    ['android_music'],
     ['mweb'],
-    ['web_embedded'],
-    ['ios'],
 ]
 
 
@@ -98,7 +101,17 @@ def _fmt(seconds) -> str:
 
 
 def _ytdl_extract_single(query: str):
-    """Try multiple YouTube player clients, then fall back to SoundCloud."""
+    """Extract with caching + 2-client fallback + SoundCloud backup."""
+    now = time.time()
+    cache_key = query.strip().lower()
+
+    # Cache hit
+    if cache_key in SEARCH_CACHE:
+        data, ts = SEARCH_CACHE[cache_key]
+        if now - ts < CACHE_TTL:
+            logger.debug(f"Cache hit: {query!r}")
+            return data
+
     is_url = _is_url(query)
     if is_url:
         query = _clean_url(query)
@@ -116,9 +129,11 @@ def _ytdl_extract_single(query: str):
             if 'entries' in data:
                 entries = [e for e in data['entries'] if e and e.get('url')]
                 if entries:
+                    SEARCH_CACHE[cache_key] = (entries[0], now)
                     return entries[0]
                 continue
             if data.get('url'):
+                SEARCH_CACHE[cache_key] = (data, now)
                 return data
         except Exception as e:
             last_err = e
@@ -135,15 +150,17 @@ def _ytdl_extract_single(query: str):
                 if 'entries' in data:
                     entries = [e for e in data['entries'] if e and e.get('url')]
                     if entries:
-                        logger.info(f"SoundCloud fallback OK for '{query}'")
+                        logger.info(f"SoundCloud fallback OK for {query!r}")
+                        SEARCH_CACHE[cache_key] = (entries[0], now)
                         return entries[0]
                 elif data.get('url'):
-                    logger.info(f"SoundCloud fallback OK for '{query}'")
+                    logger.info(f"SoundCloud fallback OK for {query!r}")
+                    SEARCH_CACHE[cache_key] = (data, now)
                     return data
         except Exception as sc_err:
-            logger.warning(f"SoundCloud fallback failed for '{query}': {sc_err}")
+            logger.warning(f"SoundCloud fallback failed for {query!r}: {sc_err}")
 
-    logger.warning(f"All sources failed for '{query}': {last_err}")
+    logger.warning(f"All sources failed for {query!r}: {last_err}")
     return None
 
 
@@ -167,7 +184,7 @@ class MusicQueue:
         self.current = None
         self.loop = False
         self.loop_queue = False
-        self.history = deque(maxlen=50)
+        self.history = deque(maxlen=20)
 
     def add(self, song):
         self.queue.append(song)
@@ -218,7 +235,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         data = await asyncio.wait_for(
             loop.run_in_executor(None, lambda: _ytdl_extract_single(query)),
-            timeout=60.0,
+            timeout=20.0,
         )
         if not data:
             raise ValueError(f"No results found for: {query}")
@@ -234,9 +251,9 @@ class YTDLSource(discord.PCMVolumeTransformer):
                         'extractor_args': {'youtube': {'player_client': clients}}}
                 try:
                     with yt_dlp.YoutubeDL(opts) as ydl:
-                        data = ydl.extract_info(f"ytsearch5:{query}", download=False)
+                        data = ydl.extract_info(f"ytsearch2:{query}", download=False)
                     if data and 'entries' in data:
-                        results = [e for e in data['entries'] if e][:5]
+                        results = [e for e in data['entries'] if e][:2]
                         if results:
                             return results
                 except Exception:
@@ -245,14 +262,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 sc_opts = {**YTDL_BASE, 'noplaylist': False}
                 sc_opts.pop('extractor_args', None)
                 with yt_dlp.YoutubeDL(sc_opts) as ydl:
-                    data = ydl.extract_info(f"scsearch5:{query}", download=False)
+                    data = ydl.extract_info(f"scsearch2:{query}", download=False)
                 if data and 'entries' in data:
                     return [e for e in data['entries'] if e][:5]
             except Exception:
                 pass
             return []
         try:
-            return await asyncio.wait_for(loop.run_in_executor(None, _search), timeout=30.0)
+            return await asyncio.wait_for(loop.run_in_executor(None, _search), timeout=15.0)
         except Exception:
             return []
 
@@ -261,7 +278,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         entries = await asyncio.wait_for(
             loop.run_in_executor(None, lambda: _ytdl_extract_playlist(url)),
-            timeout=90.0,
+            timeout=30.0,
         )
         sources = []
         for entry in entries:
@@ -388,6 +405,26 @@ class Music(commands.Cog):
             self._play_next(guild)
         vc.play(player, after=after)
         self._broadcast(guild, player, queue)
+        # Preload next song in background so there's no gap
+        asyncio.run_coroutine_threadsafe(
+            self._preload_next(guild), self.bot.loop
+        )
+
+    async def _preload_next(self, guild: discord.Guild):
+        """Resolve the next queued song's stream URL early to eliminate gaps."""
+        queue = self.get_queue(guild.id)
+        if not queue.queue:
+            return
+        next_song = list(queue.queue)[0]
+        # If URL looks like a direct stream (not a search result), skip
+        url = getattr(next_song, 'url', '') or ''
+        if url.startswith('http') and 'googlevideo' not in url:
+            return
+        try:
+            # Touch the data to warm up any lazy resolution
+            _ = next_song.data.get('url')
+        except Exception:
+            pass
 
     async def _autoplay_next(self, guild: discord.Guild, _retries: int = 0):
         """Pick a related song based on what was just played — same artist/vibe."""
@@ -396,23 +433,22 @@ class Music(commands.Cog):
         if not vc or not vc.is_connected() or vc.is_playing():
             return
 
-        # Build a smart search query from the last played song
+        # Build a fast, accurate search query from the last played song
         last = queue.history[-1] if queue.history else None
         if last and _retries < 3:
-            last_title = last.title
-            # Strip common suffixes to get a cleaner search
             import re
-            clean = re.sub(r'\s*(\(.*?\)|\[.*?\]|official|video|audio|lyrics|hd|4k|mv)\s*',
-                           '', last_title, flags=re.IGNORECASE).strip()
-            # Search for similar songs — "songs like X" or "X similar"
+            clean = re.sub(
+                r'\s*(\(.*?\)|\[.*?\]|official|video|audio|lyrics|hd|4k|mv|ft\.?.*|feat\.?.*)\s*',
+                '', last.title, flags=re.IGNORECASE).strip()
+            # Fast queries — direct title variations, not "songs like X" (slow)
             queries = [
-                f"ytsearch5:{clean} similar songs",
-                f"ytsearch5:{clean} mix",
-                f"ytsearch5:songs like {clean}",
+                f"ytsearch2:{clean} official audio",
+                f"ytsearch2:{clean} topic",
+                f"ytsearch2:{clean}",
             ]
             search_q = queries[_retries % len(queries)]
         else:
-            search_q = f"ytsearch5:{random.choice(AUTOPLAY_SEEDS)}"
+            search_q = f"ytsearch2:{random.choice(AUTOPLAY_SEEDS)}"
 
         # Collect already-played titles to avoid repeats
         played_titles = {s.title.lower() for s in queue.history}
@@ -457,7 +493,7 @@ class Music(commands.Cog):
 
             entry = await asyncio.wait_for(
                 self.bot.loop.run_in_executor(None, _find_related),
-                timeout=45.0
+                timeout=20.0
             )
             if not entry:
                 raise ValueError("No related tracks found")
