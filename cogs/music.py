@@ -1,19 +1,21 @@
 """
-WAN Bot — Music Cog (v3)
+WAN Bot — Music Cog (v4)
 ========================
-Fixes applied:
-  1. Watchdog bug: state.queue → state.empty()
-  2. Race condition in _advance: protected by asyncio.Lock per guild
-  3. Stale VoiceClient guard in _play_song
-  4. Memory leak: _cleanup() removes idle guild states
-  5. Autoplay semaphore: max 3 concurrent yt-dlp calls
-  6. Reuse single YoutubeDL instance (module-level YTDL)
-  7. Autoplay fallback: ytsearch5 instead of fragile HTML scraping
-  8. /loop command (song / queue / off)
-  9. Idle disconnect: leave after 5 min with no humans
- 10. Queue display shows duration
- 11. /remove and /shuffle commands added
- 12. Autoplay scoring: penalise remix mismatch, boost VEVO
+New in v4:
+  - 24/7 Smart Radio: no idle disconnect, lofi fallback when channel empty
+  - Per-user taste profiles: mood, language, artist remembered per user
+  - Profile learning: updated every time a user plays a song
+  - Interactive UI: join → button → modal input box
+  - Personalized autoplay: uses active user's profile for fallback query
+  - Priority: last joined user controls the vibe
+
+All v3 fixes retained:
+  - asyncio.Lock on _advance (race condition)
+  - Stale VC guard in _play_song
+  - Memory cleanup for idle states
+  - Semaphore on autoplay fetches
+  - Single YTDL instance
+  - ytsearch5 instead of HTML scraping
 """
 
 import asyncio
@@ -34,6 +36,7 @@ logger = logging.getLogger("discord_bot.music")
 
 COOKIES_FILE = os.path.join(os.path.dirname(__file__), "..", "cookies.txt")
 
+
 def _build_opts(extra: dict = {}) -> dict:
     opts = {
         "format": "bestaudio/best",
@@ -48,6 +51,7 @@ def _build_opts(extra: dict = {}) -> dict:
     if os.path.isfile(COOKIES_FILE):
         opts["cookiefile"] = os.path.abspath(COOKIES_FILE)
     return opts
+
 
 # Single reused instance — avoids re-init overhead on every search
 YTDL = yt_dlp.YoutubeDL(_build_opts())
@@ -73,7 +77,7 @@ class Song:
         self.url: str        = data.get("webpage_url") or data.get("url", "")
         self.stream_url: str = data.get("url", "")
         self.thumbnail       = data.get("thumbnail")
-        self.duration        = data.get("duration")   # seconds (int) or None
+        self.duration        = data.get("duration")
         self.channel: str    = data.get("uploader") or data.get("channel", "Unknown")
         self.video_id        = data.get("id")
         self.requester       = requester
@@ -110,7 +114,7 @@ def _fetch(query: str) -> Optional[dict]:
     return data
 
 
-# ── Autoplay scoring ──────────────────────────────────────────────────────────
+# ── Mood / language detection ─────────────────────────────────────────────────
 
 _MOOD_GROUPS = {
     "soft":      ["lofi", "acoustic", "chill", "calm", "relax", "sleep", "study",
@@ -138,6 +142,15 @@ def _detect_mood(text: str) -> Optional[str]:
     return None
 
 
+def _detect_lang(text: str) -> str:
+    t = text.lower()
+    if any(k in t for k in ["hindi", "bollywood", "arijit", "atif", "punjabi", "bhajan", "ghazal"]):
+        return "hindi"
+    if any(k in t for k in ["kpop", "k-pop", "bts", "blackpink", "twice", "exo"]):
+        return "kpop"
+    return "global"
+
+
 def _moods_ok(a: Optional[str], b: Optional[str]) -> bool:
     if not a or not b or a == b:
         return True
@@ -147,26 +160,22 @@ def _moods_ok(a: Optional[str], b: Optional[str]) -> bool:
 
 def _score(candidate: dict, last: dict) -> int:
     score = 0
-    title       = candidate.get("title", "")
-    channel     = candidate.get("uploader") or candidate.get("channel", "")
-    dur         = candidate.get("duration")
-    last_title  = last.get("title", "")
-    last_ch     = last.get("uploader") or last.get("channel", "")
-    last_dur    = last.get("duration")
+    title      = candidate.get("title", "")
+    channel    = candidate.get("uploader") or candidate.get("channel", "")
+    dur        = candidate.get("duration")
+    last_title = last.get("title", "")
+    last_ch    = last.get("uploader") or last.get("channel", "")
+    last_dur   = last.get("duration")
 
-    # Reject shorts / memes
-    if dur and dur < 60:
+    if dur and dur < 60:          # reject shorts/memes
         return -999
 
-    # +50 same artist
     if channel and last_ch and channel.lower() == last_ch.lower():
-        score += 50
+        score += 50               # same artist
 
-    # +5 VEVO boost (verified artist)
     if "vevo" in channel.lower():
-        score += 5
+        score += 5                # verified artist boost
 
-    # +30 title word overlap
     stop = {"the", "a", "an", "of", "in", "on", "ft", "feat", "and", "or"}
     lw = set(re.findall(r"\w+", last_title.lower())) - stop
     cw = set(re.findall(r"\w+", title.lower())) - stop
@@ -174,21 +183,16 @@ def _score(candidate: dict, last: dict) -> int:
     if overlap:
         score += min(30, overlap * 8)
 
-    # -10 remix mismatch
-    is_remix = "remix" in title.lower()
-    last_is_remix = "remix" in last_title.lower()
-    if is_remix and not last_is_remix:
-        score -= 10
+    if "remix" in title.lower() and "remix" not in last_title.lower():
+        score -= 10               # remix mismatch penalty
 
-    # +20 same mood / -999 incompatible
     last_mood = _detect_mood(f"{last_title} {last_ch}")
     cand_mood = _detect_mood(f"{title} {channel}")
     if not _moods_ok(last_mood, cand_mood):
-        return -999
+        return -999               # incompatible genre
     if last_mood and last_mood == cand_mood:
         score += 20
 
-    # +10 similar duration (within 30%)
     if dur and last_dur:
         ratio = min(dur, last_dur) / max(dur, last_dur)
         if ratio >= 0.7:
@@ -203,28 +207,23 @@ class GuildMusicState:
     """All music state for one guild."""
 
     def __init__(self):
-        self._q: list[Song]          = []               # dashboard reads ._q
-        self.current: Optional[Song] = None             # dashboard reads .current
-        self.volume: float           = 0.5
-        self.autoplay: bool          = False
-        self.loop_song: bool         = False            # dashboard reads .loop_song
-        self.loop_queue: bool        = False            # dashboard reads .loop_queue
-        self._history: deque         = deque(maxlen=20)
+        self._q: list[Song]           = []
+        self.current: Optional[Song]  = None
+        self.volume: float            = 0.5
+        self.autoplay: bool           = True   # on by default for 24/7 mode
+        self.loop_song: bool          = False
+        self.loop_queue: bool         = False
+        self._history: deque          = deque(maxlen=20)
         self._player_task: Optional[asyncio.Task] = None
-        self._lock: asyncio.Lock     = asyncio.Lock()  # FIX #2: prevents _advance race
-        self._idle_since: Optional[float] = None       # FIX #9: idle disconnect timer
-
-    # ── Queue helpers (dashboard + internal) ─────────────────────────────
+        self._lock: asyncio.Lock      = asyncio.Lock()
 
     def empty(self) -> bool:
         return len(self._q) == 0
 
     def add(self, song: Song):
-        """dashboard: queue.add(song)"""
         self._q.append(song)
 
     def clear(self):
-        """dashboard: queue.clear()"""
         self._q.clear()
         self.current = None
 
@@ -235,14 +234,83 @@ class GuildMusicState:
         return len(self._q)
 
 
+# ── Interactive UI ────────────────────────────────────────────────────────────
+
+class SongRequestModal(discord.ui.Modal, title="🎵 Request a Song"):
+    query = discord.ui.TextInput(
+        label="What do you want to hear?",
+        placeholder="Song name, artist, or YouTube link...",
+        required=True,
+        max_length=200,
+    )
+
+    def __init__(self, cog: "Music", guild: discord.Guild):
+        super().__init__()
+        self.cog   = cog
+        self.guild = guild
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+        song = await self.cog._extract(self.query.value)
+        if not song:
+            return await interaction.followup.send("❌ Song not found.", ephemeral=True)
+
+        song.requester = interaction.user
+
+        # Save user profile
+        self.cog._user_profiles[interaction.user.id] = self.cog._analyze_song(song)
+        self.cog._active_user[self.guild.id] = interaction.user.id
+
+        state = self.cog._state(self.guild.id)
+        state._q.append(song)
+
+        vc = self.guild.voice_client
+        if vc and not vc.is_playing() and not vc.is_paused():
+            await self.cog._advance(self.guild)
+
+        if not state._player_task or state._player_task.done():
+            state._player_task = self.cog.bot.loop.create_task(
+                self.cog._player_loop(self.guild)
+            )
+
+        embed = discord.Embed(
+            title="▶ Added to Queue",
+            description=f"**{song.title}** `{song.duration_str}`",
+            color=0x10B981,
+        )
+        if song.thumbnail:
+            embed.set_thumbnail(url=song.thumbnail)
+        embed.set_footer(text=f"By {song.channel} • Requested by {interaction.user.display_name}")
+        await interaction.followup.send(embed=embed)
+
+
+class MusicPromptView(discord.ui.View):
+    def __init__(self, cog: "Music", guild: discord.Guild):
+        super().__init__(timeout=120)
+        self.cog   = cog
+        self.guild = guild
+
+    @discord.ui.button(label="🎵 Request a Song", style=discord.ButtonStyle.green)
+    async def request(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(SongRequestModal(self.cog, self.guild))
+
+
 # ── Music Cog ─────────────────────────────────────────────────────────────────
 
 class Music(commands.Cog):
-    """Music — play, queue, skip, pause, resume, stop, loop, autoplay."""
+    """24/7 smart music — personalized per user, always playing."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._states: dict[int, GuildMusicState] = {}
+
+        # Per-user taste profiles  {user_id: {mood, language, query, channel}}
+        self._user_profiles: dict[int, dict] = {}
+
+        # Active user per guild  {guild_id: user_id}
+        self._active_user: dict[int, int] = {}
+
         self._watchdog.start()
 
     def cog_unload(self):
@@ -251,7 +319,7 @@ class Music(commands.Cog):
             if state._player_task:
                 state._player_task.cancel()
 
-    # ── State management ──────────────────────────────────────────────────
+    # ── State helpers ─────────────────────────────────────────────────────
 
     def _state(self, guild_id: int) -> GuildMusicState:
         if guild_id not in self._states:
@@ -259,20 +327,16 @@ class Music(commands.Cog):
         return self._states[guild_id]
 
     def _cleanup(self, guild_id: int):
-        """FIX #4: remove idle state to prevent memory leak."""
         state = self._states.get(guild_id)
-        if state and state.empty() and not state.current and not state.autoplay:
+        if state and state.empty() and not state.current:
             self._states.pop(guild_id, None)
-            logger.debug(f"[cleanup] Removed idle state for guild {guild_id}")
 
-    # ── Dashboard-facing API ──────────────────────────────────────────────
+    # ── Dashboard API ─────────────────────────────────────────────────────
 
     def _q(self, guild_id: int) -> GuildMusicState:
-        """dashboard: music_cog._q(guild_id)"""
         return self._state(guild_id)
 
     async def _start(self, guild: discord.Guild, vc: discord.VoiceClient, song: Song):
-        """dashboard: music_cog._start(guild, vc, song)"""
         state = self._state(guild.id)
         state.current = song
         if vc.is_playing():
@@ -281,10 +345,21 @@ class Music(commands.Cog):
         if not state._player_task or state._player_task.done():
             state._player_task = self.bot.loop.create_task(self._player_loop(guild))
 
+    # ── User profile ──────────────────────────────────────────────────────
+
+    def _analyze_song(self, song: Song) -> dict:
+        """Extract taste profile from a song."""
+        text = f"{song.title} {song.channel}".lower()
+        return {
+            "mood":     _detect_mood(text),
+            "language": _detect_lang(text),
+            "query":    song.title,
+            "channel":  song.channel,
+        }
+
     # ── Extraction ────────────────────────────────────────────────────────
 
     async def _extract(self, query: str) -> Optional[Song]:
-        """Async wrapper around _fetch."""
         try:
             data = await asyncio.wait_for(
                 self.bot.loop.run_in_executor(None, lambda: _fetch(query)),
@@ -299,13 +374,11 @@ class Music(commands.Cog):
 
     def _play_song(self, guild: discord.Guild, vc: discord.VoiceClient,
                    song: Song, state: GuildMusicState):
-        """Build FFmpeg source and start playing. FIX #3: guard stale vc."""
-        if not vc or not vc.is_connected():                          # FIX #3
+        if not vc or not vc.is_connected():
             logger.warning(f"[{guild.name}] VC not connected, skipping play")
             return
 
         source = song.build_source(state.volume)
-        state._idle_since = None  # reset idle timer
 
         def _after(err):
             if err:
@@ -316,27 +389,21 @@ class Music(commands.Cog):
         logger.info(f"[{guild.name}] ▶ {song.title} — {song.channel}")
 
     async def _advance(self, guild: discord.Guild):
-        """
-        Move to the next track. FIX #2: wrapped in per-guild lock so
-        concurrent _after() callbacks can't cause double-skip.
-        """
+        """Advance to next track. Lock prevents race conditions."""
         state = self._state(guild.id)
 
-        async with state._lock:                                       # FIX #2
+        async with state._lock:
             vc = guild.voice_client
             if not vc or not vc.is_connected():
                 return
 
-            # Loop single track
             if state.loop_song and state.current:
                 self._play_song(guild, vc, state.current, state)
                 return
 
-            # Loop queue
             if state.loop_queue and state.current:
                 state._q.append(state.current)
 
-            # Next in queue
             if state._q:
                 song = state._q.pop(0)
                 state.current = song
@@ -345,9 +412,9 @@ class Music(commands.Cog):
                 self._play_song(guild, vc, song, state)
                 return
 
-            # Queue empty — try autoplay
-            if state.autoplay and state.current:
-                song = await self._autoplay_next(state)
+            # Queue empty — smart autoplay
+            if state.autoplay:
+                song = await self._autoplay_next(state, guild.id)
                 if song:
                     state.current = song
                     if song.video_id:
@@ -355,24 +422,25 @@ class Music(commands.Cog):
                     self._play_song(guild, vc, song, state)
                     return
 
-            # Nothing left
-            import time
-            state.current = None
-            state._idle_since = asyncio.get_event_loop().time()
-            logger.info(f"[{guild.name}] Queue exhausted")
-            self._cleanup(guild.id)                                   # FIX #4
+            # Absolute fallback — lofi 24/7
+            logger.info(f"[{guild.name}] Falling back to lofi radio")
+            song = await self._extract("lofi chill beats study")
+            if song:
+                state.current = song
+                self._play_song(guild, vc, song, state)
+            else:
+                state.current = None
+                self._cleanup(guild.id)
 
     async def _player_loop(self, guild: discord.Guild):
-        """Kicks off first song; keeps task alive while vc is connected."""
         state = self._state(guild.id)
         vc = guild.voice_client
         if not vc or not vc.is_connected():
             return
 
-        # Start first song if idle
         if not vc.is_playing() and not vc.is_paused() and state._q:
             async with state._lock:
-                if state._q:  # re-check inside lock
+                if state._q:
                     song = state._q.pop(0)
                     state.current = song
                     if song.video_id:
@@ -384,34 +452,48 @@ class Music(commands.Cog):
             vc = guild.voice_client
             if not vc or not vc.is_connected():
                 break
-            # Safety net: if not playing and queue has items, advance
             if not vc.is_playing() and not vc.is_paused() and state._q:
                 await self._advance(guild)
 
         state._player_task = None
         logger.info(f"[{guild.name}] Player loop ended")
 
-    # ── Smart autoplay ────────────────────────────────────────────────────
+    # ── Smart autoplay (personalized) ────────────────────────────────────
 
-    async def _autoplay_next(self, state: GuildMusicState) -> Optional[Song]:
+    async def _autoplay_next(self, state: GuildMusicState, guild_id: int) -> Optional[Song]:
         last = state.current
-        if not last:
-            return None
-
         history_ids = set(state._history)
-        last_dict = {
-            "title": last.title, "uploader": last.channel,
-            "duration": last.duration, "id": last.video_id,
-        }
 
-        # FIX #7: use yt-dlp search instead of fragile HTML scraping
-        # Search for related tracks using artist + title keywords
-        search_query = (
-            f"ytsearch5:{last.channel} {last.title}"
-            if last.channel and last.channel.lower() not in ("unknown", "")
-            else f"ytsearch5:{last.title} similar"
-        )
-        logger.info(f"[autoplay] Searching: {search_query!r}")
+        # Build search query — prefer active user's profile
+        active_uid = self._active_user.get(guild_id)
+        profile    = self._user_profiles.get(active_uid) if active_uid else None
+
+        if profile:
+            # Personalized: use user's taste
+            q = profile["query"]
+            if profile["mood"]:
+                q += f" {profile['mood']}"
+            if profile["language"] == "hindi":
+                q += " hindi songs"
+            elif profile["language"] == "kpop":
+                q += " kpop"
+            search_query = f"ytsearch5:{q}"
+            logger.info(f"[autoplay] Personalized for user {active_uid}: {search_query!r}")
+        elif last:
+            search_query = (
+                f"ytsearch5:{last.channel} {last.title}"
+                if last.channel and last.channel.lower() not in ("unknown", "")
+                else f"ytsearch5:{last.title} similar"
+            )
+            logger.info(f"[autoplay] Last-track based: {search_query!r}")
+        else:
+            return await self._extract("lofi chill beats")
+
+        last_dict = {
+            "title": last.title if last else "",
+            "uploader": last.channel if last else "",
+            "duration": last.duration if last else None,
+        }
 
         try:
             raw = await asyncio.wait_for(
@@ -420,19 +502,17 @@ class Music(commands.Cog):
             )
         except Exception as e:
             logger.warning(f"[autoplay] Search failed: {e}")
-            return None
+            return await self._extract("lofi chill beats")
 
         candidates = [e for e in (raw.get("entries") or []) if e and e.get("id") not in history_ids]
 
-        # FIX #5: semaphore — max 3 concurrent yt-dlp metadata fetches
         sem = asyncio.Semaphore(3)
         best_score = -1
-        best_song: Optional[Song] = None
+        best_entry: Optional[dict] = None
 
-        async def _fetch_and_score(entry: dict):
-            nonlocal best_score, best_song
+        async def _score_entry(entry: dict):
+            nonlocal best_score, best_entry
             async with sem:
-                # entries from ytsearch may already have enough metadata
                 info_dict = {
                     "title":    entry.get("title", ""),
                     "uploader": entry.get("uploader") or entry.get("channel", ""),
@@ -443,23 +523,75 @@ class Music(commands.Cog):
                 logger.debug(f"[autoplay] {info_dict['title']!r} score={s}")
                 if s > best_score:
                     best_score = s
-                    # Fetch full stream URL only for the winner (lazy)
-                    best_song = Song(entry)
+                    best_entry = entry
 
-        await asyncio.gather(*[_fetch_and_score(e) for e in candidates], return_exceptions=True)
+        await asyncio.gather(*[_score_entry(e) for e in candidates], return_exceptions=True)
 
-        if best_song and best_score >= 0:
-            # Fetch full stream URL now
-            full = await self._extract(f"https://www.youtube.com/watch?v={best_song.video_id}")
+        if best_entry and best_score >= 0:
+            full = await self._extract(f"https://www.youtube.com/watch?v={best_entry.get('id')}")
             if full:
                 logger.info(f"[autoplay] ✅ {full.title!r} (score={best_score})")
                 return full
 
-        # Final fallback
-        fallback = f"{last.channel} similar songs" if last.channel not in ("Unknown", "") else f"{last.title} similar"
-        logger.info(f"[autoplay] Fallback: {fallback!r}")
-        return await self._extract(fallback)
+        # Fallback: lofi
+        logger.warning("[autoplay] No match — falling back to lofi")
+        return await self._extract("lofi chill beats")
 
+    # ── 24/7 lofi fallback helpers ────────────────────────────────────────
+
+    async def _play_lofi(self, guild: discord.Guild):
+        """Play lofi if nothing is currently playing."""
+        state = self._state(guild.id)
+        vc = guild.voice_client
+        if not vc or not vc.is_connected() or vc.is_playing():
+            return
+        song = await self._extract("lofi chill beats study")
+        if song:
+            state.current = song
+            self._play_song(guild, vc, song, state)
+
+    async def _play_user_pref(self, guild: discord.Guild, profile: dict):
+        """Switch to a user's preferred music style."""
+        vc = guild.voice_client
+        state = self._state(guild.id)
+        if not vc or not vc.is_connected():
+            return
+
+        q = profile["query"]
+        if profile.get("mood"):
+            q += f" {profile['mood']}"
+        if profile.get("language") == "hindi":
+            q += " hindi songs"
+        elif profile.get("language") == "kpop":
+            q += " kpop"
+
+        song = await self._extract(q)
+        if song:
+            # Interrupt current playback and switch
+            if vc.is_playing():
+                vc.stop()
+            state.current = song
+            if song.video_id:
+                state._history.append(song.video_id)
+            self._play_song(guild, vc, song, state)
+            logger.info(f"[{guild.name}] Switched to user profile: {q!r}")
+
+    async def _send_prompt(self, channel: discord.VoiceChannel):
+        """Send welcome embed with song request button to the text channel."""
+        # Find a text channel to send to (same name or general)
+        guild = channel.guild
+        text_ch = discord.utils.find(
+            lambda c: isinstance(c, discord.TextChannel) and c.permissions_for(guild.me).send_messages,
+            guild.text_channels,
+        )
+        if not text_ch:
+            return
+        embed = discord.Embed(
+            title="🎧 Welcome!",
+            description=f"You joined **{channel.name}**.\nClick below to request a song 👇",
+            color=0x7C3AED,
+        )
+        await text_ch.send(embed=embed, view=MusicPromptView(self, guild))
 
     # ── Watchdog ──────────────────────────────────────────────────────────
 
@@ -471,55 +603,60 @@ class Music(commands.Cog):
                 continue
             vc = guild.voice_client
 
-            # FIX #1: was state.queue.empty() — now state.empty()
-            has_work = not state.empty() or (state.autoplay and state.current)
+            # Restart dead player task
+            has_work = not state.empty() or state.autoplay or state.current
             task_dead = not state._player_task or state._player_task.done()
-
             if task_dead and has_work and vc and vc.is_connected():
                 logger.info(f"[watchdog] Restarting player for {guild.name}")
                 state._player_task = self.bot.loop.create_task(self._player_loop(guild))
 
-            # FIX #9: idle disconnect after 5 min with no humans
-            if vc and vc.is_connected():
-                humans = [m for m in vc.channel.members if not m.bot]
-                if not humans:
-                    idle = asyncio.get_event_loop().time() - (state._idle_since or asyncio.get_event_loop().time())
-                    if idle >= 300:  # 5 minutes
-                        logger.info(f"[watchdog] Idle disconnect: {guild.name}")
-                        state.reset()
-                        if state._player_task:
-                            state._player_task.cancel()
-                        await vc.disconnect()
-                        self._cleanup(guild_id)
+            # 24/7: if connected but silent, kick off lofi
+            if vc and vc.is_connected() and not vc.is_playing() and not vc.is_paused():
+                await self._play_lofi(guild)
 
     @_watchdog.before_loop
     async def _before_watchdog(self):
         await self.bot.wait_until_ready()
 
-    # ── Voice state listener ──────────────────────────────────────────────
+    # ── Voice state: personalized join / lofi on empty ────────────────────
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
+    async def on_voice_state_update(self, member: discord.Member,
+                                    before: discord.VoiceState,
+                                    after: discord.VoiceState):
         if member.bot:
             return
+
         guild = member.guild
-        vc = guild.voice_client
+        vc    = guild.voice_client
         if not vc or not vc.is_connected():
             return
+
         humans = [m for m in vc.channel.members if not m.bot]
-        state = self._state(guild.id)
+
+        # ── No humans left → lofi radio mode ─────────────────────────────
         if not humans:
-            if vc.is_playing():
-                vc.pause()
-                logger.info(f"[{guild.name}] Auto-paused — channel empty")
-            # Start idle timer
-            if state._idle_since is None:
-                state._idle_since = asyncio.get_event_loop().time()
-        else:
-            # Humans rejoined — resume if paused
-            if vc.is_paused():
-                vc.resume()
-            state._idle_since = None
+            state = self._state(guild.id)
+            state.autoplay = True
+            state._q.clear()
+            state.current = None
+            logger.info(f"[{guild.name}] Channel empty — switching to lofi radio")
+            await self._play_lofi(guild)
+            return
+
+        # ── Someone joined the bot's channel ─────────────────────────────
+        if after.channel and after.channel == vc.channel:
+            self._active_user[guild.id] = member.id
+            profile = self._user_profiles.get(member.id)
+
+            if profile:
+                # Known user — switch to their vibe
+                logger.info(f"[{guild.name}] {member.display_name} joined — switching to their profile")
+                await self._play_user_pref(guild, profile)
+            else:
+                # New user — send prompt
+                await self._send_prompt(after.channel)
+
 
     # ── Slash Commands ────────────────────────────────────────────────────
 
@@ -553,6 +690,11 @@ class Music(commands.Cog):
             return await interaction.followup.send("❌ Could not find that track.", ephemeral=True)
 
         song.requester = interaction.user
+
+        # Save user profile + set as active
+        self._user_profiles[interaction.user.id] = self._analyze_song(song)
+        self._active_user[interaction.guild.id]  = interaction.user.id
+
         state = self._state(interaction.guild.id)
         state._q.append(song)
 
@@ -627,18 +769,12 @@ class Music(commands.Cog):
                 inline=False,
             )
         if items:
-            # FIX #10: show duration in queue list
-            lines = "\n".join(
-                f"`{i+1}.` {s.title} `{s.duration_str}`"
-                for i, s in enumerate(items[:10])
-            )
+            lines = "\n".join(f"`{i+1}.` {s.title} `{s.duration_str}`" for i, s in enumerate(items[:10]))
             embed.add_field(name="Up Next", value=lines, inline=False)
-            if len(items) > 10:
-                embed.set_footer(text=f"...and {len(items)-10} more  |  Autoplay: {'on' if state.autoplay else 'off'}")
-            else:
-                embed.set_footer(text=f"Autoplay: {'on' if state.autoplay else 'off'}  |  Loop: {'song' if state.loop_song else 'queue' if state.loop_queue else 'off'}")
+            extra = f"...and {len(items)-10} more  |  " if len(items) > 10 else ""
+            embed.set_footer(text=f"{extra}Autoplay: {'on' if state.autoplay else 'off'}  |  Loop: {'song' if state.loop_song else 'queue' if state.loop_queue else 'off'}")
         else:
-            embed.add_field(name="Queue", value="Empty", inline=False)
+            embed.add_field(name="Queue", value="Empty — autoplay will keep music going", inline=False)
             embed.set_footer(text=f"Autoplay: {'on' if state.autoplay else 'off'}")
         await interaction.response.send_message(embed=embed)
 
@@ -647,22 +783,33 @@ class Music(commands.Cog):
         state = self._state(interaction.guild.id)
         if not state.current:
             return await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
-        t = state.current
+        t  = state.current
         vc = interaction.guild.voice_client
         embed = discord.Embed(title="▶ Now Playing", description=f"**{t.title}**", color=0x10B981)
         if t.thumbnail:
             embed.set_thumbnail(url=t.thumbnail)
-        embed.add_field(name="Channel", value=t.channel or "?", inline=True)
-        embed.add_field(name="Duration", value=t.duration_str, inline=True)
-        embed.add_field(name="Status", value="▶ Playing" if (vc and vc.is_playing()) else "⏸ Paused", inline=True)
-        embed.add_field(name="Queue", value=f"{len(state._q)} up next", inline=True)
-        embed.add_field(name="Loop", value="song" if state.loop_song else "queue" if state.loop_queue else "off", inline=True)
+        embed.add_field(name="Channel",  value=t.channel or "?", inline=True)
+        embed.add_field(name="Duration", value=t.duration_str,   inline=True)
+        embed.add_field(name="Status",   value="▶ Playing" if (vc and vc.is_playing()) else "⏸ Paused", inline=True)
+        embed.add_field(name="Queue",    value=f"{len(state._q)} up next", inline=True)
+        embed.add_field(name="Loop",     value="song" if state.loop_song else "queue" if state.loop_queue else "off", inline=True)
+
+        # Show active user profile
+        active_uid = self._active_user.get(interaction.guild.id)
+        profile    = self._user_profiles.get(active_uid) if active_uid else None
+        if profile:
+            active_member = interaction.guild.get_member(active_uid)
+            name = active_member.display_name if active_member else "Unknown"
+            embed.add_field(
+                name="🎧 Active Vibe",
+                value=f"{name} — {profile.get('mood') or 'mixed'} / {profile.get('language', 'global')}",
+                inline=False,
+            )
         if t.requester:
             embed.set_footer(text=f"Requested by {t.requester.display_name}")
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="loop", description="Set loop mode: song / queue / off")
-    @app_commands.describe(mode="song — repeat current track | queue — loop whole queue | off — no loop")
     @app_commands.choices(mode=[
         app_commands.Choice(name="song",  value="song"),
         app_commands.Choice(name="queue", value="queue"),
@@ -708,12 +855,38 @@ class Music(commands.Cog):
         removed = state._q.pop(position - 1)
         await interaction.response.send_message(f"🗑 Removed: **{removed.title}**")
 
-    @app_commands.command(name="autoplay", description="Toggle smart autoplay when queue ends")
+    @app_commands.command(name="autoplay", description="Toggle smart autoplay")
     async def autoplay(self, interaction: discord.Interaction):
         state = self._state(interaction.guild.id)
         state.autoplay = not state.autoplay
         icon = "🤖" if state.autoplay else "🔕"
         await interaction.response.send_message(f"{icon} Autoplay: **{'on' if state.autoplay else 'off'}**")
+
+    @app_commands.command(name="vibe", description="Show your saved music taste profile")
+    async def vibe(self, interaction: discord.Interaction):
+        profile = self._user_profiles.get(interaction.user.id)
+        if not profile:
+            return await interaction.response.send_message(
+                "No profile yet — play a song first and I'll learn your taste!", ephemeral=True
+            )
+        embed = discord.Embed(title=f"🎧 {interaction.user.display_name}'s Vibe", color=0x7C3AED)
+        embed.add_field(name="Mood",     value=profile.get("mood") or "mixed",    inline=True)
+        embed.add_field(name="Language", value=profile.get("language", "global"), inline=True)
+        embed.add_field(name="Artist",   value=profile.get("channel", "?"),       inline=True)
+        embed.add_field(name="Last Song", value=profile.get("query", "?"),        inline=False)
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="request", description="Open the song request box")
+    async def request(self, interaction: discord.Interaction):
+        if not interaction.user.voice:
+            return await interaction.response.send_message("❌ Join a voice channel first!", ephemeral=True)
+        vc = interaction.guild.voice_client
+        if not vc or not vc.is_connected():
+            try:
+                vc = await interaction.user.voice.channel.connect()
+            except Exception as e:
+                return await interaction.response.send_message(f"❌ Could not connect: {e}", ephemeral=True)
+        await interaction.response.send_modal(SongRequestModal(self, interaction.guild))
 
     @app_commands.command(name="leave", description="Disconnect the bot from voice")
     async def leave(self, interaction: discord.Interaction):
