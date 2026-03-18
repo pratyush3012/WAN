@@ -42,12 +42,15 @@ COOKIES_FILE = os.path.join(os.path.dirname(__file__), "..", "cookies.txt")
 
 def _build_opts(extra: dict = {}) -> dict:
     opts = {
-        "format": "bestaudio/best",
+        # Broad format selector: prefer opus/webm audio, fall back to any audio, then any video
+        "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best[height<=480]/best",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
         "default_search": "ytsearch",
         "source_address": "0.0.0.0",
+        # Use android client — less likely to be blocked on datacenter IPs
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         **extra,
     }
     if os.path.isfile(COOKIES_FILE):
