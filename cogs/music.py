@@ -183,7 +183,8 @@ def _score(candidate: dict, last: dict) -> int:
         return -999
 
     if channel and last_ch and channel.lower() == last_ch.lower():
-        score += 50               # same artist
+        score += 50
+        score -= 10  # soft diversity penalty — avoids same-artist loop               # same artist
 
     if "vevo" in channel.lower():
         score += 5                # verified artist boost
@@ -275,10 +276,14 @@ class SongRequestModal(discord.ui.Modal, title="🎵 Request a Song"):
         self.cog._track_activity(self.guild.id, interaction.user.id)
 
         state = self.cog._state(self.guild.id)
-        state._q.append(song)
+        # Priority insert: active user jumps to front of queue
+        if self.cog._active_user.get(self.guild.id) == interaction.user.id:
+            state._q.insert(0, song)
+        else:
+            state._q.append(song)
 
         vc = self.guild.voice_client
-        if vc and not vc.is_playing() and not vc.is_paused():
+        if vc and not vc.is_playing() and not vc.is_paused() and not state.current:
             await self.cog._advance(self.guild)
 
         if not state._player_task or state._player_task.done():
@@ -393,18 +398,34 @@ class Music(commands.Cog):
         self.save_profiles()
 
     def _track_activity(self, guild_id: int, user_id: int):
-        """Increment activity score for a user in a guild."""
+        """
+        Increment activity score with time-based decay.
+        Score halves every 10 min of inactivity — old users fade out naturally.
+        """
+        now = time.time()
         guild_activity = self._user_activity.setdefault(guild_id, {})
-        guild_activity[user_id] = guild_activity.get(user_id, 0) + 1
-        # Update active user to most engaged, not just last join
-        self._active_user[guild_id] = max(guild_activity, key=guild_activity.get)
+        user = guild_activity.setdefault(user_id, {"score": 0, "last_seen": now})
+
+        # Decay: score *= max(0.5, 1 - elapsed/600)
+        elapsed = now - user["last_seen"]
+        user["score"] *= max(0.5, 1 - elapsed / 600)
+        user["score"] += 1
+        user["last_seen"] = now
+
+        # Dominant user = highest decayed score
+        self._active_user[guild_id] = max(
+            guild_activity, key=lambda u: guild_activity[u]["score"]
+        )
 
     # ── Profile persistence ───────────────────────────────────────────────
 
     def save_profiles(self):
+        """Atomic write — prevents corrupt file on crash."""
         try:
-            with open("profiles.json", "w") as f:
+            tmp = "profiles.tmp"
+            with open(tmp, "w") as f:
                 json.dump(self._user_profiles, f)
+            os.replace(tmp, "profiles.json")
         except Exception as e:
             logger.warning(f"[profiles] Save failed: {e}")
 
@@ -445,10 +466,25 @@ class Music(commands.Cog):
         def _after(err):
             if err:
                 logger.error(f"[{guild.name}] Playback error: {err}")
-            asyncio.run_coroutine_threadsafe(self._advance(guild), self.bot.loop)
+                # Retry once on stream failure before advancing
+                asyncio.run_coroutine_threadsafe(
+                    self._retry_current(guild), self.bot.loop
+                )
+            else:
+                asyncio.run_coroutine_threadsafe(self._advance(guild), self.bot.loop)
 
         vc.play(source, after=_after)
         logger.info(f"[{guild.name}] ▶ {song.title} — {song.channel}")
+
+    async def _retry_current(self, guild: discord.Guild):
+        """Retry the current song once on stream error, then advance."""
+        state = self._state(guild.id)
+        vc    = guild.voice_client
+        if state.current and vc and vc.is_connected() and not vc.is_playing():
+            logger.info(f"[{guild.name}] Retrying: {state.current.title}")
+            self._play_song(guild, vc, state.current, state)
+        else:
+            await self._advance(guild)
 
     async def _advance(self, guild: discord.Guild):
         """Advance to next track. Lock prevents race conditions."""
@@ -590,7 +626,9 @@ class Music(commands.Cog):
                     best_score = s
                     best_entry = entry
 
-        await asyncio.gather(*[_score_entry(e) for e in candidates], return_exceptions=True)
+        tasks = [asyncio.create_task(_score_entry(e)) for e in candidates]
+        if tasks:
+            await asyncio.wait(tasks)
 
         if best_entry and best_score >= 0:
             full = await self._extract(f"https://www.youtube.com/watch?v={best_entry.get('id')}")
@@ -772,7 +810,11 @@ class Music(commands.Cog):
         self._track_activity(interaction.guild.id, interaction.user.id)
 
         state = self._state(interaction.guild.id)
-        state._q.append(song)
+        # Priority insert: active user jumps to front of queue
+        if self._active_user.get(interaction.guild.id) == interaction.user.id:
+            state._q.insert(0, song)
+        else:
+            state._q.append(song)
 
         if not state._player_task or state._player_task.done():
             state._player_task = self.bot.loop.create_task(self._player_loop(interaction.guild))
