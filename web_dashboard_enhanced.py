@@ -787,10 +787,10 @@ def music_play(server_id):
                 except Exception as e:
                     return {'error': f'Could not join voice channel: {e}'}
 
-            from cogs.music import Song, _fetch
+            from cogs.music import YTDLSource, _ytdl_extract_single, FFMPEG_OPTS
             try:
                 data = await asyncio.wait_for(
-                    bot_instance.loop.run_in_executor(None, lambda: _fetch(query)),
+                    bot_instance.loop.run_in_executor(None, lambda: _ytdl_extract_single(query)),
                     timeout=60
                 )
             except asyncio.TimeoutError:
@@ -800,20 +800,24 @@ def music_play(server_id):
             if not data:
                 return {'error': f'No results found for: {query}'}
 
-            song = Song(data, requester=guild.me)
-            queue = music_cog._q(guild.id)
+            import discord as _discord
+            src = _discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTS)
+            song = YTDLSource(src, data=data, volume=music_cog.get_volume(guild.id))
+            song.requester = guild.me
+            queue = music_cog.get_queue(guild.id)
 
             if vc.is_playing() or vc.is_paused():
                 queue.add(song)
-                return {'status': 'queued', 'title': song.title, 'queue_size': len(queue)}
+                return {'status': 'queued', 'title': song.title, 'queue_size': len(queue.queue)}
             else:
-                await music_cog._start(guild, vc, song)
+                queue.current = song
+                music_cog._start_playing(guild, song, queue)
                 broadcast_update('music_update', {
                     'guild_id': server_id,
                     'action': 'now_playing',
                     'title': song.title,
                     'thumbnail': song.thumbnail,
-                    'queue_size': len(queue)
+                    'queue_size': len(queue.queue)
                 })
                 return {'status': 'playing', 'title': song.title}
 
@@ -848,7 +852,7 @@ def music_control(server_id):
         elif action == 'skip' and vc and vc.is_playing():
             vc.stop()
         elif action == 'stop':
-            music_cog._q(int(server_id)).clear()
+            music_cog.get_queue(int(server_id)).clear()
             if vc and vc.is_playing():
                 vc.stop()
         else:
@@ -873,7 +877,7 @@ def music_status(server_id):
 
         music_cog = bot_instance.get_cog('Music')
         vc = guild.voice_client
-        queue = music_cog._q(int(server_id)) if music_cog else None
+        queue = music_cog.get_queue(int(server_id)) if music_cog else None
 
         return jsonify({
             'connected': vc is not None and vc.is_connected(),
@@ -886,9 +890,9 @@ def music_status(server_id):
                 'duration': queue.current.duration if queue and queue.current else None,
                 'url': queue.current.url if queue and queue.current else None,
             },
-            'queue': [s.title for s in list(queue._q)[:20]] if queue else [],
-            'queue_size': len(queue) if queue else 0,
-            'loop': queue.loop_song if queue else False,
+            'queue': [s.title for s in list(queue.queue)[:20]] if queue else [],
+            'queue_size': len(queue.queue) if queue else 0,
+            'loop': queue.loop if queue else False,
             'loop_queue': queue.loop_queue if queue else False,
             'voice_channels': [{'id': str(c.id), 'name': c.name} for c in guild.voice_channels]
         })
