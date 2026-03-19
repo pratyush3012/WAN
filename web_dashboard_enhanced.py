@@ -689,11 +689,10 @@ def privacy():
 
 # ===== Roblox Integration API Endpoints =====
 
-@app.route('/api/roblox/linked-members')
+@app.route('/api/server/<int:server_id>/roblox/linked-members')
 @require_auth
-@cache.cached(timeout=30, key_prefix='roblox_members')
-def get_roblox_linked_members():
-    """Get all linked Roblox accounts"""
+def get_roblox_linked_members(server_id):
+    """Get all linked Roblox accounts for a specific server"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
@@ -702,16 +701,28 @@ def get_roblox_linked_members():
         if not roblox_cog:
             return jsonify({'error': 'Roblox integration not loaded'}), 503
         
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+        
+        is_demo = not roblox_cog.api_configured
         members = []
         for discord_id, member_info in roblox_cog.clan_members.items():
-            # Get cached player data if available
+            # Filter to this guild only
+            if not guild.get_member(discord_id):
+                continue
+            
             player_data = roblox_cog.player_cache.get(discord_id)
+            discord_member = guild.get_member(discord_id)
             
             member_entry = {
                 'discord_id': discord_id,
+                'discord_name': discord_member.display_name if discord_member else f'User {discord_id}',
+                'discord_avatar': str(discord_member.display_avatar.url) if discord_member else None,
                 'roblox_username': member_info['roblox_username'],
                 'roblox_id': member_info['roblox_id'],
-                'linked_at': member_info['linked_at']
+                'linked_at': member_info['linked_at'],
+                'source': member_info.get('source', 'manual')
             }
             
             if player_data:
@@ -727,6 +738,7 @@ def get_roblox_linked_members():
         return jsonify({
             'members': members,
             'total': len(members),
+            'is_demo': is_demo,
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:
@@ -750,12 +762,17 @@ def get_roblox_player_stats(discord_id):
         
         player_data = roblox_cog.player_cache.get(discord_id)
         if not player_data:
-            # Fetch fresh data
+            # Fetch fresh data using thread-safe coroutine scheduling
             member_info = roblox_cog.clan_members[discord_id]
-            loop = bot_instance.loop or asyncio.get_event_loop()
-            player_data = loop.run_until_complete(
-                roblox_cog.fetch_player_data(discord_id, member_info['roblox_username'])
-            )
+            loop = bot_instance.loop
+            if loop and loop.is_running():
+                future = asyncio.run_coroutine_threadsafe(
+                    roblox_cog.fetch_player_data(discord_id, member_info['roblox_username']),
+                    loop
+                )
+                player_data = future.result(timeout=10)
+            else:
+                return jsonify({'error': 'Bot event loop not available'}), 503
         
         if not player_data:
             return jsonify({'error': 'Failed to fetch player data'}), 500
@@ -764,6 +781,146 @@ def get_roblox_player_stats(discord_id):
     except Exception as e:
         logger.error(f"Error getting player stats: {e}")
         return jsonify({'error': 'Failed to get player stats'}), 500
+
+
+@app.route('/api/server/<int:server_id>/roblox/link', methods=['POST'])
+@require_auth
+def roblox_link_member(server_id):
+    """Link a Discord member to a Roblox username from the dashboard"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        roblox_cog = bot_instance.get_cog('RobloxIntegration')
+        if not roblox_cog:
+            return jsonify({'error': 'Roblox integration not loaded'}), 503
+        data = request.get_json() or {}
+        discord_id = int(data.get('discord_id', 0))
+        roblox_username = data.get('roblox_username', '').strip()
+        if not discord_id or not roblox_username:
+            return jsonify({'error': 'discord_id and roblox_username required'}), 400
+        loop = bot_instance.loop
+        if loop and loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(
+                roblox_cog.get_user_by_username(roblox_username), loop
+            )
+            user_info = future.result(timeout=10)
+        else:
+            return jsonify({'error': 'Bot event loop not available'}), 503
+        if not user_info:
+            return jsonify({'error': f'Roblox user "{roblox_username}" not found'}), 404
+        roblox_cog.clan_members[discord_id] = {
+            'discord_id': discord_id,
+            'roblox_username': user_info['name'],
+            'roblox_id': user_info['id'],
+            'linked_at': datetime.utcnow().isoformat(),
+            'source': 'dashboard'
+        }
+        roblox_cog._save_links()
+        return jsonify({'success': True, 'roblox_username': user_info['name'], 'roblox_id': user_info['id']})
+    except Exception as e:
+        logger.error(f"Error linking Roblox member: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<int:server_id>/roblox/unlink/<int:discord_id>', methods=['DELETE'])
+@require_auth
+def roblox_unlink_member(server_id, discord_id):
+    """Unlink a Discord member from Roblox"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        roblox_cog = bot_instance.get_cog('RobloxIntegration')
+        if not roblox_cog:
+            return jsonify({'error': 'Roblox integration not loaded'}), 503
+        if discord_id not in roblox_cog.clan_members:
+            return jsonify({'error': 'Member not linked'}), 404
+        del roblox_cog.clan_members[discord_id]
+        roblox_cog.player_cache.pop(discord_id, None)
+        roblox_cog._save_links()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Error unlinking Roblox member: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<int:server_id>/roblox/refresh/<int:discord_id>', methods=['POST'])
+@require_auth
+def roblox_refresh_member(server_id, discord_id):
+    """Force refresh cached stats for a member"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        roblox_cog = bot_instance.get_cog('RobloxIntegration')
+        if not roblox_cog:
+            return jsonify({'error': 'Roblox integration not loaded'}), 503
+        if discord_id not in roblox_cog.clan_members:
+            return jsonify({'error': 'Member not linked'}), 404
+        # Clear cache to force refresh
+        roblox_cog.player_cache.pop(discord_id, None)
+        member_info = roblox_cog.clan_members[discord_id]
+        loop = bot_instance.loop
+        if loop and loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(
+                roblox_cog.fetch_player_data(discord_id, member_info['roblox_username']), loop
+            )
+            player_data = future.result(timeout=10)
+        else:
+            return jsonify({'error': 'Bot event loop not available'}), 503
+        return jsonify({'success': True, 'data': player_data})
+    except Exception as e:
+        logger.error(f"Error refreshing Roblox member: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<int:server_id>/roblox/clan-stats')
+@require_auth
+def get_roblox_clan_stats_server(server_id):
+    """Get aggregated clan statistics for a specific server"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        roblox_cog = bot_instance.get_cog('RobloxIntegration')
+        if not roblox_cog:
+            return jsonify({'error': 'Roblox integration not loaded'}), 503
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+        is_demo = not roblox_cog.api_configured
+        all_stats = []
+        online_count = 0
+        playing_count = 0
+        for discord_id, member_info in roblox_cog.clan_members.items():
+            if not guild.get_member(discord_id):
+                continue
+            player_data = roblox_cog.player_cache.get(discord_id)
+            if player_data:
+                all_stats.append(player_data)
+                if player_data.get('is_online'):
+                    online_count += 1
+                if player_data.get('currently_playing'):
+                    playing_count += 1
+        total_playtime = sum(p['stats']['playtime'] for p in all_stats)
+        total_kills = sum(p['stats']['kills'] for p in all_stats)
+        total_deaths = sum(p['stats']['deaths'] for p in all_stats)
+        avg_level = sum(p['stats']['level'] for p in all_stats) / len(all_stats) if all_stats else 0
+        return jsonify({
+            'total_linked': len([d for d in roblox_cog.clan_members if guild.get_member(d)]),
+            'tracked_members': len(all_stats),
+            'online_members': online_count,
+            'playing_now': playing_count,
+            'is_demo': is_demo,
+            'totals': {
+                'playtime_hours': total_playtime // 3600,
+                'kills': total_kills,
+                'deaths': total_deaths,
+                'kd_ratio': round(total_kills / max(total_deaths, 1), 2)
+            },
+            'averages': {'level': round(avg_level, 2)},
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error getting clan stats: {e}")
+        return jsonify({'error': 'Failed to get clan stats'}), 500
 
 @app.route('/api/leaderboard/<category>')
 @require_auth
@@ -814,64 +971,6 @@ def get_activity_leaderboard(category):
     except Exception as e:
         logger.error(f"Error getting leaderboard: {e}")
         return jsonify({'error': 'Failed to get leaderboard'}), 500
-
-@app.route('/api/roblox/clan-stats')
-@require_auth
-@cache.cached(timeout=60, key_prefix='roblox_clan_stats')
-def get_roblox_clan_stats():
-    """Get aggregated clan statistics"""
-    try:
-        if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
-        
-        roblox_cog = bot_instance.get_cog('RobloxIntegration')
-        if not roblox_cog:
-            return jsonify({'error': 'Roblox integration not loaded'}), 503
-        
-        # Collect all player data
-        all_stats = []
-        online_count = 0
-        playing_count = 0
-        
-        for discord_id, member_info in roblox_cog.clan_members.items():
-            player_data = roblox_cog.player_cache.get(discord_id)
-            if player_data:
-                all_stats.append(player_data)
-                if player_data.get('is_online'):
-                    online_count += 1
-                if player_data.get('currently_playing'):
-                    playing_count += 1
-        
-        # Calculate totals
-        total_playtime = sum(p['stats']['playtime'] for p in all_stats)
-        total_coins = sum(p['stats']['coins_collected'] for p in all_stats)
-        total_kills = sum(p['stats']['kills'] for p in all_stats)
-        total_deaths = sum(p['stats']['deaths'] for p in all_stats)
-        avg_level = sum(p['stats']['level'] for p in all_stats) / len(all_stats) if all_stats else 0
-        
-        return jsonify({
-            'total_members': len(roblox_cog.clan_members),
-            'tracked_members': len(all_stats),
-            'online_members': online_count,
-            'playing_now': playing_count,
-            'totals': {
-                'playtime': total_playtime,
-                'playtime_hours': total_playtime // 3600,
-                'coins_collected': total_coins,
-                'kills': total_kills,
-                'deaths': total_deaths,
-                'kd_ratio': total_kills / max(total_deaths, 1)
-            },
-            'averages': {
-                'level': round(avg_level, 2),
-                'playtime_per_member': total_playtime // len(all_stats) if all_stats else 0,
-                'coins_per_member': total_coins // len(all_stats) if all_stats else 0
-            },
-            'timestamp': datetime.utcnow().isoformat()
-        })
-    except Exception as e:
-        logger.error(f"Error getting clan stats: {e}")
-        return jsonify({'error': 'Failed to get clan stats'}), 500
 
 # WebSocket events
 @socketio.on('connect')

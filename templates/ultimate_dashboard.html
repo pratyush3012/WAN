@@ -339,6 +339,7 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('botanalyzer',this)"><i class="fas fa-microscope"></i><span>Bot Analyzer</span></button>
     <button class="menu-item" onclick="show('commandcenter',this)"><i class="fas fa-terminal"></i><span>Command Center</span></button>
     <button class="menu-item" onclick="show('analytics2',this)"><i class="fas fa-chart-line"></i><span>Analytics</span></button>
+    <button class="menu-item" onclick="show('roblox',this)"><i class="fas fa-gamepad"></i><span>Roblox</span></button>
     <button class="menu-item" onclick="show('dangersettings',this)"><i class="fas fa-cog"></i><span>Advanced Settings</span></button>
     <a href="/logout" class="menu-item" style="color:#ef4444;margin-top:auto;"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
   </div>
@@ -1381,9 +1382,69 @@ select.form-control option{background:var(--surface2);}
       </div>
     </div>
   </div>
-  <div id="sec-botanalyzer" class="section">
-    <div class="card">
+  <!-- ROBLOX INTEGRATION -->
+  <div id="sec-roblox" class="section">
+    <!-- Demo mode banner -->
+    <div id="robloxDemoBanner" style="display:none;background:linear-gradient(135deg,rgba(245,158,11,.12),rgba(239,68,68,.08));border:1px solid rgba(245,158,11,.3);border-radius:14px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:12px;">
+      <i class="fas fa-flask" style="color:#fbbf24;font-size:18px;flex-shrink:0;"></i>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:#fbbf24;">Demo Mode — Simulated Data</div>
+        <div style="color:var(--text-muted);font-size:12px;margin-top:2px;">No <code>ROBLOX_API_KEY</code> is set. Stats shown are realistic mock data for demonstration. Set your Roblox Open Cloud API key in <code>.env</code> to connect a real game.</div>
+      </div>
+    </div>
+    <!-- Stats strip -->
+    <div id="robloxStatsStrip" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:18px;"></div>
+    <!-- Clan aggregate card -->
+    <div class="card" style="margin-bottom:18px;">
       <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-trophy"></i> Clan Aggregate Stats</h3>
+        <button class="btn btn-ghost btn-sm" onclick="loadRoblox()"><i class="fas fa-sync"></i> Refresh</button>
+      </div>
+      <div id="robloxClanStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;">
+        <p style="color:var(--text-muted);grid-column:1/-1;">Select a server to load clan stats.</p>
+      </div>
+    </div>
+    <!-- Linked members table -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-link"></i> Linked Members</h3>
+        <span id="robloxMemberCount" class="badge badge-secondary">0 linked</span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="table">
+          <thead><tr>
+            <th>Member</th>
+            <th>Roblox</th>
+            <th>Level</th>
+            <th>K/D</th>
+            <th>Playtime</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr></thead>
+          <tbody id="robloxMembersBody">
+            <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">Select a server to load members.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Link member form -->
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-user-plus"></i> Link a Member</h3></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Discord Member</label>
+          <select id="robloxLinkDiscord" class="form-control ch-select"><option value="">Select member...</option></select>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Roblox Username</label>
+          <input id="robloxLinkUsername" class="form-control" placeholder="e.g. Builderman">
+        </div>
+        <button class="btn btn-primary" onclick="linkRobloxMember()"><i class="fas fa-link"></i> Link</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sec-botanalyzer" class="section">
         <h3 class="card-title"><i class="fas fa-microscope"></i> Bot Analyzer</h3>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-primary btn-sm" onclick="loadBotAnalyzer()"><i class="fas fa-sync"></i> Refresh</button>
@@ -3489,6 +3550,137 @@ async function saveLogConfig(){
   notify(d.success?'Logging config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
 
+// ===== ROBLOX INTEGRATION =====
+async function loadRoblox(){
+  if(!currentServer)return;
+  try{
+    const [membersRes, clanRes] = await Promise.all([
+      apiFetch(`/api/server/${currentServer}/roblox/linked-members`),
+      apiFetch(`/api/server/${currentServer}/roblox/clan-stats`)
+    ]);
+    const membersData = await membersRes.json();
+    const clanData = await clanRes.json();
+
+    // Demo banner
+    const banner = document.getElementById('robloxDemoBanner');
+    if(banner) banner.style.display = (membersData.is_demo || clanData.is_demo) ? 'flex' : 'none';
+
+    // Stats strip
+    const strip = document.getElementById('robloxStatsStrip');
+    const totalLinked = clanData.total_linked || 0;
+    const onlineNow = clanData.online_members || 0;
+    const playingNow = clanData.playing_now || 0;
+    strip.innerHTML = `
+      <div class="live-stat-card"><div class="lsc-icon" style="background:linear-gradient(135deg,#7c3aed,#5865f2)"><i class="fas fa-link"></i></div><div class="lsc-body"><div class="lsc-val">${totalLinked}</div><div class="lsc-lbl">Linked Members</div></div></div>
+      <div class="live-stat-card"><div class="lsc-icon" style="background:linear-gradient(135deg,#10b981,#34d399)"><i class="fas fa-circle" style="font-size:11px"></i></div><div class="lsc-body"><div class="lsc-val">${onlineNow}</div><div class="lsc-lbl">Online Now</div></div></div>
+      <div class="live-stat-card"><div class="lsc-icon" style="background:linear-gradient(135deg,#f59e0b,#fbbf24)"><i class="fas fa-gamepad"></i></div><div class="lsc-body"><div class="lsc-val">${playingNow}</div><div class="lsc-lbl">Playing Game</div></div></div>
+      <div class="live-stat-card"><div class="lsc-icon" style="background:linear-gradient(135deg,#ef4444,#f87171)"><i class="fas fa-skull-crossbones"></i></div><div class="lsc-body"><div class="lsc-val">${clanData.totals?.kd_ratio||'0.00'}</div><div class="lsc-lbl">Clan K/D</div></div></div>
+    `;
+
+    // Clan aggregate
+    const t = clanData.totals || {};
+    const a = clanData.averages || {};
+    document.getElementById('robloxClanStats').innerHTML = `
+      <div style="background:var(--surface2);border-radius:12px;padding:14px;text-align:center;border:1px solid var(--border);">
+        <div style="font-size:22px;font-weight:900;font-family:'Space Grotesk',sans-serif;">${t.playtime_hours||0}h</div>
+        <div style="color:var(--text-muted);font-size:11px;margin-top:3px;">Total Playtime</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:12px;padding:14px;text-align:center;border:1px solid var(--border);">
+        <div style="font-size:22px;font-weight:900;font-family:'Space Grotesk',sans-serif;">${(t.kills||0).toLocaleString()}</div>
+        <div style="color:var(--text-muted);font-size:11px;margin-top:3px;">Total Kills</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:12px;padding:14px;text-align:center;border:1px solid var(--border);">
+        <div style="font-size:22px;font-weight:900;font-family:'Space Grotesk',sans-serif;">${t.kd_ratio||'0.00'}</div>
+        <div style="color:var(--text-muted);font-size:11px;margin-top:3px;">K/D Ratio</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:12px;padding:14px;text-align:center;border:1px solid var(--border);">
+        <div style="font-size:22px;font-weight:900;font-family:'Space Grotesk',sans-serif;">${a.level||0}</div>
+        <div style="color:var(--text-muted);font-size:11px;margin-top:3px;">Avg Level</div>
+      </div>
+    `;
+
+    // Members table
+    const members = membersData.members || [];
+    document.getElementById('robloxMemberCount').textContent = `${members.length} linked`;
+    const tbody = document.getElementById('robloxMembersBody');
+    if(!members.length){
+      tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">No linked members yet. Use the form below or <code>/roblox-link</code> in Discord.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = members.map(m=>{
+      const stats = m.stats || {};
+      const kd = stats.kills && stats.deaths ? (stats.kills/Math.max(stats.deaths,1)).toFixed(2) : '—';
+      const hrs = stats.playtime ? Math.floor(stats.playtime/3600)+'h' : '—';
+      const statusBadge = m.currently_playing
+        ? '<span class="badge badge-success"><span class="pulse-dot"></span> Playing</span>'
+        : m.is_online
+          ? '<span class="badge badge-info">Online</span>'
+          : '<span class="badge badge-secondary">Offline</span>';
+      const avatar = m.discord_avatar
+        ? `<img src="${m.discord_avatar}" style="width:32px;height:32px;border-radius:50%;margin-right:8px;vertical-align:middle;">`
+        : '<span style="width:32px;height:32px;border-radius:50%;background:var(--surface3);display:inline-flex;align-items:center;justify-content:center;margin-right:8px;font-size:14px;">👤</span>';
+      const robloxAvatar = m.roblox_id
+        ? `<img src="https://www.roblox.com/headshot-thumbnail/image?userId=${m.roblox_id}&width=48&height=48&format=png" style="width:28px;height:28px;border-radius:50%;margin-right:6px;vertical-align:middle;" onerror="this.style.display='none'">`
+        : '';
+      const demoTag = (stats.is_demo) ? '<span class="badge badge-warning" style="font-size:9px;margin-left:4px;">demo</span>' : '';
+      return `<tr>
+        <td>${avatar}<span style="font-weight:600;">${escHtml(m.discord_name||'Unknown')}</span></td>
+        <td>${robloxAvatar}<a href="https://www.roblox.com/users/${m.roblox_id}/profile" target="_blank" style="color:var(--accent3);text-decoration:none;">${escHtml(m.roblox_username)}</a>${demoTag}</td>
+        <td>${stats.level||'—'}</td>
+        <td>${kd}</td>
+        <td>${hrs}</td>
+        <td>${statusBadge}</td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" title="Refresh" onclick="refreshRobloxMember(${m.discord_id})"><i class="fas fa-sync"></i></button>
+          <button class="btn btn-danger btn-sm" title="Unlink" onclick="unlinkRobloxMember(${m.discord_id})"><i class="fas fa-unlink"></i></button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // Populate link form member select
+    const sel = document.getElementById('robloxLinkDiscord');
+    if(sel && allMembers.length){
+      sel.innerHTML = '<option value="">Select member...</option>' +
+        allMembers.map(m=>`<option value="${m.id}">${escHtml(m.display_name||m.username)}</option>`).join('');
+    }
+  }catch(e){
+    document.getElementById('robloxMembersBody').innerHTML=`<tr><td colspan="7" style="color:var(--danger);text-align:center;padding:24px;">Error: ${e.message}</td></tr>`;
+  }
+}
+
+async function linkRobloxMember(){
+  if(!currentServer)return;
+  const discordId = document.getElementById('robloxLinkDiscord').value;
+  const username = document.getElementById('robloxLinkUsername').value.trim();
+  if(!discordId||!username){notify('Select a member and enter a Roblox username','warning');return;}
+  const r = await apiFetch(`/api/server/${currentServer}/roblox/link`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({discord_id:discordId,roblox_username:username})});
+  const d = await r.json();
+  if(d.success){
+    notify(`Linked to ${d.roblox_username}`,'success');
+    document.getElementById('robloxLinkUsername').value='';
+    loadRoblox();
+  } else {
+    notify('Error: '+(d.error||'Unknown error'),'danger');
+  }
+}
+
+async function unlinkRobloxMember(discordId){
+  if(!currentServer||!confirm('Unlink this member from Roblox?'))return;
+  const r = await apiFetch(`/api/server/${currentServer}/roblox/unlink/${discordId}`,{method:'DELETE'});
+  const d = await r.json();
+  notify(d.success?'Member unlinked':'Error: '+d.error, d.success?'success':'danger');
+  if(d.success)loadRoblox();
+}
+
+async function refreshRobloxMember(discordId){
+  if(!currentServer)return;
+  notify('Refreshing stats...','info');
+  const r = await apiFetch(`/api/server/${currentServer}/roblox/refresh/${discordId}`,{method:'POST'});
+  const d = await r.json();
+  notify(d.success?'Stats refreshed':'Error: '+d.error, d.success?'success':'danger');
+  if(d.success)loadRoblox();
+}
+
 // ===== BOT ANALYZER =====
 async function loadBotAnalyzer(){
   if(!currentServer)return;
@@ -3544,6 +3736,7 @@ async function triggerBotScan(){
       const lch=document.getElementById('lvlChannel');
       if(lch&&allTextChannels.length)lch.innerHTML='<option value="">Same channel as message</option>'+allTextChannels.map(c=>`<option value="${c.id}"># ${escHtml(c.name)}</option>`).join('');
     }
+    if(name==='roblox'&&currentServer)loadRoblox();
   };
 })();
 </script>
