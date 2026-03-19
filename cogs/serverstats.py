@@ -3,7 +3,6 @@ Server Stats — auto-updating voice channel counters (Dyno/MEE6 USP)
 Channels update every 10 minutes to respect Discord rate limits.
 """
 import discord
-from discord import app_commands
 from discord.ext import commands, tasks
 import json, os, logging
 from datetime import datetime, timezone
@@ -65,34 +64,30 @@ class ServerStats(commands.Cog):
     async def _before(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name='serverstats-setup', description='Create a stat voice channel')
-    @app_commands.describe(
-        stat='Which stat to display',
-        category='Category to create the channel in (optional)'
-    )
-    @app_commands.choices(stat=[app_commands.Choice(name=k, value=k) for k in STAT_TYPES])
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def setup(self, interaction: discord.Interaction,
-                    stat: app_commands.Choice[str],
-                    category: discord.CategoryChannel = None):
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.guild
-        fn = STAT_TYPES[stat.value]
+    @commands.command(name='serverstats-setup')
+    @commands.has_permissions(manage_guild=True)
+    async def setup(self, ctx: commands.Context, stat: str, category: discord.CategoryChannel = None):
+        """Create a stat voice channel: !serverstats-setup <stat> [category]
+        Stats: members, online, bots, humans, channels, roles, boosts"""
+        if stat not in STAT_TYPES:
+            return await ctx.send(f'Invalid stat. Choose from: {", ".join(STAT_TYPES.keys())}')
+        guild = ctx.guild
+        fn = STAT_TYPES[stat]
         name = fn(guild)
         overwrites = {guild.default_role: discord.PermissionOverwrite(connect=False)}
         ch = await guild.create_voice_channel(name, category=category, overwrites=overwrites,
                                                reason='Server stats channel')
         data = _load()
-        data.setdefault(str(guild.id), {})[str(ch.id)] = stat.value
+        data.setdefault(str(guild.id), {})[str(ch.id)] = stat
         _save(data)
-        await interaction.followup.send(f'Created stat channel {ch.mention} — updates every 10 min.')
+        await ctx.send(f'Created stat channel {ch.mention} — updates every 10 min.')
 
-    @app_commands.command(name='serverstats-remove', description='Remove a stat channel')
-    @app_commands.describe(channel='The stat voice channel to remove')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def remove(self, interaction: discord.Interaction, channel: discord.VoiceChannel):
+    @commands.command(name='serverstats-remove')
+    @commands.has_permissions(manage_guild=True)
+    async def remove(self, ctx: commands.Context, channel: discord.VoiceChannel):
+        """Remove a stat channel"""
         data = _load()
-        gid = str(interaction.guild.id)
+        gid = str(ctx.guild.id)
         cid = str(channel.id)
         if gid in data and cid in data[gid]:
             del data[gid][cid]
@@ -100,23 +95,24 @@ class ServerStats(commands.Cog):
             try:
                 await channel.delete(reason='Stats channel removed')
             except: pass
-            await interaction.response.send_message('Stat channel removed.', ephemeral=True)
+            await ctx.send('Stat channel removed.')
         else:
-            await interaction.response.send_message('That channel is not a stat channel.', ephemeral=True)
+            await ctx.send('That channel is not a stat channel.')
 
-    @app_commands.command(name='serverstats-list', description='List all stat channels')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def list_stats(self, interaction: discord.Interaction):
+    @commands.command(name='serverstats-list')
+    @commands.has_permissions(manage_guild=True)
+    async def list_stats(self, ctx: commands.Context):
+        """List all stat channels"""
         data = _load()
-        channels = data.get(str(interaction.guild.id), {})
+        channels = data.get(str(ctx.guild.id), {})
         if not channels:
-            return await interaction.response.send_message('No stat channels configured.', ephemeral=True)
+            return await ctx.send('No stat channels configured.')
         lines = []
         for ch_id, stat in channels.items():
-            ch = interaction.guild.get_channel(int(ch_id))
+            ch = ctx.guild.get_channel(int(ch_id))
             lines.append(f'• {ch.mention if ch else ch_id} → `{stat}`')
         embed = discord.Embed(title='Server Stat Channels', description='\n'.join(lines), color=0x5865f2)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

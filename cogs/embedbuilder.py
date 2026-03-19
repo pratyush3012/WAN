@@ -1,8 +1,7 @@
 """
-EmbedBuilder — create and post rich embeds via slash command or dashboard
+EmbedBuilder — create and post rich embeds via prefix command or dashboard
 """
 import discord
-from discord import app_commands
 from discord.ext import commands
 import json, os, logging
 
@@ -62,90 +61,71 @@ class EmbedBuilder(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name='embed', description='Post a custom embed to a channel')
-    @app_commands.describe(
-        channel='Channel to post in',
-        title='Embed title',
-        description='Embed description (supports markdown)',
-        color='Hex color e.g. #ff0000',
-        image='Image URL',
-        thumbnail='Thumbnail URL',
-        footer='Footer text',
-    )
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def embed(self, interaction: discord.Interaction,
-                    channel: discord.TextChannel,
-                    description: str,
-                    title: str = '',
-                    color: str = '#5865f2',
-                    image: str = '',
-                    thumbnail: str = '',
-                    footer: str = ''):
-        data = {
-            'title': title, 'description': description, 'color': color,
-            'image': image, 'thumbnail': thumbnail, 'footer': footer,
-        }
+    @commands.command(name='embed')
+    @commands.has_permissions(manage_messages=True)
+    async def embed(self, ctx: commands.Context, channel: discord.TextChannel, *, description: str):
+        """Post a custom embed: !embed #channel <description>"""
+        data = {'description': description}
         try:
-            embed = _build_embed(data)
-            await channel.send(embed=embed)
-            await interaction.response.send_message(f'Embed posted to {channel.mention}.', ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            e = _build_embed(data)
+            await channel.send(embed=e)
+            await ctx.send(f'Embed posted to {channel.mention}.')
+        except Exception as ex:
+            await ctx.send(f'Error: {ex}')
 
-    @app_commands.command(name='embed-save', description='Save an embed template for reuse')
-    @app_commands.describe(name='Template name', title='Title', description='Description', color='Hex color')
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def embed_save(self, interaction: discord.Interaction,
-                         name: str, description: str, title: str = '', color: str = '#5865f2'):
+    @commands.command(name='embed-save')
+    @commands.has_permissions(manage_messages=True)
+    async def embed_save(self, ctx: commands.Context, name: str, *, description: str):
+        """Save an embed template: !embed-save <name> <description>"""
         data = _load()
-        gid = str(interaction.guild.id)
+        gid = str(ctx.guild.id)
         data.setdefault(gid, {})[name.lower()] = {
-            'title': title, 'description': description, 'color': color,
-            'created_by': str(interaction.user.id),
+            'description': description,
+            'created_by': str(ctx.author.id),
         }
         _save(data)
-        await interaction.response.send_message(f'Embed template `{name}` saved.', ephemeral=True)
+        await ctx.send(f'Embed template `{name}` saved.')
 
-    @app_commands.command(name='embed-post', description='Post a saved embed template')
-    @app_commands.describe(name='Template name', channel='Channel to post in')
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def embed_post(self, interaction: discord.Interaction,
-                         name: str, channel: discord.TextChannel):
+    @commands.command(name='embed-post')
+    @commands.has_permissions(manage_messages=True)
+    async def embed_post(self, ctx: commands.Context, name: str, channel: discord.TextChannel):
+        """Post a saved embed template: !embed-post <name> #channel"""
         data = _load()
-        template = data.get(str(interaction.guild.id), {}).get(name.lower())
+        template = data.get(str(ctx.guild.id), {}).get(name.lower())
         if not template:
-            return await interaction.response.send_message(f'Template `{name}` not found.', ephemeral=True)
+            return await ctx.send(f'Template `{name}` not found.')
         try:
-            embed = _build_embed(template)
-            await channel.send(embed=embed)
-            await interaction.response.send_message(f'Posted `{name}` to {channel.mention}.', ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            e = _build_embed(template)
+            await channel.send(embed=e)
+            await ctx.send(f'Posted `{name}` to {channel.mention}.')
+        except Exception as ex:
+            await ctx.send(f'Error: {ex}')
 
-    @app_commands.command(name='embed-list', description='List saved embed templates')
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def embed_list(self, interaction: discord.Interaction):
+    @commands.command(name='embed-list')
+    @commands.has_permissions(manage_messages=True)
+    async def embed_list(self, ctx: commands.Context):
+        """List saved embed templates"""
         data = _load()
-        templates = data.get(str(interaction.guild.id), {})
+        templates = data.get(str(ctx.guild.id), {})
         if not templates:
-            return await interaction.response.send_message('No saved templates.', ephemeral=True)
+            return await ctx.send('No saved templates.')
         embed = discord.Embed(title='Saved Embed Templates', color=0x5865f2)
         for name, t in templates.items():
             embed.add_field(name=f'`{name}`', value=(t.get('title') or t.get('description', ''))[:80], inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name='embed-delete', description='Delete a saved embed template')
-    @app_commands.describe(name='Template name')
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def embed_delete(self, interaction: discord.Interaction, name: str):
+    @commands.command(name='embed-delete')
+    @commands.has_permissions(manage_messages=True)
+    async def embed_delete(self, ctx: commands.Context, *, name: str):
+        """Delete a saved embed template"""
         data = _load()
-        gid = str(interaction.guild.id)
+        gid = str(ctx.guild.id)
         if gid in data and name.lower() in data[gid]:
             del data[gid][name.lower()]
             _save(data)
-            await interaction.response.send_message(f'Template `{name}` deleted.', ephemeral=True)
+            await ctx.send(f'Template `{name}` deleted.')
         else:
-            await interaction.response.send_message('Template not found.', ephemeral=True)
+            await ctx.send('Template not found.')
 
 
 async def setup(bot):

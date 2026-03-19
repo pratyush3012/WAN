@@ -5,7 +5,6 @@ Off-topic messages are deleted with a polite notice.
 Admins can also manually set rules per channel.
 """
 import discord
-from discord import app_commands
 from discord.ext import commands
 import json, os, re, logging
 from datetime import datetime, timezone
@@ -250,88 +249,87 @@ class ChannelGuard(commands.Cog):
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
-    @app_commands.command(name='channelguard-enable', description='Enable ChannelGuard for this server')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def enable(self, interaction: discord.Interaction):
+    @commands.command(name='channelguard-enable')
+    @commands.has_permissions(manage_guild=True)
+    async def enable(self, ctx: commands.Context):
+        """Enable ChannelGuard for this server"""
         data = _load()
-        g = data.setdefault(str(interaction.guild.id), {})
+        g = data.setdefault(str(ctx.guild.id), {})
         g['enabled'] = True
         g.setdefault('auto_detect', True)
         _save(data)
-        await interaction.response.send_message(
+        await ctx.send(
             '✅ ChannelGuard enabled. Auto-detection is **on** — channels are analyzed by name/topic automatically.\n'
-            'Use `/channelguard-set` to manually assign profiles to specific channels.',
-            ephemeral=True)
+            'Use `!channelguard-set` to manually assign profiles to specific channels.')
 
-    @app_commands.command(name='channelguard-disable', description='Disable ChannelGuard for this server')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def disable(self, interaction: discord.Interaction):
+    @commands.command(name='channelguard-disable')
+    @commands.has_permissions(manage_guild=True)
+    async def disable(self, ctx: commands.Context):
+        """Disable ChannelGuard for this server"""
         data = _load()
-        data.setdefault(str(interaction.guild.id), {})['enabled'] = False
+        data.setdefault(str(ctx.guild.id), {})['enabled'] = False
         _save(data)
-        await interaction.response.send_message('ChannelGuard disabled.', ephemeral=True)
+        await ctx.send('ChannelGuard disabled.')
 
-    @app_commands.command(name='channelguard-set', description='Manually assign a purpose profile to a channel')
-    @app_commands.describe(channel='Channel to configure', profile='Purpose profile')
-    @app_commands.choices(profile=[
-        app_commands.Choice(name=k, value=k) for k in PROFILES
-    ])
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def set_profile(self, interaction: discord.Interaction,
-                          channel: discord.TextChannel,
-                          profile: app_commands.Choice[str]):
+    @commands.command(name='channelguard-set')
+    @commands.has_permissions(manage_guild=True)
+    async def set_profile(self, ctx: commands.Context, channel: discord.TextChannel, profile: str):
+        """Manually assign a purpose profile to a channel: !channelguard-set #channel <profile>
+        Profiles: voting, announcements, rules, media, introductions, bot_commands, music, lfg, logs"""
+        if profile not in PROFILES:
+            return await ctx.send(f'Invalid profile. Choose from: {", ".join(PROFILES.keys())}')
         data = _load()
-        g = data.setdefault(str(interaction.guild.id), {'enabled': True, 'auto_detect': True})
-        g.setdefault('channels', {})[str(channel.id)] = {'profile': profile.value}
+        g = data.setdefault(str(ctx.guild.id), {'enabled': True, 'auto_detect': True})
+        g.setdefault('channels', {})[str(channel.id)] = {'profile': profile}
         _save(data)
-        p = PROFILES[profile.value]
-        await interaction.response.send_message(
-            f'Set {channel.mention} to profile **{profile.value}**.\n> {p["hint"]}',
-            ephemeral=True)
+        p = PROFILES[profile]
+        await ctx.send(f'Set {channel.mention} to profile **{profile}**.\n> {p["hint"]}')
 
-    @app_commands.command(name='channelguard-remove', description='Remove channel guard from a channel')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def remove_profile(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    @commands.command(name='channelguard-remove')
+    @commands.has_permissions(manage_guild=True)
+    async def remove_profile(self, ctx: commands.Context, channel: discord.TextChannel):
+        """Remove channel guard from a channel"""
         data = _load()
-        g = data.get(str(interaction.guild.id), {})
+        g = data.get(str(ctx.guild.id), {})
         channels = g.get('channels', {})
         if str(channel.id) in channels:
             del channels[str(channel.id)]
             _save(data)
-            await interaction.response.send_message(f'Removed guard from {channel.mention}.', ephemeral=True)
+            await ctx.send(f'Removed guard from {channel.mention}.')
         else:
-            await interaction.response.send_message('No manual rule set for that channel.', ephemeral=True)
+            await ctx.send('No manual rule set for that channel.')
 
-    @app_commands.command(name='channelguard-setlog', description='Set log channel for ChannelGuard')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def setlog(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    @commands.command(name='channelguard-setlog')
+    @commands.has_permissions(manage_guild=True)
+    async def setlog(self, ctx: commands.Context, channel: discord.TextChannel):
+        """Set log channel for ChannelGuard"""
         data = _load()
-        data.setdefault(str(interaction.guild.id), {})['log_channel'] = str(channel.id)
+        data.setdefault(str(ctx.guild.id), {})['log_channel'] = str(channel.id)
         _save(data)
-        await interaction.response.send_message(f'ChannelGuard log channel set to {channel.mention}.', ephemeral=True)
+        await ctx.send(f'ChannelGuard log channel set to {channel.mention}.')
 
-    @app_commands.command(name='channelguard-status', description='View ChannelGuard configuration')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def status(self, interaction: discord.Interaction):
+    @commands.command(name='channelguard-status')
+    @commands.has_permissions(manage_guild=True)
+    async def status(self, ctx: commands.Context):
+        """View ChannelGuard configuration"""
         data = _load()
-        g = data.get(str(interaction.guild.id), {})
+        g = data.get(str(ctx.guild.id), {})
         embed = discord.Embed(title='ChannelGuard Status', color=0xf59e0b)
         embed.add_field(name='Status', value='✅ Enabled' if g.get('enabled') else '❌ Disabled', inline=True)
         embed.add_field(name='Auto-detect', value='✅ On' if g.get('auto_detect', True) else '❌ Off', inline=True)
-        log_ch = interaction.guild.get_channel(int(g['log_channel'])) if g.get('log_channel') else None
+        log_ch = ctx.guild.get_channel(int(g['log_channel'])) if g.get('log_channel') else None
         embed.add_field(name='Log Channel', value=log_ch.mention if log_ch else 'Not set', inline=True)
 
         manual = g.get('channels', {})
         if manual:
             lines = []
             for ch_id, rule in manual.items():
-                ch = interaction.guild.get_channel(int(ch_id))
+                ch = ctx.guild.get_channel(int(ch_id))
                 lines.append(f'{ch.mention if ch else ch_id} → `{rule["profile"]}`')
             embed.add_field(name='Manual Rules', value='\n'.join(lines[:15]), inline=False)
 
-        # Show auto-detected channels
         auto_lines = []
-        for ch in interaction.guild.text_channels:
+        for ch in ctx.guild.text_channels:
             if str(ch.id) not in manual:
                 p = _detect_profile(ch)
                 if p:
@@ -339,29 +337,28 @@ class ChannelGuard(commands.Cog):
         if auto_lines:
             embed.add_field(name='Auto-detected', value='\n'.join(auto_lines[:15]), inline=False)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name='channelguard-scan', description='Scan all channels and show detected profiles')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def scan(self, interaction: discord.Interaction):
-        """Preview what ChannelGuard would auto-detect without enabling it."""
+    @commands.command(name='channelguard-scan')
+    @commands.has_permissions(manage_guild=True)
+    async def scan(self, ctx: commands.Context):
+        """Scan all channels and show detected profiles"""
         lines = []
-        for ch in interaction.guild.text_channels:
+        for ch in ctx.guild.text_channels:
             p = _detect_profile(ch)
             if p:
                 profile = PROFILES[p]
                 lines.append(f'{ch.mention} → **{p}**\n  _{profile["hint"]}_')
         if not lines:
-            return await interaction.response.send_message(
-                'No channels matched any profile. Use `/channelguard-set` to manually assign profiles.',
-                ephemeral=True)
+            return await ctx.send(
+                'No channels matched any profile. Use `!channelguard-set` to manually assign profiles.')
         embed = discord.Embed(
             title='ChannelGuard Scan Results',
             description='\n\n'.join(lines[:20]),
             color=0xf59e0b
         )
-        embed.set_footer(text='Use /channelguard-enable to activate auto-detection')
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        embed.set_footer(text='Use !channelguard-enable to activate auto-detection')
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

@@ -2,7 +2,6 @@
 Starboard — messages that get enough ⭐ reactions get posted to a starboard channel (Carl-bot USP)
 """
 import discord
-from discord import app_commands
 from discord.ext import commands
 import json, os, logging
 from datetime import datetime, timezone
@@ -54,7 +53,6 @@ class Starboard(commands.Cog):
         if not channel:
             return
 
-        # Don't star messages in the starboard channel itself
         if str(payload.channel_id) == str(cfg['channel_id']):
             return
 
@@ -63,7 +61,6 @@ class Starboard(commands.Cog):
         except:
             return
 
-        # Count star reactions
         star_count = 0
         for reaction in message.reactions:
             if str(reaction.emoji) in ('⭐', '🌟'):
@@ -76,12 +73,10 @@ class Starboard(commands.Cog):
         if not sb_channel:
             return
 
-        # Check if already posted
         posted = cfg.get('posted', {})
         msg_id = str(payload.message_id)
 
         if msg_id in posted:
-            # Update star count on existing post
             try:
                 sb_msg = await sb_channel.fetch_message(int(posted[msg_id]))
                 await sb_msg.edit(content=f'⭐ **{star_count}** | {channel.mention}')
@@ -89,7 +84,6 @@ class Starboard(commands.Cog):
                 pass
             return
 
-        # Build starboard embed
         embed = discord.Embed(color=0xf59e0b, timestamp=message.created_at)
         embed.set_author(name=message.author.display_name, icon_url=message.author.display_avatar.url)
         if message.content:
@@ -153,52 +147,51 @@ class Starboard(commands.Cog):
         except:
             pass
 
-    # ── Commands ──────────────────────────────────────────────────────────────
-
-    @app_commands.command(name='starboard-setup', description='Set up the starboard')
-    @app_commands.describe(channel='Channel to post starred messages', threshold='Stars needed (default 3)')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def setup(self, interaction: discord.Interaction,
-                    channel: discord.TextChannel, threshold: int = 3):
-        cfg = _cfg(interaction.guild.id)
+    @commands.command(name='starboard-setup')
+    @commands.has_permissions(manage_guild=True)
+    async def setup(self, ctx: commands.Context, channel: discord.TextChannel, threshold: int = 3):
+        """Set up the starboard: !starboard-setup #channel [threshold]"""
+        cfg = _cfg(ctx.guild.id)
         cfg['channel_id'] = str(channel.id)
         cfg['threshold'] = threshold
         cfg['enabled'] = True
         cfg.setdefault('posted', {})
-        _save_cfg(interaction.guild.id, cfg)
-        await interaction.response.send_message(
-            f'Starboard set to {channel.mention} with **{threshold}** ⭐ threshold.', ephemeral=True)
+        _save_cfg(ctx.guild.id, cfg)
+        await ctx.send(f'Starboard set to {channel.mention} with **{threshold}** ⭐ threshold.')
 
-    @app_commands.command(name='starboard-toggle', description='Enable or disable the starboard')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def toggle(self, interaction: discord.Interaction):
-        cfg = _cfg(interaction.guild.id)
+    @commands.command(name='starboard-toggle')
+    @commands.has_permissions(manage_guild=True)
+    async def toggle(self, ctx: commands.Context):
+        """Enable or disable the starboard"""
+        cfg = _cfg(ctx.guild.id)
         if not cfg.get('channel_id'):
-            return await interaction.response.send_message('Set up starboard first with `/starboard-setup`.', ephemeral=True)
+            return await ctx.send('Set up starboard first with `!starboard-setup`.')
         cfg['enabled'] = not cfg.get('enabled', True)
-        _save_cfg(interaction.guild.id, cfg)
+        _save_cfg(ctx.guild.id, cfg)
         state = 'enabled' if cfg['enabled'] else 'disabled'
-        await interaction.response.send_message(f'Starboard {state}.', ephemeral=True)
+        await ctx.send(f'Starboard {state}.')
 
-    @app_commands.command(name='starboard-threshold', description='Change the star threshold')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def threshold(self, interaction: discord.Interaction, stars: int):
-        cfg = _cfg(interaction.guild.id)
+    @commands.command(name='starboard-threshold')
+    @commands.has_permissions(manage_guild=True)
+    async def threshold(self, ctx: commands.Context, stars: int):
+        """Change the star threshold: !starboard-threshold <number>"""
+        cfg = _cfg(ctx.guild.id)
         cfg['threshold'] = max(1, stars)
-        _save_cfg(interaction.guild.id, cfg)
-        await interaction.response.send_message(f'Starboard threshold set to **{stars}** ⭐.', ephemeral=True)
+        _save_cfg(ctx.guild.id, cfg)
+        await ctx.send(f'Starboard threshold set to **{stars}** ⭐.')
 
-    @app_commands.command(name='starboard-status', description='View starboard configuration')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def status(self, interaction: discord.Interaction):
-        cfg = _cfg(interaction.guild.id)
+    @commands.command(name='starboard-status')
+    @commands.has_permissions(manage_guild=True)
+    async def status(self, ctx: commands.Context):
+        """View starboard configuration"""
+        cfg = _cfg(ctx.guild.id)
         embed = discord.Embed(title='Starboard', color=0xf59e0b)
         embed.add_field(name='Status', value='✅ Enabled' if cfg.get('enabled') else '❌ Disabled', inline=True)
-        ch = interaction.guild.get_channel(int(cfg['channel_id'])) if cfg.get('channel_id') else None
+        ch = ctx.guild.get_channel(int(cfg['channel_id'])) if cfg.get('channel_id') else None
         embed.add_field(name='Channel', value=ch.mention if ch else 'Not set', inline=True)
         embed.add_field(name='Threshold', value=f'{cfg.get("threshold", 3)} ⭐', inline=True)
         embed.add_field(name='Total Starred', value=str(len(cfg.get('posted', {}))), inline=True)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

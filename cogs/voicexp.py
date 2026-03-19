@@ -3,7 +3,6 @@ Voice XP — earn XP for time spent in voice channels (Arcane USP)
 Tracks voice time, awards XP per minute, supports double XP events.
 """
 import discord
-from discord import app_commands
 from discord.ext import commands, tasks
 import json, os, logging
 from datetime import datetime, timezone, timedelta
@@ -78,7 +77,7 @@ class VoiceXP(commands.Cog):
             u = g.setdefault(str(uid), {'xp': 0, 'minutes': 0})
             u['xp'] += xp_gain
             u['minutes'] = u.get('minutes', 0) + 1
-            self._sessions[(gid, uid)] = now  # reset window
+            self._sessions[(gid, uid)] = now
         _save(data)
 
     @_tick.before_loop
@@ -91,19 +90,17 @@ class VoiceXP(commands.Cog):
         if member.bot:
             return
         key = (member.guild.id, member.id)
-        # Joined a channel
         if after.channel and not before.channel:
             self._sessions[key] = datetime.now(timezone.utc)
-        # Left a channel
         elif before.channel and not after.channel:
             self._sessions.pop(key, None)
 
-    @app_commands.command(name='voicexp-rank', description='Check your voice XP rank')
-    @app_commands.describe(member='Member to check (default: yourself)')
-    async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        member = member or interaction.user
+    @commands.command(name='voicexp-rank')
+    async def rank(self, ctx: commands.Context, member: discord.Member = None):
+        """Check your voice XP rank"""
+        member = member or ctx.author
         data = _load()
-        u = data.get(str(interaction.guild.id), {}).get(str(member.id), {'xp': 0, 'minutes': 0})
+        u = data.get(str(ctx.guild.id), {}).get(str(member.id), {'xp': 0, 'minutes': 0})
         level, cur_xp, needed = _level_from_xp(u['xp'])
         hours = u.get('minutes', 0) // 60
         mins = u.get('minutes', 0) % 60
@@ -112,53 +109,54 @@ class VoiceXP(commands.Cog):
         embed.add_field(name='Level', value=str(level), inline=True)
         embed.add_field(name='XP', value=f'{cur_xp}/{needed}', inline=True)
         embed.add_field(name='Time in Voice', value=f'{hours}h {mins}m', inline=True)
-        double = '🔥 Double XP active!' if self._is_double_xp(interaction.guild.id) else ''
+        double = '🔥 Double XP active!' if self._is_double_xp(ctx.guild.id) else ''
         if double:
             embed.set_footer(text=double)
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name='voicexp-leaderboard', description='Top voice XP members')
-    async def leaderboard(self, interaction: discord.Interaction):
+    @commands.command(name='voicexp-leaderboard')
+    async def leaderboard(self, ctx: commands.Context):
+        """Top voice XP members"""
         data = _load()
-        users = data.get(str(interaction.guild.id), {})
+        users = data.get(str(ctx.guild.id), {})
         entries = sorted(users.items(), key=lambda x: x[1].get('xp', 0), reverse=True)[:10]
-        embed = discord.Embed(title=f'Voice XP Leaderboard — {interaction.guild.name}', color=0x9b59b6)
+        embed = discord.Embed(title=f'Voice XP Leaderboard — {ctx.guild.name}', color=0x9b59b6)
         medals = ['🥇', '🥈', '🥉']
         lines = []
         for i, (uid, u) in enumerate(entries):
-            member = interaction.guild.get_member(int(uid))
+            member = ctx.guild.get_member(int(uid))
             name = member.display_name if member else f'User {uid}'
             level, _, _ = _level_from_xp(u.get('xp', 0))
             medal = medals[i] if i < 3 else f'{i+1}.'
             lines.append(f'{medal} **{name}** — Level {level} ({u.get("xp", 0)} XP)')
         embed.description = '\n'.join(lines) or 'No data yet.'
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name='voicexp-double-xp', description='Start a double XP event')
-    @app_commands.describe(duration='Duration e.g. 1h, 2h, 1d')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def double_xp(self, interaction: discord.Interaction, duration: str):
+    @commands.command(name='voicexp-double-xp')
+    @commands.has_permissions(manage_guild=True)
+    async def double_xp(self, ctx: commands.Context, duration: str):
+        """Start a double XP event: !voicexp-double-xp <duration> (e.g. 1h, 2h, 1d)"""
         units = {'m': 60, 'h': 3600, 'd': 86400}
         try:
             secs = int(duration[:-1]) * units[duration[-1].lower()]
         except:
-            return await interaction.response.send_message('Invalid duration. Use e.g. 1h, 2h, 1d', ephemeral=True)
+            return await ctx.send('Invalid duration. Use e.g. 1h, 2h, 1d')
         expires = datetime.now(timezone.utc) + timedelta(seconds=secs)
         event = _load_event()
-        event[str(interaction.guild.id)] = {'expires': expires.isoformat()}
+        event[str(ctx.guild.id)] = {'expires': expires.isoformat()}
         _save_event(event)
-        await interaction.response.send_message(f'🔥 Double XP event started for {duration}!')
+        await ctx.send(f'🔥 Double XP event started for {duration}!')
 
-    @app_commands.command(name='voicexp-reset', description='Reset voice XP for a member')
-    @app_commands.describe(member='Member to reset')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def reset(self, interaction: discord.Interaction, member: discord.Member):
+    @commands.command(name='voicexp-reset')
+    @commands.has_permissions(manage_guild=True)
+    async def reset(self, ctx: commands.Context, member: discord.Member):
+        """Reset voice XP for a member"""
         data = _load()
-        gid = str(interaction.guild.id)
+        gid = str(ctx.guild.id)
         if gid in data and str(member.id) in data[gid]:
             del data[gid][str(member.id)]
             _save(data)
-        await interaction.response.send_message(f'Reset voice XP for {member.mention}.', ephemeral=True)
+        await ctx.send(f'Reset voice XP for {member.mention}.')
 
 
 async def setup(bot):

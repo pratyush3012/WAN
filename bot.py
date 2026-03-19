@@ -67,59 +67,52 @@ class GamingBot(commands.Bot):
             logger.critical(f"❌ Failed to initialize database: {e}")
             raise
 
-        # Discord global slash command limit is 100.
-        # Overflow cogs are registered guild-only (instant, no limit).
-        # Guild ID for VAMP CLAN — also read from env so it works on any server.
         GUILD_ID = int(os.getenv('GUILD_ID', '1462688504436752489'))
         self._home_guild = discord.Object(id=GUILD_ID)
 
-        # Global cogs — these slash commands appear in every server (~99 commands)
-        global_cogs = [
-            'cogs.admin',         # 6
-            'cogs.moderation',    # 8
-            'cogs.utility',       # 1
-            'cogs.logging',       # 3
-            'cogs.roles',         # 4
-            'cogs.automod',       # 4
-            'cogs.autoresponder', # 3
-            'cogs.welcome',       # 4
-            'cogs.reactionroles', # 4
-            'cogs.leveling',      # 4
-            'cogs.tickets',       # 6
-            'cogs.tempvoice',     # 5
-            'cogs.translation',   # 2
-            'cogs.roblox',        # 6
-            'cogs.giveaways',     # 3
-            'cogs.polls',         # 2
-            'cogs.afk',           # 1
-            'cogs.reminders',     # 2
-            'cogs.info',          # 7
-            'cogs.modlog',        # 9
-            'cogs.scheduler',     # 3
-            'cogs.highlights',    # 4
-            'cogs.antiraid',      # 4
-            'cogs.webdashboard',  # 1
-            'cogs.dashboard_custom',  # 0
-        ]  # total: ~97
-
-        # Guild-only cogs — slash commands only appear in GUILD_ID (no global limit used)
-        guild_cogs = [
-            'cogs.serverstats',   # 3
-            'cogs.tags',          # 6
-            'cogs.voicexp',       # 4
-            'cogs.smartmod',      # 7
-            'cogs.channelguard',  # 7
-            'cogs.joinleave',     # 4
-            'cogs.starboard',     # 4
-            'cogs.timedactions',  # 6
-            'cogs.embedbuilder',  # 5
-            'cogs.dashboard',     # 3
-            'cogs.botanalyzer',   # 2
+        # All cogs — overflow cogs now use prefix commands so we stay under 100 slash commands
+        all_cogs = [
+            'cogs.admin',
+            'cogs.moderation',
+            'cogs.utility',
+            'cogs.logging',
+            'cogs.roles',
+            'cogs.automod',
+            'cogs.autoresponder',
+            'cogs.welcome',
+            'cogs.reactionroles',
+            'cogs.leveling',
+            'cogs.tickets',
+            'cogs.tempvoice',
+            'cogs.translation',
+            'cogs.roblox',
+            'cogs.giveaways',
+            'cogs.polls',
+            'cogs.afk',
+            'cogs.reminders',
+            'cogs.info',
+            'cogs.modlog',
+            'cogs.scheduler',
+            'cogs.highlights',
+            'cogs.antiraid',
+            'cogs.webdashboard',
+            'cogs.dashboard_custom',
+            'cogs.serverstats',
+            'cogs.tags',
+            'cogs.voicexp',
+            'cogs.smartmod',
+            'cogs.channelguard',
+            'cogs.joinleave',
+            'cogs.starboard',
+            'cogs.timedactions',
+            'cogs.embedbuilder',
+            'cogs.dashboard',
+            'cogs.botanalyzer',
         ]
 
         self.cog_errors = {}
 
-        for cog in global_cogs:
+        for cog in all_cogs:
             try:
                 await self.load_extension(cog)
                 logger.info(f'✅ Loaded {cog}')
@@ -127,25 +120,6 @@ class GamingBot(commands.Bot):
                 import traceback
                 self.cog_errors[cog] = str(e)
                 logger.error(f'❌ Failed to load {cog}: {e}\n{traceback.format_exc()}')
-
-        # Guild-only cogs: patch tree.add_command to redirect to guild during loading
-        _orig_add = self.tree.add_command
-        def _guild_add(command, *, guild=None, guilds=[], override=False):
-            # Force all commands into the home guild tree only
-            return _orig_add(command, guild=self._home_guild, override=override)
-        self.tree.add_command = _guild_add
-
-        for cog in guild_cogs:
-            try:
-                await self.load_extension(cog)
-                logger.info(f'✅ Loaded {cog} (guild-only)')
-            except Exception as e:
-                import traceback
-                self.cog_errors[cog] = str(e)
-                logger.error(f'❌ Failed to load {cog}: {e}\n{traceback.format_exc()}')
-
-        # Restore original add_command
-        self.tree.add_command = _orig_add
 
         # Set up global error handler
         self.tree.error(self.on_app_command_error)

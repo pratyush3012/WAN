@@ -4,7 +4,6 @@ and lets WAN Bot mirror or respond to those patterns.
 """
 import discord
 from discord.ext import commands, tasks
-from discord import app_commands
 import json
 import os
 import re
@@ -31,7 +30,7 @@ class BotAnalyzer(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.data = _load()  # {guild_id: {bot_id: {name, commands, responses, last_seen, message_count}}}
+        self.data = _load()
         self._pending_save = False
 
     def _guild(self, guild_id: int) -> dict:
@@ -49,14 +48,13 @@ class BotAnalyzer(commands.Cog):
                 'name': bot_member.name,
                 'display_name': bot_member.display_name,
                 'avatar': str(bot_member.display_avatar.url),
-                'commands': {},      # {trigger: {count, last_used, example_response}}
-                'prefixes': set(),   # detected prefixes
+                'commands': {},
+                'prefixes': [],
                 'slash_commands': [],
                 'message_count': 0,
                 'first_seen': datetime.now(timezone.utc).isoformat(),
                 'last_seen': datetime.now(timezone.utc).isoformat(),
             }
-        # Update name/avatar in case it changed
         g[bid]['name'] = bot_member.name
         g[bid]['last_seen'] = datetime.now(timezone.utc).isoformat()
         return g[bid]
@@ -72,20 +70,15 @@ class BotAnalyzer(commands.Cog):
         entry = self._bot_entry(message.guild.id, message.author)
         entry['message_count'] = entry.get('message_count', 0) + 1
 
-        # Detect prefix from bot responses (look at referenced message)
         if message.reference and message.reference.resolved:
             ref = message.reference.resolved
             if isinstance(ref, discord.Message) and not ref.author.bot:
                 content = ref.content.strip()
-                # Extract prefix (first 1-3 non-alphanumeric chars)
                 m = re.match(r'^([^a-zA-Z0-9\s]{1,3})', content)
                 if m:
                     prefix = m.group(1)
-                    if 'prefixes' not in entry:
-                        entry['prefixes'] = []
                     if prefix not in entry['prefixes']:
                         entry['prefixes'].append(prefix)
-                    # Extract command name
                     cmd_match = re.match(r'^[^a-zA-Z0-9\s]{1,3}(\w+)', content)
                     if cmd_match:
                         cmd_name = cmd_match.group(1).lower()
@@ -98,7 +91,6 @@ class BotAnalyzer(commands.Cog):
                             }
                         entry['commands'][cmd_name]['count'] += 1
                         entry['commands'][cmd_name]['last_used'] = datetime.now(timezone.utc).isoformat()
-                        # Store example response (first embed title or first 200 chars)
                         if message.embeds:
                             entry['commands'][cmd_name]['example_response'] = (
                                 message.embeds[0].title or message.embeds[0].description or ''
@@ -106,7 +98,6 @@ class BotAnalyzer(commands.Cog):
                         else:
                             entry['commands'][cmd_name]['example_response'] = message.content[:200]
 
-        # Detect slash command usage from interaction responses
         if message.interaction:
             cmd_name = message.interaction.name
             if cmd_name not in entry['commands']:
@@ -141,26 +132,23 @@ class BotAnalyzer(commands.Cog):
         self._auto_save.cancel()
         _save(self.data)
 
-    @app_commands.command(name='bot-scan', description='Scan all bots in this server and show what they do')
-    @app_commands.default_permissions(manage_guild=True)
-    async def scan_bots(self, interaction: discord.Interaction):
-        """Scan all bots in the server."""
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.guild
+    @commands.command(name='bot-scan')
+    @commands.has_permissions(manage_guild=True)
+    async def scan_bots(self, ctx: commands.Context):
+        """Scan all bots in this server and show what they do"""
+        guild = ctx.guild
         bots = [m for m in guild.members if m.bot and m.id != self.bot.user.id]
 
         if not bots:
-            await interaction.followup.send('No other bots found in this server.', ephemeral=True)
-            return
+            return await ctx.send('No other bots found in this server.')
 
-        g = self._guild(guild.id)
         embed = discord.Embed(
             title=f'🤖 Bot Analysis — {guild.name}',
             description=f'Found **{len(bots)}** other bots. Tracking their activity...',
             color=0x7c3aed
         )
 
-        for bot_member in bots[:10]:  # limit to 10 for embed size
+        for bot_member in bots[:10]:
             entry = self._bot_entry(guild.id, bot_member)
             cmd_count = len(entry.get('commands', {}))
             msg_count = entry.get('message_count', 0)
@@ -173,24 +161,20 @@ class BotAnalyzer(commands.Cog):
             )
 
         _save(self.data)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name='bot-report', description='Get a detailed report on a specific bot')
-    @app_commands.default_permissions(manage_guild=True)
-    async def report_bot(self, interaction: discord.Interaction, bot_user: discord.Member):
-        """Get detailed info on a specific bot."""
+    @commands.command(name='bot-report')
+    @commands.has_permissions(manage_guild=True)
+    async def report_bot(self, ctx: commands.Context, bot_user: discord.Member):
+        """Get a detailed report on a specific bot: !bot-report @bot"""
         if not bot_user.bot:
-            await interaction.response.send_message('That is not a bot.', ephemeral=True)
-            return
+            return await ctx.send('That is not a bot.')
 
-        g = self._guild(interaction.guild.id)
+        g = self._guild(ctx.guild.id)
         entry = g.get(str(bot_user.id))
         if not entry:
-            await interaction.response.send_message(
-                f'No data collected for {bot_user.display_name} yet. Use `/bot-scan` first.',
-                ephemeral=True
-            )
-            return
+            return await ctx.send(
+                f'No data collected for {bot_user.display_name} yet. Use `!bot-scan` first.')
 
         embed = discord.Embed(
             title=f'📊 {bot_user.display_name} Report',
@@ -210,7 +194,7 @@ class BotAnalyzer(commands.Cog):
             cmd_lines = '\n'.join(f'`{k}` — used {v.get("count",0)}x' for k, v in cmds)
             embed.add_field(name='Top Commands', value=cmd_lines, inline=False)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
     def get_guild_data(self, guild_id: int) -> dict:
         """Return analyzer data for a guild (used by dashboard API)."""

@@ -4,7 +4,6 @@ Warn 1 → Warn 2 → Timeout 2h → Timeout 24h → Ban (configurable)
 Detects: slurs, hate speech, profanity in English + common variants/leetspeak/unicode tricks.
 """
 import discord
-from discord import app_commands
 from discord.ext import commands
 import json, os, re, logging
 from datetime import datetime, timezone, timedelta
@@ -260,30 +259,33 @@ class SmartMod(commands.Cog):
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
-    @app_commands.command(name='smartmod-toggle', description='Enable or disable SmartMod toxicity detection')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def toggle(self, interaction: discord.Interaction):
+    @commands.command(name='smartmod-toggle')
+    @commands.has_permissions(manage_guild=True)
+    async def toggle(self, ctx: commands.Context):
+        """Enable or disable SmartMod toxicity detection"""
         data = _load()
-        g = _guild(data, interaction.guild.id)
+        g = _guild(data, ctx.guild.id)
         g['enabled'] = not g['enabled']
         _save(data)
         state = 'enabled' if g['enabled'] else 'disabled'
-        await interaction.response.send_message(f'SmartMod {state}.', ephemeral=True)
+        await ctx.send(f'SmartMod {state}.')
 
-    @app_commands.command(name='smartmod-setlog', description='Set channel for SmartMod logs')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def setlog(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    @commands.command(name='smartmod-setlog')
+    @commands.has_permissions(manage_guild=True)
+    async def setlog(self, ctx: commands.Context, channel: discord.TextChannel):
+        """Set channel for SmartMod logs"""
         data = _load()
-        g = _guild(data, interaction.guild.id)
+        g = _guild(data, ctx.guild.id)
         g['log_channel'] = str(channel.id)
         _save(data)
-        await interaction.response.send_message(f'SmartMod log channel set to {channel.mention}.', ephemeral=True)
+        await ctx.send(f'SmartMod log channel set to {channel.mention}.')
 
-    @app_commands.command(name='smartmod-strikes', description='View strikes for a member')
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def strikes(self, interaction: discord.Interaction, member: discord.Member):
+    @commands.command(name='smartmod-strikes')
+    @commands.has_permissions(moderate_members=True)
+    async def strikes(self, ctx: commands.Context, member: discord.Member):
+        """View strikes for a member"""
         data = _load()
-        g = _guild(data, interaction.guild.id)
+        g = _guild(data, ctx.guild.id)
         count = g['strikes'].get(str(member.id), 0)
         last = g['last_strike'].get(str(member.id), 'Never')
         if last != 'Never':
@@ -293,24 +295,26 @@ class SmartMod(commands.Cog):
         embed.add_field(name='Last Strike', value=last, inline=True)
         next_action = ESCALATION.get(count + 1, ('ban', None, 'Ban'))[2]
         embed.add_field(name='Next Action', value=next_action, inline=True)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name='smartmod-clearstrikes', description='Clear strikes for a member')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def clearstrikes(self, interaction: discord.Interaction, member: discord.Member):
+    @commands.command(name='smartmod-clearstrikes')
+    @commands.has_permissions(manage_guild=True)
+    async def clearstrikes(self, ctx: commands.Context, member: discord.Member):
+        """Clear strikes for a member"""
         data = _load()
-        g = _guild(data, interaction.guild.id)
+        g = _guild(data, ctx.guild.id)
         uid = str(member.id)
         g['strikes'].pop(uid, None)
         g['last_strike'].pop(uid, None)
         _save(data)
-        await interaction.response.send_message(f'Cleared strikes for {member.mention}.', ephemeral=True)
+        await ctx.send(f'Cleared strikes for {member.mention}.')
 
-    @app_commands.command(name='smartmod-ignore-channel', description='Toggle channel ignore for SmartMod')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def ignore_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    @commands.command(name='smartmod-ignore-channel')
+    @commands.has_permissions(manage_guild=True)
+    async def ignore_channel(self, ctx: commands.Context, channel: discord.TextChannel):
+        """Toggle channel ignore for SmartMod"""
         data = _load()
-        g = _guild(data, interaction.guild.id)
+        g = _guild(data, ctx.guild.id)
         cid = str(channel.id)
         ignored = g.setdefault('ignored_channels', [])
         if cid in ignored:
@@ -320,13 +324,14 @@ class SmartMod(commands.Cog):
             ignored.append(cid)
             msg = f'SmartMod will ignore {channel.mention}.'
         _save(data)
-        await interaction.response.send_message(msg, ephemeral=True)
+        await ctx.send(msg)
 
-    @app_commands.command(name='smartmod-ignore-role', description='Toggle role ignore for SmartMod')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def ignore_role(self, interaction: discord.Interaction, role: discord.Role):
+    @commands.command(name='smartmod-ignore-role')
+    @commands.has_permissions(manage_guild=True)
+    async def ignore_role(self, ctx: commands.Context, role: discord.Role):
+        """Toggle role ignore for SmartMod"""
         data = _load()
-        g = _guild(data, interaction.guild.id)
+        g = _guild(data, ctx.guild.id)
         rid = str(role.id)
         ignored = g.setdefault('ignored_roles', [])
         if rid in ignored:
@@ -336,16 +341,17 @@ class SmartMod(commands.Cog):
             ignored.append(rid)
             msg = f'SmartMod will ignore members with {role.mention}.'
         _save(data)
-        await interaction.response.send_message(msg, ephemeral=True)
+        await ctx.send(msg)
 
-    @app_commands.command(name='smartmod-status', description='View SmartMod configuration')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def status(self, interaction: discord.Interaction):
+    @commands.command(name='smartmod-status')
+    @commands.has_permissions(manage_guild=True)
+    async def status(self, ctx: commands.Context):
+        """View SmartMod configuration"""
         data = _load()
-        g = _guild(data, interaction.guild.id)
+        g = _guild(data, ctx.guild.id)
         embed = discord.Embed(title='SmartMod Status', color=0x5865f2)
         embed.add_field(name='Status', value='✅ Enabled' if g['enabled'] else '❌ Disabled', inline=True)
-        log_ch = interaction.guild.get_channel(int(g['log_channel'])) if g.get('log_channel') else None
+        log_ch = ctx.guild.get_channel(int(g['log_channel'])) if g.get('log_channel') else None
         embed.add_field(name='Log Channel', value=log_ch.mention if log_ch else 'Not set', inline=True)
         embed.add_field(name='Strike Decay', value=f'{g.get("strike_decay_days", 30)} days', inline=True)
         embed.add_field(name='Escalation', value=(
@@ -355,7 +361,7 @@ class SmartMod(commands.Cog):
             '4 strikes → Timeout 24h\n'
             '5+ strikes → Ban'
         ), inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

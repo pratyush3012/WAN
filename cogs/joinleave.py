@@ -2,7 +2,6 @@
 JoinLeave — join DM, welcome DM, role persistence on rejoin, join/leave logging
 """
 import discord
-from discord import app_commands
 from discord.ext import commands
 import json, os, logging
 from datetime import datetime, timezone
@@ -52,7 +51,6 @@ class JoinLeave(commands.Cog):
         data = _load()
         cfg = data.get(str(member.guild.id), {})
 
-        # Join DM
         if cfg.get('join_dm_enabled') and cfg.get('join_dm_message'):
             try:
                 embed = discord.Embed(
@@ -66,7 +64,6 @@ class JoinLeave(commands.Cog):
             except Exception as e:
                 logger.debug(f'Join DM failed for {member}: {e}')
 
-        # Role persistence — restore saved roles
         if cfg.get('role_persistence'):
             roles_data = _load_roles()
             saved = roles_data.get(str(member.guild.id), {}).get(str(member.id), [])
@@ -87,7 +84,6 @@ class JoinLeave(commands.Cog):
         data = _load()
         cfg = data.get(str(member.guild.id), {})
 
-        # Save roles for persistence
         if cfg.get('role_persistence'):
             roles_data = _load_roles()
             role_ids = [str(r.id) for r in member.roles
@@ -95,70 +91,63 @@ class JoinLeave(commands.Cog):
             roles_data.setdefault(str(member.guild.id), {})[str(member.id)] = role_ids
             _save_roles(roles_data)
 
-    # ── Commands ──────────────────────────────────────────────────────────────
-
-    @app_commands.command(name='join-dm-set', description='Set a DM message sent to new members on join')
-    @app_commands.describe(
-        message='Message content (use {user} {username} {server} {count})',
-        title='Embed title (optional)',
-        enabled='Enable or disable join DMs'
-    )
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def join_dm_set(self, interaction: discord.Interaction,
-                          message: str, title: str = '', enabled: bool = True):
+    @commands.command(name='join-dm-set')
+    @commands.has_permissions(manage_guild=True)
+    async def join_dm_set(self, ctx: commands.Context, *, message: str):
+        """Set a DM message sent to new members on join"""
         data = _load()
-        cfg = data.setdefault(str(interaction.guild.id), {})
-        cfg['join_dm_enabled'] = enabled
+        cfg = data.setdefault(str(ctx.guild.id), {})
+        cfg['join_dm_enabled'] = True
         cfg['join_dm_message'] = message
-        cfg['join_dm_title'] = title
         _save(data)
-        state = 'enabled' if enabled else 'disabled'
-        await interaction.response.send_message(
-            f'Join DM {state}.\nVariables: `{{user}}` `{{username}}` `{{displayname}}` `{{server}}` `{{count}}` `{{id}}`',
-            ephemeral=True)
+        await ctx.send(
+            f'Join DM enabled.\nVariables: `{{user}}` `{{username}}` `{{displayname}}` `{{server}}` `{{count}}` `{{id}}`')
 
-    @app_commands.command(name='join-dm-test', description='Test the join DM on yourself')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def join_dm_test(self, interaction: discord.Interaction):
+    @commands.command(name='join-dm-test')
+    @commands.has_permissions(manage_guild=True)
+    async def join_dm_test(self, ctx: commands.Context):
+        """Test the join DM on yourself"""
         data = _load()
-        cfg = data.get(str(interaction.guild.id), {})
+        cfg = data.get(str(ctx.guild.id), {})
         if not cfg.get('join_dm_message'):
-            return await interaction.response.send_message('No join DM configured. Use `/join-dm-set` first.', ephemeral=True)
+            return await ctx.send('No join DM configured. Use `!join-dm-set` first.')
         try:
             embed = discord.Embed(
-                description=_fill(cfg['join_dm_message'], interaction.user),
+                description=_fill(cfg['join_dm_message'], ctx.author),
                 color=int(cfg.get('join_dm_color', '0x5865f2'), 16)
             )
             if cfg.get('join_dm_title'):
-                embed.title = _fill(cfg['join_dm_title'], interaction.user)
-            embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
-            await interaction.user.send(embed=embed)
-            await interaction.response.send_message('Test DM sent!', ephemeral=True)
+                embed.title = _fill(cfg['join_dm_title'], ctx.author)
+            embed.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
+            await ctx.author.send(embed=embed)
+            await ctx.send('Test DM sent!')
         except:
-            await interaction.response.send_message('Could not DM you. Check your privacy settings.', ephemeral=True)
+            await ctx.send('Could not DM you. Check your privacy settings.')
 
-    @app_commands.command(name='role-persistence', description='Toggle role persistence (restore roles on rejoin)')
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def role_persistence(self, interaction: discord.Interaction, enabled: bool):
+    @commands.command(name='role-persistence')
+    @commands.has_permissions(manage_roles=True)
+    async def role_persistence(self, ctx: commands.Context, enabled: bool):
+        """Toggle role persistence: !role-persistence true/false"""
         data = _load()
-        data.setdefault(str(interaction.guild.id), {})['role_persistence'] = enabled
+        data.setdefault(str(ctx.guild.id), {})['role_persistence'] = enabled
         _save(data)
         state = 'enabled' if enabled else 'disabled'
-        await interaction.response.send_message(
-            f'Role persistence {state}. Members who leave and rejoin will {"have their roles restored" if enabled else "not have roles restored"}.',
-            ephemeral=True)
+        await ctx.send(
+            f'Role persistence {state}. Members who leave and rejoin will '
+            f'{"have their roles restored" if enabled else "not have roles restored"}.')
 
-    @app_commands.command(name='joinleave-status', description='View join/leave configuration')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def status(self, interaction: discord.Interaction):
+    @commands.command(name='joinleave-status')
+    @commands.has_permissions(manage_guild=True)
+    async def status(self, ctx: commands.Context):
+        """View join/leave configuration"""
         data = _load()
-        cfg = data.get(str(interaction.guild.id), {})
+        cfg = data.get(str(ctx.guild.id), {})
         embed = discord.Embed(title='Join/Leave Configuration', color=0x5865f2)
         embed.add_field(name='Join DM', value='✅ Enabled' if cfg.get('join_dm_enabled') else '❌ Disabled', inline=True)
         embed.add_field(name='Role Persistence', value='✅ Enabled' if cfg.get('role_persistence') else '❌ Disabled', inline=True)
         if cfg.get('join_dm_message'):
             embed.add_field(name='DM Preview', value=cfg['join_dm_message'][:200], inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):
