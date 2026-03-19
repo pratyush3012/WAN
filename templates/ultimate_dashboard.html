@@ -192,6 +192,87 @@ select.form-control option{background:var(--surface2);}
 .theme-toggle{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .2s;flex-shrink:0;}
 .theme-toggle:hover{border-color:var(--accent);color:var(--accent);background:rgba(124,58,237,.08);}
 
+/* ── Notification bell ── */
+.notif-bell{position:relative;width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .2s;flex-shrink:0;}
+.notif-bell:hover{border-color:var(--accent);color:var(--accent);background:rgba(124,58,237,.08);}
+.notif-badge{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--danger);color:#fff;font-size:9px;font-weight:800;display:none;align-items:center;justify-content:center;border:2px solid var(--bg);}
+.notif-badge.show{display:flex;}
+.notif-dropdown{position:absolute;top:calc(100% + 10px);right:0;width:340px;background:var(--surface);border:1px solid var(--border-bright);border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.6);z-index:500;display:none;overflow:hidden;}
+.notif-dropdown.open{display:block;animation:sectionIn .18s ease;}
+.notif-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.notif-header span{font-weight:700;font-size:13px;font-family:'Space Grotesk',sans-serif;}
+.notif-list{max-height:320px;overflow-y:auto;}
+.notif-item{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start;transition:background .15s;}
+.notif-item:hover{background:rgba(124,58,237,.05);}
+.notif-item:last-child{border-bottom:none;}
+.notif-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+.notif-empty{padding:32px;text-align:center;color:var(--text-muted);font-size:13px;}
+
+/* ── Command palette ── */
+#cmdPalette{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:2000;display:none;align-items:flex-start;justify-content:center;padding-top:15vh;}
+#cmdPalette.open{display:flex;animation:sectionIn .15s ease;}
+.cmd-palette-box{width:100%;max-width:560px;background:var(--surface);border:1px solid var(--border-bright);border-radius:18px;overflow:hidden;box-shadow:0 32px 96px rgba(0,0,0,.7);}
+.cmd-palette-input{width:100%;background:transparent;border:none;color:var(--text);padding:18px 20px;font-size:16px;font-family:inherit;outline:none;border-bottom:1px solid var(--border);}
+.cmd-palette-input::placeholder{color:var(--text-dim);}
+.cmd-results{max-height:360px;overflow-y:auto;}
+.cmd-item{padding:11px 20px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:background .12s;}
+.cmd-item:hover,.cmd-item.selected{background:rgba(124,58,237,.12);}
+.cmd-item i{width:18px;text-align:center;color:var(--accent);font-size:13px;}
+.cmd-item-label{font-size:13px;font-weight:600;}
+.cmd-item-sub{font-size:11px;color:var(--text-muted);margin-left:auto;}
+.cmd-section-label{padding:8px 20px 4px;font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.2px;}
+.cmd-hint{padding:10px 20px;border-top:1px solid var(--border);display:flex;gap:16px;font-size:11px;color:var(--text-dim);}
+.cmd-hint kbd{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-family:inherit;}
+
+/* ── Skeleton loader ── */
+.skeleton{background:linear-gradient(90deg,var(--surface2) 25%,var(--surface3) 50%,var(--surface2) 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:8px;}
+@keyframes shimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+.skel-row{height:14px;margin-bottom:10px;border-radius:6px;}
+.skel-row.wide{width:80%;}
+.skel-row.med{width:55%;}
+.skel-row.short{width:35%;}
+.skel-avatar{width:36px;height:36px;border-radius:50%;flex-shrink:0;}
+
+/* ── Health score ── */
+.health-ring{position:relative;width:90px;height:90px;flex-shrink:0;}
+.health-ring svg{transform:rotate(-90deg);}
+.health-ring-val{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;font-family:'Space Grotesk',sans-serif;}
+.health-factor{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);}
+.health-factor:last-child{border-bottom:none;}
+.health-bar{flex:1;height:5px;background:var(--surface3);border-radius:10px;overflow:hidden;}
+.health-bar-fill{height:100%;border-radius:10px;transition:width .6s cubic-bezier(.4,0,.2,1);}
+
+/* ── Heatmap ── */
+.heatmap-grid{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;}
+.heatmap-cell{aspect-ratio:1;border-radius:3px;cursor:default;transition:transform .1s;}
+.heatmap-cell:hover{transform:scale(1.3);z-index:1;}
+.heatmap-day-label{font-size:10px;color:var(--text-muted);display:flex;align-items:center;padding-right:6px;width:32px;flex-shrink:0;}
+.heatmap-hour-labels{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;margin-bottom:4px;padding-left:38px;}
+.heatmap-hour-label{font-size:9px;color:var(--text-dim);text-align:center;}
+
+/* ── Top members widget ── */
+.top-member-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+.top-member-row:last-child{border-bottom:none;}
+.top-member-rank{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;}
+.top-member-bar{flex:1;height:4px;background:var(--surface3);border-radius:10px;overflow:hidden;margin-top:4px;}
+.top-member-bar-fill{height:100%;border-radius:10px;background:var(--grad1);}
+
+/* ── Bulk mod checkboxes ── */
+.member-checkbox{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;}
+.bulk-bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px;display:none;align-items:center;gap:12px;border-radius:0 0 18px 18px;}
+.bulk-bar.show{display:flex;}
+
+/* ── Empty state ── */
+.empty-state{text-align:center;padding:48px 24px;color:var(--text-muted);}
+.empty-state-icon{font-size:48px;margin-bottom:16px;opacity:.6;}
+.empty-state h4{font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px;font-family:'Space Grotesk',sans-serif;}
+.empty-state p{font-size:13px;margin-bottom:20px;}
+
+/* ── Danger zone ── */
+.danger-zone{border:1px solid rgba(239,68,68,.25);border-radius:16px;padding:20px;background:rgba(239,68,68,.04);}
+.danger-zone-title{color:#f87171;font-weight:700;font-size:14px;margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+.danger-zone-desc{color:var(--text-muted);font-size:12px;margin-bottom:14px;}
+
 /* Mobile hamburger */
 #menuToggle{display:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
 #sidebarOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:99;}
@@ -256,6 +337,9 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('settings',this)"><i class="fas fa-cog"></i><span>Settings</span></button>
     <div class="menu-section">Intelligence</div>
     <button class="menu-item" onclick="show('botanalyzer',this)"><i class="fas fa-microscope"></i><span>Bot Analyzer</span></button>
+    <button class="menu-item" onclick="show('commandcenter',this)"><i class="fas fa-terminal"></i><span>Command Center</span></button>
+    <button class="menu-item" onclick="show('analytics2',this)"><i class="fas fa-chart-line"></i><span>Analytics</span></button>
+    <button class="menu-item" onclick="show('dangersettings',this)"><i class="fas fa-cog"></i><span>Advanced Settings</span></button>
     <a href="/logout" class="menu-item" style="color:#ef4444;margin-top:auto;"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
   </div>
 </div>
@@ -272,6 +356,20 @@ select.form-control option{background:var(--surface2);}
       <span id="botStatusBadge" class="badge badge-success"><span class="pulse-dot"></span> Online</span>
       <select id="serverSelector" class="server-selector" onchange="selectServer(this.value)"><option value="">— Select a server —</option></select>
       <button class="theme-toggle" onclick="toggleTheme()" id="themeToggleBtn" title="Toggle theme"><i class="fas fa-moon" id="themeIcon"></i></button>
+      <!-- Notification bell -->
+      <div style="position:relative;" id="notifWrap">
+        <button class="notif-bell" onclick="toggleNotifDropdown()" title="Notifications">
+          <i class="fas fa-bell"></i>
+          <span class="notif-badge" id="notifBadge">0</span>
+        </button>
+        <div class="notif-dropdown" id="notifDropdown">
+          <div class="notif-header">
+            <span>Notifications</span>
+            <button class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:11px;" onclick="clearNotifications()">Clear all</button>
+          </div>
+          <div class="notif-list" id="notifList"><div class="notif-empty">🔔 No notifications</div></div>
+        </div>
+      </div>
       <div class="topbar-user" id="topbarUser" onclick="window.location='/logout'" title="Logout">
         <div class="topbar-user-placeholder" id="topbarAvatar">👤</div>
         <span id="topbarUsername">{{ username }}</span>
@@ -336,8 +434,8 @@ select.form-control option{background:var(--surface2);}
       </div>
     </div>
 
-    <!-- Server info + activity chart row -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:22px;" class="ov-grid">
+    <!-- Server info + activity chart + health row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-bottom:22px;" class="ov-grid">
       <div class="card" style="margin-bottom:0">
         <div class="card-header"><h3 class="card-title"><i class="fas fa-info-circle"></i> Server Info</h3></div>
         <div>
@@ -355,6 +453,43 @@ select.form-control option{background:var(--surface2);}
           <canvas id="activityChart"></canvas>
         </div>
       </div>
+      <!-- Health Score -->
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-heartbeat"></i> Server Health</h3></div>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+          <div class="health-ring">
+            <svg width="90" height="90" viewBox="0 0 90 90">
+              <circle cx="45" cy="45" r="38" fill="none" stroke="var(--surface3)" stroke-width="8"/>
+              <circle id="healthRingFill" cx="45" cy="45" r="38" fill="none" stroke="url(#healthGrad)" stroke-width="8" stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"/>
+              <defs><linearGradient id="healthGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#10b981"/></linearGradient></defs>
+            </svg>
+            <div class="health-ring-val" id="healthScore">—</div>
+          </div>
+          <div style="flex:1;" id="healthFactors"><div class="skeleton skel-row wide"></div><div class="skeleton skel-row med"></div><div class="skeleton skel-row short"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Growth chart + Top members + Role pie row -->
+    <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:18px;margin-bottom:22px;" class="ov-grid">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header">
+          <h3 class="card-title"><i class="fas fa-chart-line"></i> Member Growth</h3>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-sm btn-ghost" id="growth7btn" onclick="loadGrowthChart(7,this)" style="border-color:var(--accent);color:#a78bfa;">7d</button>
+            <button class="btn btn-sm btn-ghost" id="growth30btn" onclick="loadGrowthChart(30,this)">30d</button>
+          </div>
+        </div>
+        <div style="position:relative;height:160px;"><canvas id="growthChart"></canvas></div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-trophy"></i> Top Members</h3></div>
+        <div id="topMembersWidget"><div class="skeleton skel-row wide"></div><div class="skeleton skel-row med"></div><div class="skeleton skel-row short"></div></div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-pie"></i> Role Distribution</h3></div>
+        <div style="position:relative;height:160px;"><canvas id="rolePieChart"></canvas></div>
+      </div>
     </div>
 
     <!-- Quick Actions -->
@@ -368,17 +503,29 @@ select.form-control option{background:var(--surface2);}
         <button class="btn btn-primary" onclick="show('autoresponder',null)"><i class="fas fa-robot"></i> Auto Responder</button>
         <button class="btn btn-primary" onclick="show('announce',null)"><i class="fas fa-bullhorn"></i> Announce</button>
         <button class="btn btn-primary" onclick="show('moderation',null)"><i class="fas fa-shield-alt"></i> Moderation</button>
-        <button class="btn btn-primary" onclick="show('tickets',null)"><i class="fas fa-ticket-alt"></i> Tickets</button>
+        <button class="btn btn-primary" onclick="show('commandcenter',null)"><i class="fas fa-terminal"></i> Command Center</button>
         <button class="btn btn-info" onclick="show('botanalyzer',null)"><i class="fas fa-microscope"></i> Bot Analyzer</button>
       </div>
     </div>
-  </div>
 
   <!-- MEMBERS -->
   <div id="sec-members" class="section">
     <div class="card">
-      <div class="card-header"><h3 class="card-title">Members</h3><input type="text" id="memberSearch" class="form-control" style="width:220px;" placeholder="Search..." oninput="filterMembers(this.value)"></div>
-      <div id="membersContainer"><p style="color:var(--text-muted);">Select a server first.</p></div>
+      <div class="card-header">
+        <h3 class="card-title">Members</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="memberSearch" class="form-control" style="width:200px;" placeholder="Search..." oninput="filterMembers(this.value)">
+          <button class="btn btn-ghost btn-sm" onclick="exportMembersCSV()"><i class="fas fa-download"></i> Export CSV</button>
+        </div>
+      </div>
+      <div id="membersContainer"><div class="empty-state"><div class="empty-state-icon">👥</div><h4>No server selected</h4><p>Select a server from the dropdown to view members.</p></div></div>
+      <div class="bulk-bar" id="bulkBar">
+        <span id="bulkCount" style="font-weight:700;font-size:13px;">0 selected</span>
+        <button class="btn btn-warning btn-sm" onclick="bulkAction('kick')"><i class="fas fa-user-minus"></i> Kick</button>
+        <button class="btn btn-danger btn-sm" onclick="bulkAction('ban')"><i class="fas fa-ban"></i> Ban</button>
+        <button class="btn btn-info btn-sm" onclick="bulkAction('timeout')"><i class="fas fa-clock"></i> Timeout</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearBulkSelection()">Clear</button>
+      </div>
     </div>
   </div>
 
@@ -405,6 +552,7 @@ select.form-control option{background:var(--surface2);}
       <div class="tab-bar">
         <div class="tab active" onclick="modTab('kick',this)">Kick</div>
         <div class="tab" onclick="modTab('ban',this)">Ban</div>
+        <div class="tab" onclick="modTab('tempban',this)">Temp Ban</div>
         <div class="tab" onclick="modTab('timeout',this)">Timeout</div>
       </div>
       <div id="modKick">
@@ -417,6 +565,13 @@ select.form-control option{background:var(--surface2);}
         <div class="form-group"><label class="form-label">Reason</label><input id="banReason" class="form-control" placeholder="Reason for ban"></div>
         <div class="form-group"><label class="form-label">Delete Messages (days)</label><input id="banDays" class="form-control" type="number" value="0" min="0" max="7"></div>
         <button class="btn btn-danger" onclick="doBan()"><i class="fas fa-ban"></i> Ban Member</button>
+      </div>
+      <div id="modTempban" style="display:none;">
+        <div class="form-group"><label class="form-label">Member</label><select id="tempbanMember" class="form-control"><option value="">Select member...</option></select></div>
+        <div class="form-group"><label class="form-label">Duration (hours)</label><input id="tempbanHours" class="form-control" type="number" value="24" min="1" max="720"></div>
+        <div class="form-group"><label class="form-label">Reason</label><input id="tempbanReason" class="form-control" placeholder="Reason for temp ban"></div>
+        <div class="form-group"><label class="form-label">Delete Messages (days)</label><input id="tempbanDays" class="form-control" type="number" value="0" min="0" max="7"></div>
+        <button class="btn btn-danger" onclick="doTempBan()"><i class="fas fa-clock"></i> Temp Ban Member</button>
       </div>
       <div id="modTimeout" style="display:none;">
         <div class="form-group"><label class="form-label">Member</label><select id="timeoutMember" class="form-control"><option value="">Select member...</option></select></div>
@@ -1082,7 +1237,150 @@ select.form-control option{background:var(--surface2);}
       <button class="btn btn-primary" onclick="saveSettings()"><i class="fas fa-save"></i> Save Settings</button>
     </div>
   </div>
-  <!-- BOT ANALYZER -->
+  <!-- COMMAND CENTER -->
+  <div id="sec-commandcenter" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-terminal"></i> Command Center</h3><span class="badge badge-info">Run commands without Discord</span></div>
+      <div class="tab-bar">
+        <div class="tab active" onclick="ccTab('warn',this)">⚠️ Warn</div>
+        <div class="tab" onclick="ccTab('mute',this)">⏱️ Mute</div>
+        <div class="tab" onclick="ccTab('purge',this)">🗑️ Purge</div>
+        <div class="tab" onclick="ccTab('dm',this)">✉️ DM</div>
+        <div class="tab" onclick="ccTab('slowmode',this)">🐢 Slowmode</div>
+        <div class="tab" onclick="ccTab('lock',this)">🔒 Lock</div>
+      </div>
+      <div id="cc-warn">
+        <div class="form-group"><label class="form-label">Member</label><select id="ccWarnMember" class="form-control"><option value="">Select member...</option></select></div>
+        <div class="form-group"><label class="form-label">Reason</label><input id="ccWarnReason" class="form-control" placeholder="Reason for warning"></div>
+        <button class="btn btn-warning" onclick="runCC('warn')"><i class="fas fa-exclamation-triangle"></i> Warn Member</button>
+      </div>
+      <div id="cc-mute" style="display:none;">
+        <div class="form-group"><label class="form-label">Member</label><select id="ccMuteMember" class="form-control"><option value="">Select member...</option></select></div>
+        <div class="form-group"><label class="form-label">Duration (minutes)</label><input id="ccMuteDuration" class="form-control" type="number" value="10" min="1"></div>
+        <div class="form-group"><label class="form-label">Reason</label><input id="ccMuteReason" class="form-control" placeholder="Reason"></div>
+        <button class="btn btn-warning" onclick="runCC('mute')"><i class="fas fa-microphone-slash"></i> Mute Member</button>
+      </div>
+      <div id="cc-purge" style="display:none;">
+        <div class="form-group"><label class="form-label">Channel</label><select id="ccPurgeChannel" class="form-control"><option value="">Select channel...</option></select></div>
+        <div class="form-group"><label class="form-label">Message Count (max 100)</label><input id="ccPurgeCount" class="form-control" type="number" value="10" min="1" max="100"></div>
+        <button class="btn btn-danger" onclick="runCC('purge')"><i class="fas fa-trash"></i> Purge Messages</button>
+      </div>
+      <div id="cc-dm" style="display:none;">
+        <div class="form-group"><label class="form-label">Member</label><select id="ccDMMember" class="form-control"><option value="">Select member...</option></select></div>
+        <div class="form-group"><label class="form-label">Message</label><textarea id="ccDMMessage" class="form-control" rows="4" placeholder="Your message..."></textarea></div>
+        <button class="btn btn-primary" onclick="runCC('dm')"><i class="fas fa-paper-plane"></i> Send DM</button>
+      </div>
+      <div id="cc-slowmode" style="display:none;">
+        <div class="form-group"><label class="form-label">Channel</label><select id="ccSlowChannel" class="form-control"><option value="">Select channel...</option></select></div>
+        <div class="form-group"><label class="form-label">Slowmode (seconds, 0 = off)</label><input id="ccSlowSecs" class="form-control" type="number" value="5" min="0" max="21600"></div>
+        <button class="btn btn-info" onclick="runCC('slowmode')"><i class="fas fa-tachometer-alt"></i> Set Slowmode</button>
+      </div>
+      <div id="cc-lock" style="display:none;">
+        <div class="form-group"><label class="form-label">Channel</label><select id="ccLockChannel" class="form-control"><option value="">Select channel...</option></select></div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-danger" onclick="runCC('lock',true)"><i class="fas fa-lock"></i> Lock Channel</button>
+          <button class="btn btn-success" onclick="runCC('lock',false)"><i class="fas fa-lock-open"></i> Unlock Channel</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-history"></i> Command History</h3></div>
+      <div id="ccHistory"><div class="empty-state"><div class="empty-state-icon">📋</div><h4>No commands run yet</h4><p>Commands you run will appear here.</p></div></div>
+    </div>
+  </div>
+
+  <!-- ANALYTICS 2 -->
+  <div id="sec-analytics2" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-fire"></i> Message Heatmap</h3><span style="color:var(--text-muted);font-size:12px;">Activity by day & hour (UTC)</span></div>
+      <div style="overflow-x:auto;">
+        <div style="min-width:600px;">
+          <div class="heatmap-hour-labels" id="heatmapHourLabels"></div>
+          <div id="heatmapRows"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:11px;color:var(--text-muted);">
+        <span>Less</span>
+        <div style="display:flex;gap:3px;">
+          <div style="width:12px;height:12px;border-radius:3px;background:var(--surface3);"></div>
+          <div style="width:12px;height:12px;border-radius:3px;background:rgba(124,58,237,.25);"></div>
+          <div style="width:12px;height:12px;border-radius:3px;background:rgba(124,58,237,.5);"></div>
+          <div style="width:12px;height:12px;border-radius:3px;background:rgba(124,58,237,.75);"></div>
+          <div style="width:12px;height:12px;border-radius:3px;background:#7c3aed;"></div>
+        </div>
+        <span>More</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-pie"></i> Role Distribution</h3></div>
+        <div style="position:relative;height:220px;"><canvas id="rolePieChart2"></canvas></div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-chart-line"></i> Member Growth</h3>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-sm btn-ghost" onclick="loadGrowthChart2(7,this)" style="border-color:var(--accent);color:#a78bfa;">7d</button>
+            <button class="btn btn-sm btn-ghost" onclick="loadGrowthChart2(30,this)">30d</button>
+          </div>
+        </div>
+        <div style="position:relative;height:220px;"><canvas id="growthChart2"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADVANCED SETTINGS -->
+  <div id="sec-dangersettings" class="section">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-sliders-h"></i> Bot Configuration</h3></div>
+      <div class="form-group"><label class="form-label">Command Prefix</label>
+        <div style="display:flex;gap:10px;">
+          <input id="botPrefix" class="form-control" style="max-width:120px;" placeholder="!" maxlength="5">
+          <button class="btn btn-primary" onclick="saveBotPrefix()"><i class="fas fa-save"></i> Save Prefix</button>
+        </div>
+        <p style="color:var(--text-muted);font-size:12px;margin-top:6px;">Current prefix: <code id="currentPrefix">!</code></p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-download"></i> Data Export</h3></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="exportMembersCSV()"><i class="fas fa-users"></i> Export Members CSV</button>
+        <button class="btn btn-ghost" onclick="exportAuditLog()"><i class="fas fa-scroll"></i> Export Audit Log</button>
+      </div>
+    </div>
+    <div class="danger-zone">
+      <div class="danger-zone-title"><i class="fas fa-exclamation-triangle"></i> Danger Zone</div>
+      <div class="danger-zone-desc">These actions are irreversible. Proceed with extreme caution.</div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(239,68,68,.06);border-radius:10px;border:1px solid rgba(239,68,68,.15);">
+          <div>
+            <div style="font-weight:700;font-size:13px;">Mass-Ban Protection</div>
+            <div style="color:var(--text-muted);font-size:12px;">Block any action that bans more than 5 members in 60 seconds</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="massBanProtect" checked onchange="saveDangerSetting('mass_ban_protection',this.checked)">
+            <span style="font-size:13px;font-weight:600;">Enabled</span>
+          </label>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(239,68,68,.06);border-radius:10px;border:1px solid rgba(239,68,68,.15);">
+          <div>
+            <div style="font-weight:700;font-size:13px;">Nuke Protection</div>
+            <div style="color:var(--text-muted);font-size:12px;">Alert and log if more than 3 channels are deleted in 30 seconds</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="nukeProtect" checked onchange="saveDangerSetting('nuke_protection',this.checked)">
+            <span style="font-size:13px;font-weight:600;">Enabled</span>
+          </label>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(239,68,68,.06);border-radius:10px;border:1px solid rgba(239,68,68,.15);">
+          <div>
+            <div style="font-weight:700;font-size:13px;">Reset All Bot Data</div>
+            <div style="color:var(--text-muted);font-size:12px;">Wipes XP, warnings, and all bot config for this server</div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="confirmResetData()"><i class="fas fa-trash"></i> Reset Data</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="sec-botanalyzer" class="section">
     <div class="card">
       <div class="card-header">
@@ -1099,6 +1397,15 @@ select.form-control option{background:var(--surface2);}
   </div>
 
 </div><!-- /main-content -->
+
+<!-- COMMAND PALETTE -->
+<div id="cmdPalette" onclick="if(event.target===this)closeCmdPalette()">
+  <div class="cmd-palette-box">
+    <input class="cmd-palette-input" id="cmdInput" placeholder="Search sections, actions..." oninput="filterCmdPalette(this.value)" onkeydown="cmdPaletteKey(event)" autocomplete="off">
+    <div class="cmd-results" id="cmdResults"></div>
+    <div class="cmd-hint"><span><kbd>↑↓</kbd> navigate</span><span><kbd>Enter</kbd> select</span><span><kbd>Esc</kbd> close</span></div>
+  </div>
+</div>
 
 <!-- MEMBER PROFILE MODAL -->
 <div id="profileModal" class="modal profile-modal">
@@ -1166,6 +1473,9 @@ function show(name,el){
   else document.querySelectorAll('.menu-item').forEach(m=>{if((m.getAttribute('onclick')||'').includes("'"+name+"'"))m.classList.add('active');});
   // Close mobile sidebar on nav
   closeSidebar();
+  // Update page title
+  const serverName=document.getElementById('ovServerName')?.textContent||'';
+  document.title='WAN Bot — '+name.charAt(0).toUpperCase()+name.slice(1)+(serverName&&serverName!=='Select a Server'?' — '+serverName:'');
   if(name==='leaderboard'&&currentServer)loadLeaderboard('score');
   if(name==='audit'&&currentServer)loadAuditLog();
   if(name==='music'&&currentServer)loadMusicStatus();
@@ -1192,6 +1502,9 @@ function show(name,el){
   if(name==='embedbuilder'&&currentServer)loadEmbedTemplates();
   if(name==='logconfig'&&currentServer)loadLogConfig();
   if(name==='botanalyzer'&&currentServer)loadBotAnalyzer();
+  if(name==='commandcenter'&&currentServer)_populateCCSelects();
+  if(name==='analytics2'&&currentServer){loadHeatmap();loadRolePie('rolePieChart2',_rolePieChart2).then(c=>{if(c)_rolePieChart2=c;});loadGrowthChart2(7,null);}
+  if(name==='dangersettings'&&currentServer)loadBotPrefix();
 }
 
 // SERVER SELECT
@@ -1201,6 +1514,15 @@ async function selectServer(id){
   notify('Loading...','info');
   await Promise.all([loadServerDetails(id),loadBotStatus(),loadLiveStats()]);
   if(socket)socket.emit('subscribe_server',{server_id:id});
+  // Load overview widgets
+  loadHealthScore();
+  loadGrowthChart(7,document.getElementById('growth7btn'));
+  loadTopMembers();
+  loadRolePie('rolePieChart',_rolePieChart).then(c=>{if(c)_rolePieChart=c;});
+  loadServerNotifications();
+  // Update page title
+  const serverName=document.getElementById('serverSelector').options[document.getElementById('serverSelector').selectedIndex]?.text||'';
+  document.title='WAN Bot — '+serverName;
 }
 
 async function loadServerDetails(id){
@@ -1458,9 +1780,10 @@ async function deleteChannel(id,name){
 function renderMembers(members){
   const c=document.getElementById('membersContainer');
   const humans=members.filter(m=>!m.bot);
-  if(!humans.length){c.innerHTML='<p style="color:var(--text-muted);">No members.</p>';return;}
-  c.innerHTML=`<table class="table"><thead><tr><th>Member</th><th>Status</th><th>Roles</th><th>Actions</th></tr></thead><tbody>${humans.map(m=>`
+  if(!humans.length){c.innerHTML='<div class="empty-state"><div class="empty-state-icon">👥</div><h4>No members found</h4><p>No human members in this server.</p></div>';return;}
+  c.innerHTML=`<table class="table"><thead><tr><th style="width:32px;"><input type="checkbox" class="member-checkbox" onchange="humans.forEach(m=>document.getElementById('chk_'+m.id)&&(document.getElementById('chk_'+m.id).checked=this.checked,toggleMemberSelect(m.id,document.getElementById('chk_'+m.id))))"></th><th>Member</th><th>Status</th><th>Roles</th><th>Actions</th></tr></thead><tbody>${humans.map(m=>`
     <tr style="cursor:pointer;" onclick="openMemberProfile('${m.id}')">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="member-checkbox" id="chk_${m.id}" onchange="toggleMemberSelect('${m.id}',this)"></td>
       <td><div style="display:flex;align-items:center;gap:10px;">${m.avatar?`<img src="${m.avatar}" style="width:32px;height:32px;border-radius:50%;">`:'<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;">👤</div>'}
         <div><div style="font-weight:600;">${escHtml(m.display_name)}</div><div style="color:var(--text-muted);font-size:12px;">${escHtml(m.name)}</div></div></div></td>
       <td><span class="badge badge-${m.status==='online'?'success':m.status==='idle'?'warning':m.status==='dnd'?'danger':'secondary'}">${m.status}</span></td>
@@ -1515,15 +1838,16 @@ function openBan(id,name){
 
 // MODERATION TAB
 function modTab(name,el){
-  ['kick','ban','timeout'].forEach(t=>{document.getElementById('mod'+t.charAt(0).toUpperCase()+t.slice(1)).style.display='none';});
+  ['kick','ban','tempban','timeout'].forEach(t=>{const d=document.getElementById('mod'+t.charAt(0).toUpperCase()+t.slice(1));if(d)d.style.display='none';});
   document.querySelectorAll('#sec-moderation .tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('mod'+name.charAt(0).toUpperCase()+name.slice(1)).style.display='block';
+  const target=document.getElementById('mod'+name.charAt(0).toUpperCase()+name.slice(1));
+  if(target)target.style.display='block';
   el.classList.add('active');
 }
 
 function populateModSelects(){
   const humans=allMembers.filter(m=>!m.bot);
-  ['kickMember','banMember','timeoutMember'].forEach(id=>{
+  ['kickMember','banMember','timeoutMember','tempbanMember'].forEach(id=>{
     const sel=document.getElementById(id);
     if(!sel)return;
     sel.innerHTML='<option value="">Select member...</option>'+humans.map(m=>`<option value="${m.id}">${escHtml(m.display_name)}</option>`).join('');
@@ -2127,6 +2451,386 @@ function notify(msg,type){
   document.body.appendChild(n);
   setTimeout(()=>{n.style.opacity='0';setTimeout(()=>n.remove(),300);},3000);
 }
+
+// ===== COMMAND CENTER =====
+let _ccHistory=[];
+function ccTab(name,el){
+  ['warn','mute','purge','dm','slowmode','lock'].forEach(t=>{const d=document.getElementById('cc-'+t);if(d)d.style.display='none';});
+  document.querySelectorAll('#sec-commandcenter .tab').forEach(t=>t.classList.remove('active'));
+  const el2=document.getElementById('cc-'+name);if(el2)el2.style.display='block';
+  el.classList.add('active');
+}
+function _populateCCSelects(){
+  const humans=allMembers.filter(m=>!m.bot);
+  const mOpts='<option value="">Select member...</option>'+humans.map(m=>`<option value="${m.id}">${escHtml(m.display_name)}</option>`).join('');
+  const cOpts='<option value="">Select channel...</option>'+allTextChannels.map(c=>`<option value="${c.id}"># ${escHtml(c.name)}</option>`).join('');
+  ['ccWarnMember','ccMuteMember','ccDMMember'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=mOpts;});
+  ['ccPurgeChannel','ccSlowChannel','ccLockChannel'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=cOpts;});
+}
+async function runCC(action, lockVal){
+  if(!currentServer){notify('Select a server first','warning');return;}
+  let body={action};
+  if(action==='warn'){body.member_id=document.getElementById('ccWarnMember').value;body.reason=document.getElementById('ccWarnReason').value;if(!body.member_id)return notify('Select a member','warning');}
+  else if(action==='mute'){body.member_id=document.getElementById('ccMuteMember').value;body.duration=document.getElementById('ccMuteDuration').value;body.reason=document.getElementById('ccMuteReason').value;if(!body.member_id)return notify('Select a member','warning');}
+  else if(action==='purge'){body.channel_id=document.getElementById('ccPurgeChannel').value;body.count=document.getElementById('ccPurgeCount').value;if(!body.channel_id)return notify('Select a channel','warning');}
+  else if(action==='dm'){body.member_id=document.getElementById('ccDMMember').value;body.message=document.getElementById('ccDMMessage').value;if(!body.member_id||!body.message)return notify('Fill all fields','warning');}
+  else if(action==='slowmode'){body.channel_id=document.getElementById('ccSlowChannel').value;body.seconds=document.getElementById('ccSlowSecs').value;if(!body.channel_id)return notify('Select a channel','warning');}
+  else if(action==='lock'){body.channel_id=document.getElementById('ccLockChannel').value;body.lock=lockVal;if(!body.channel_id)return notify('Select a channel','warning');}
+  try{
+    const res=await apiFetch('/api/server/'+currentServer+'/command-center',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await res.json();
+    if(d.error){notify(d.error,'danger');return;}
+    notify(d.msg||'Done!','success');
+    _ccHistory.unshift({action,msg:d.msg,time:new Date().toLocaleTimeString()});
+    _renderCCHistory();
+    pushNotification({icon:'⚡',title:'Command: '+action,desc:d.msg,type:'mod'});
+  }catch(e){notify('Error: '+e.message,'danger');}
+}
+function _renderCCHistory(){
+  const el=document.getElementById('ccHistory');
+  if(!el)return;
+  if(!_ccHistory.length){el.innerHTML='<div class="empty-state"><div class="empty-state-icon">📋</div><h4>No commands run yet</h4><p>Commands you run will appear here.</p></div>';return;}
+  el.innerHTML='<table class="table"><thead><tr><th>Action</th><th>Result</th><th>Time</th></tr></thead><tbody>'+
+    _ccHistory.slice(0,20).map(h=>`<tr><td><span class="badge badge-info">${h.action}</span></td><td>${escHtml(h.msg)}</td><td style="color:var(--text-muted)">${h.time}</td></tr>`).join('')+'</tbody></table>';
+}
+
+// ===== NOTIFICATIONS =====
+let _notifications=[];
+function pushNotification(n){
+  n.time=n.time||new Date().toLocaleTimeString();
+  _notifications.unshift(n);
+  _renderNotifDropdown();
+  const badge=document.getElementById('notifBadge');
+  if(badge){badge.textContent=Math.min(_notifications.length,99);badge.classList.add('show');}
+}
+function _renderNotifDropdown(){
+  const list=document.getElementById('notifList');
+  if(!list)return;
+  if(!_notifications.length){list.innerHTML='<div class="notif-empty">🔔 No notifications</div>';return;}
+  const typeColors={mod:'rgba(245,158,11,.2)',raid:'rgba(239,68,68,.2)',info:'rgba(59,130,246,.2)',success:'rgba(16,185,129,.2)'};
+  list.innerHTML=_notifications.slice(0,20).map(n=>`
+    <div class="notif-item">
+      <div class="notif-icon" style="background:${typeColors[n.type]||typeColors.info}">${n.icon||'🔔'}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:13px;">${escHtml(n.title||'')}</div>
+        <div style="color:var(--text-muted);font-size:12px;">${escHtml(n.desc||'')} <span style="color:var(--text-dim);">• ${n.time}</span></div>
+      </div>
+    </div>`).join('');
+}
+function toggleNotifDropdown(){
+  const dd=document.getElementById('notifDropdown');
+  dd.classList.toggle('open');
+  if(dd.classList.contains('open')){
+    document.getElementById('notifBadge').classList.remove('show');
+    if(currentServer)loadServerNotifications();
+  }
+}
+async function loadServerNotifications(){
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/notifications')).json();
+    (d.notifications||[]).forEach(n=>pushNotification(n));
+  }catch(e){}
+}
+async function clearNotifications(){
+  _notifications=[];
+  _renderNotifDropdown();
+  document.getElementById('notifBadge').classList.remove('show');
+  if(currentServer)await apiFetch('/api/server/'+currentServer+'/notifications/clear',{method:'POST'});
+}
+document.addEventListener('click',e=>{
+  const wrap=document.getElementById('notifWrap');
+  if(wrap&&!wrap.contains(e.target))document.getElementById('notifDropdown').classList.remove('open');
+});
+
+// ===== HEALTH SCORE =====
+let _rolePieChart=null,_rolePieChart2=null,_growthChart=null,_growthChart2=null;
+async function loadHealthScore(){
+  if(!currentServer)return;
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/health')).json();
+    if(d.error)return;
+    const score=d.score||0;
+    document.getElementById('healthScore').textContent=score+'%';
+    // Animate ring
+    const ring=document.getElementById('healthRingFill');
+    if(ring){const offset=239-(239*score/100);ring.style.strokeDashoffset=offset;}
+    // Color
+    const color=score>=80?'#10b981':score>=60?'#f59e0b':'#ef4444';
+    document.getElementById('healthScore').style.color=color;
+    // Factors
+    const el=document.getElementById('healthFactors');
+    if(el&&d.factors){
+      el.innerHTML=d.factors.map(f=>`
+        <div class="health-factor">
+          <span style="font-size:11px;color:${f.ok?'var(--success)':'var(--danger)'};">${f.ok?'✓':'✗'}</span>
+          <span style="font-size:12px;flex:1;">${f.name}${f.detail?' <span style="color:var(--text-dim);">('+f.detail+')</span>':''}</span>
+          <div class="health-bar" style="width:60px;"><div class="health-bar-fill" style="width:${Math.round(f.pts/f.max*100)}%;background:${f.ok?'var(--success)':'var(--warning)'};"></div></div>
+        </div>`).join('');
+    }
+  }catch(e){}
+}
+
+// ===== GROWTH CHART =====
+async function loadGrowthChart(days,btn){
+  if(!currentServer)return;
+  document.querySelectorAll('#growth7btn,#growth30btn').forEach(b=>b.style.cssText='');
+  if(btn)btn.style.cssText='border-color:var(--accent);color:#a78bfa;';
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/growth?days='+days)).json();
+    if(d.error)return;
+    const ctx=document.getElementById('growthChart');
+    if(!ctx)return;
+    const cfg={type:'line',data:{labels:d.labels,datasets:[{label:'New Joins',data:d.joins,borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.15)',fill:true,tension:.4,pointRadius:3,pointBackgroundColor:'#7c3aed'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}},beginAtZero:true}}}};
+    if(_growthChart){_growthChart.data=cfg.data;_growthChart.update();return;}
+    _growthChart=new Chart(ctx,cfg);
+  }catch(e){}
+}
+async function loadGrowthChart2(days,btn){
+  if(!currentServer)return;
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/growth?days='+days)).json();
+    if(d.error)return;
+    const ctx=document.getElementById('growthChart2');
+    if(!ctx)return;
+    const cfg={type:'line',data:{labels:d.labels,datasets:[{label:'New Joins',data:d.joins,borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.15)',fill:true,tension:.4,pointRadius:3,pointBackgroundColor:'#7c3aed'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}},beginAtZero:true}}}};
+    if(_growthChart2){_growthChart2.data=cfg.data;_growthChart2.update();return;}
+    _growthChart2=new Chart(ctx,cfg);
+  }catch(e){}
+}
+
+// ===== TOP MEMBERS WIDGET =====
+async function loadTopMembers(){
+  if(!currentServer)return;
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/top-members')).json();
+    const el=document.getElementById('topMembersWidget');
+    if(!el)return;
+    const top=d.top||[];
+    if(!top.length){el.innerHTML='<div class="empty-state" style="padding:20px;"><div class="empty-state-icon" style="font-size:28px;">🏆</div><p>No activity data yet.</p></div>';return;}
+    const maxXP=top[0].xp||1;
+    const medals=['🥇','🥈','🥉','4️⃣','5️⃣'];
+    el.innerHTML=top.map((m,i)=>`
+      <div class="top-member-row">
+        <div class="top-member-rank" style="background:${i===0?'rgba(251,191,36,.2)':i===1?'rgba(156,163,175,.2)':'rgba(180,120,60,.2)'}">${medals[i]}</div>
+        ${m.avatar?`<img src="${m.avatar}" style="width:30px;height:30px;border-radius:50%;">`:'<div style="width:30px;height:30px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;">👤</div>'}
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(m.name)}</div>
+          <div class="top-member-bar"><div class="top-member-bar-fill" style="width:${Math.round(m.xp/maxXP*100)}%"></div></div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;"><div style="font-size:12px;font-weight:700;">${m.xp} XP</div><div style="font-size:10px;color:var(--text-muted);">Lv ${m.level}</div></div>
+      </div>`).join('');
+  }catch(e){}
+}
+
+// ===== ROLE PIE CHART =====
+async function loadRolePie(canvasId, chartRef){
+  if(!currentServer)return null;
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/role-distribution')).json();
+    if(d.error||!d.roles||!d.roles.length)return null;
+    const ctx=document.getElementById(canvasId);
+    if(!ctx)return null;
+    const cfg={type:'doughnut',data:{labels:d.roles.map(r=>r.name),datasets:[{data:d.roles.map(r=>r.count),backgroundColor:d.roles.map(r=>r.color+'cc'),borderColor:d.roles.map(r=>r.color),borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#8892b8',font:{size:11},boxWidth:12}}}}};
+    if(chartRef){chartRef.data=cfg.data;chartRef.update();return chartRef;}
+    return new Chart(ctx,cfg);
+  }catch(e){return null;}
+}
+
+// ===== HEATMAP =====
+async function loadHeatmap(){
+  if(!currentServer)return;
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/heatmap')).json();
+    const hourLabels=document.getElementById('heatmapHourLabels');
+    const rows=document.getElementById('heatmapRows');
+    if(!hourLabels||!rows)return;
+    // Hour labels
+    hourLabels.innerHTML=Array.from({length:24},(_,h)=>`<div class="heatmap-hour-label">${h%3===0?h+'h':''}</div>`).join('');
+    // Rows
+    const days=d.days||['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const grid=d.grid||[];
+    const maxVal=d.max||1;
+    rows.innerHTML=days.map((day,di)=>{
+      const cells=Array.from({length:24},(_,h)=>{
+        const cell=grid.find(c=>c.day===di&&c.hour===h)||{value:0};
+        const intensity=cell.value/maxVal;
+        const bg=intensity===0?'var(--surface3)':`rgba(124,58,237,${0.15+intensity*0.85})`;
+        return `<div class="heatmap-cell" style="background:${bg};" title="${day} ${h}:00 — ${cell.value} msgs"></div>`;
+      }).join('');
+      return `<div style="display:flex;align-items:center;margin-bottom:2px;"><div class="heatmap-day-label">${day}</div><div class="heatmap-grid" style="flex:1;">${cells}</div></div>`;
+    }).join('');
+  }catch(e){}
+}
+
+// ===== BULK MODERATION =====
+let _selectedMembers=new Set();
+function toggleMemberSelect(id,cb){
+  if(cb.checked)_selectedMembers.add(id);
+  else _selectedMembers.delete(id);
+  const bar=document.getElementById('bulkBar');
+  const count=document.getElementById('bulkCount');
+  if(bar)bar.classList.toggle('show',_selectedMembers.size>0);
+  if(count)count.textContent=_selectedMembers.size+' selected';
+}
+function clearBulkSelection(){
+  _selectedMembers.clear();
+  document.querySelectorAll('.member-checkbox').forEach(cb=>cb.checked=false);
+  const bar=document.getElementById('bulkBar');
+  if(bar)bar.classList.remove('show');
+}
+async function bulkAction(action){
+  if(!currentServer||!_selectedMembers.size)return;
+  const ids=Array.from(_selectedMembers);
+  const label=action==='kick'?'kick':action==='ban'?'permanently ban':'timeout';
+  if(!confirm(`${label.charAt(0).toUpperCase()+label.slice(1)} ${ids.length} member(s)?`))return;
+  let body={action,member_ids:ids,reason:'Bulk '+action+' via dashboard'};
+  if(action==='timeout'){const mins=prompt('Timeout duration (minutes)?','10');if(!mins)return;body.duration=parseInt(mins);}
+  try{
+    const res=await apiFetch('/api/server/'+currentServer+'/bulk-mod',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await res.json();
+    if(d.error){notify(d.error,'danger');return;}
+    const ok=d.results.filter(r=>r.ok).length;
+    notify(`${action}: ${ok}/${ids.length} succeeded`,'success');
+    clearBulkSelection();
+    loadServerDetails(currentServer);
+  }catch(e){notify('Error: '+e.message,'danger');}
+}
+
+// ===== TEMP BAN =====
+async function doTempBan(){
+  const id=document.getElementById('tempbanMember').value;
+  if(!id){notify('Select a member','warning');return;}
+  const hours=document.getElementById('tempbanHours').value;
+  const reason=document.getElementById('tempbanReason').value;
+  const delete_days=document.getElementById('tempbanDays').value;
+  const res=await apiFetch('/api/server/'+currentServer+'/members/'+id+'/tempban',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hours:parseInt(hours),reason,delete_days:parseInt(delete_days)})});
+  const d=await res.json();
+  if(d.success)notify(d.msg||'Temp banned!','success');
+  else notify(d.error||'Failed','danger');
+}
+
+// ===== BOT PREFIX =====
+async function saveBotPrefix(){
+  if(!currentServer)return;
+  const prefix=document.getElementById('botPrefix').value.trim();
+  if(!prefix)return notify('Enter a prefix','warning');
+  const res=await apiFetch('/api/server/'+currentServer+'/prefix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prefix})});
+  const d=await res.json();
+  if(d.success){notify('Prefix saved: '+d.prefix,'success');document.getElementById('currentPrefix').textContent=d.prefix;}
+  else notify(d.error||'Failed','danger');
+}
+async function loadBotPrefix(){
+  if(!currentServer)return;
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/prefix')).json();
+    const el=document.getElementById('currentPrefix');
+    const inp=document.getElementById('botPrefix');
+    if(el)el.textContent=d.prefix||'!';
+    if(inp)inp.value=d.prefix||'!';
+  }catch(e){}
+}
+
+// ===== DANGER SETTINGS =====
+async function saveDangerSetting(key,val){
+  if(!currentServer)return;
+  try{
+    await apiFetch('/api/server/'+currentServer+'/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({[key]:val})});
+    notify('Setting saved','success');
+  }catch(e){}
+}
+function confirmResetData(){
+  showModal('⚠️ Reset All Bot Data',`<p style="color:var(--danger);font-weight:600;margin-bottom:12px;">This will permanently delete all XP, warnings, and bot configuration for this server.</p><p style="color:var(--text-muted);font-size:13px;">Type <strong>RESET</strong> to confirm:</p><input id="resetConfirmInput" class="form-control" style="margin-top:10px;" placeholder="RESET">`,
+  async()=>{
+    if(document.getElementById('resetConfirmInput').value!=='RESET'){notify('Type RESET to confirm','warning');return;}
+    notify('Data reset is not implemented in this demo — contact admin.','info');
+    closeModal();
+  });
+}
+
+// ===== EXPORT =====
+function exportMembersCSV(){
+  if(!currentServer){notify('Select a server first','warning');return;}
+  window.open('/api/server/'+currentServer+'/export/members','_blank');
+}
+function exportAuditLog(){
+  if(!_auditEntries.length){notify('No audit data to export','warning');return;}
+  const rows=[['Time','Event','Title','Description'],..._auditEntries.map(e=>[e.timestamp||'',e.type||'',e.title||'',e.desc||''])];
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='audit_log.csv';a.click();
+}
+
+// ===== COMMAND PALETTE =====
+const _cmdItems=[
+  {label:'Overview',icon:'fa-home',section:'overview',sub:'General'},
+  {label:'Members',icon:'fa-users',section:'members',sub:'General'},
+  {label:'Audit Log',icon:'fa-scroll',section:'audit',sub:'General'},
+  {label:'Roles',icon:'fa-user-tag',section:'roles',sub:'Management'},
+  {label:'Channels',icon:'fa-hashtag',section:'channels',sub:'Management'},
+  {label:'Moderation',icon:'fa-shield-alt',section:'moderation',sub:'Management'},
+  {label:'Command Center',icon:'fa-terminal',section:'commandcenter',sub:'Intelligence'},
+  {label:'Analytics',icon:'fa-chart-line',section:'analytics2',sub:'Intelligence'},
+  {label:'Bot Analyzer',icon:'fa-microscope',section:'botanalyzer',sub:'Intelligence'},
+  {label:'Welcome',icon:'fa-door-open',section:'welcome',sub:'Features'},
+  {label:'Leveling',icon:'fa-star',section:'leveling',sub:'Features'},
+  {label:'Giveaways',icon:'fa-gift',section:'giveaways',sub:'Features'},
+  {label:'Tickets',icon:'fa-ticket-alt',section:'tickets',sub:'Features'},
+  {label:'AutoMod',icon:'fa-shield-virus',section:'automod2',sub:'Moderation'},
+  {label:'Anti-Raid',icon:'fa-user-shield',section:'antiraid',sub:'Moderation'},
+  {label:'SmartMod',icon:'fa-brain',section:'smartmod',sub:'Moderation'},
+  {label:'Mod Log',icon:'fa-gavel',section:'modlog',sub:'Moderation'},
+  {label:'Advanced Settings',icon:'fa-cog',section:'dangersettings',sub:'Settings'},
+  {label:'Export Members CSV',icon:'fa-download',action:()=>exportMembersCSV(),sub:'Actions'},
+  {label:'Refresh Server',icon:'fa-sync',action:()=>selectServer(currentServer),sub:'Actions'},
+  {label:'Toggle Theme',icon:'fa-moon',action:()=>toggleTheme(),sub:'Actions'},
+];
+let _cmdSelected=0,_cmdFiltered=[];
+function openCmdPalette(){
+  document.getElementById('cmdPalette').classList.add('open');
+  const inp=document.getElementById('cmdInput');
+  inp.value='';inp.focus();
+  filterCmdPalette('');
+}
+function closeCmdPalette(){document.getElementById('cmdPalette').classList.remove('open');}
+function filterCmdPalette(q){
+  _cmdFiltered=q?_cmdItems.filter(i=>i.label.toLowerCase().includes(q.toLowerCase())||i.sub.toLowerCase().includes(q.toLowerCase())):_cmdItems;
+  _cmdSelected=0;
+  _renderCmdResults();
+}
+function _renderCmdResults(){
+  const el=document.getElementById('cmdResults');
+  if(!_cmdFiltered.length){el.innerHTML='<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">No results</div>';return;}
+  let html='',lastSub='';
+  _cmdFiltered.forEach((item,i)=>{
+    if(item.sub!==lastSub){html+=`<div class="cmd-section-label">${item.sub}</div>`;lastSub=item.sub;}
+    html+=`<div class="cmd-item${i===_cmdSelected?' selected':''}" onclick="execCmdItem(${i})"><i class="fas ${item.icon}"></i><span class="cmd-item-label">${item.label}</span><span class="cmd-item-sub">${item.sub}</span></div>`;
+  });
+  el.innerHTML=html;
+}
+function execCmdItem(i){
+  const item=_cmdFiltered[i];
+  if(!item)return;
+  closeCmdPalette();
+  if(item.action)item.action();
+  else show(item.section,null);
+}
+function cmdPaletteKey(e){
+  if(e.key==='ArrowDown'){_cmdSelected=Math.min(_cmdSelected+1,_cmdFiltered.length-1);_renderCmdResults();e.preventDefault();}
+  else if(e.key==='ArrowUp'){_cmdSelected=Math.max(_cmdSelected-1,0);_renderCmdResults();e.preventDefault();}
+  else if(e.key==='Enter'){execCmdItem(_cmdSelected);}
+  else if(e.key==='Escape'){closeCmdPalette();}
+}
+
+// ===== KEYBOARD SHORTCUTS =====
+let _kbBuf='';
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable)return;
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openCmdPalette();return;}
+  if(e.key==='Escape'){closeCmdPalette();closeModal();closeProfileModal();return;}
+  _kbBuf+=e.key.toLowerCase();
+  if(_kbBuf.length>2)_kbBuf=_kbBuf.slice(-2);
+  const shortcuts={'go':()=>show('overview',null),'gm':()=>show('members',null),'ga':()=>show('audit',null),'gr':()=>show('roles',null),'gc':()=>show('channels',null),'gM':()=>show('moderation',null),'gl':()=>show('leveling',null),'gb':()=>show('botanalyzer',null),'gC':()=>show('commandcenter',null)};
+  if(shortcuts[_kbBuf]){shortcuts[_kbBuf]();_kbBuf='';}
+});
 
 // MEMBER PROFILE MODAL
 async function openMemberProfile(memberId){

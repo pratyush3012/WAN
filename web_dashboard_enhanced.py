@@ -244,6 +244,141 @@ def logout():
     logger.info(f"User {username} logged out")
     return redirect(url_for('login'))
 
+# ===== DISCORD OAUTH2 =====
+
+@app.route('/login/discord')
+def discord_oauth_redirect():
+    """Redirect to Discord OAuth2"""
+    client_id = os.getenv('DISCORD_CLIENT_ID', '')
+    if not client_id:
+        return redirect(url_for('login'))
+    redirect_uri = os.getenv('DISCORD_REDIRECT_URI', request.host_url.rstrip('/') + '/login/discord/callback')
+    state = secrets.token_urlsafe(16)
+    session['oauth_state'] = state
+    url = (
+        f"https://discord.com/api/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&response_type=code"
+        f"&scope=identify+guilds"
+        f"&state={state}"
+    )
+    return redirect(url)
+
+@app.route('/login/discord/callback')
+def discord_oauth_callback():
+    """Handle Discord OAuth2 callback"""
+    import urllib.request, urllib.parse
+    error = request.args.get('error')
+    if error:
+        return redirect(url_for('login') + '?error=' + error)
+
+    code = request.args.get('code')
+    state = request.args.get('state')
+    if not code or state != session.get('oauth_state'):
+        return redirect(url_for('login') + '?error=invalid_state')
+
+    client_id = os.getenv('DISCORD_CLIENT_ID', '')
+    client_secret = os.getenv('DISCORD_CLIENT_SECRET', '')
+    redirect_uri = os.getenv('DISCORD_REDIRECT_URI', request.host_url.rstrip('/') + '/login/discord/callback')
+
+    if not client_secret:
+        logger.error("DISCORD_CLIENT_SECRET not set — OAuth2 login unavailable")
+        return redirect(url_for('login') + '?error=not_configured')
+
+    try:
+        import urllib.request as urlreq, urllib.parse as urlparse, json as _json
+
+        # Exchange code for token
+        token_data = urlparse.urlencode({
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': redirect_uri,
+        }).encode()
+        req = urlreq.Request('https://discord.com/api/oauth2/token', data=token_data,
+                             headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        with urlreq.urlopen(req, timeout=10) as resp:
+            token_resp = _json.loads(resp.read())
+
+        access_token = token_resp.get('access_token')
+        if not access_token:
+            return redirect(url_for('login') + '?error=no_token')
+
+        # Fetch user info
+        req2 = urlreq.Request('https://discord.com/api/users/@me',
+                              headers={'Authorization': f'Bearer {access_token}'})
+        with urlreq.urlopen(req2, timeout=10) as resp2:
+            user_info = _json.loads(resp2.read())
+
+        # Fetch user guilds
+        req3 = urlreq.Request('https://discord.com/api/users/@me/guilds',
+                              headers={'Authorization': f'Bearer {access_token}'})
+        with urlreq.urlopen(req3, timeout=10) as resp3:
+            user_guilds = _json.loads(resp3.read())
+
+        user_id = str(user_info['id'])
+        username = user_info.get('username', f'User {user_id}')
+        discriminator = user_info.get('discriminator', '0')
+        avatar_hash = user_info.get('avatar')
+        avatar_url = (
+            f"https://cdn.discordapp.com/avatars/{user_id}/{avatar_hash}.png"
+            if avatar_hash else
+            f"https://cdn.discordapp.com/embed/avatars/{int(user_id) % 5}.png"
+        )
+
+        # Check if user is in any guild the bot is in (or is bot owner)
+        owner_id = os.getenv('OWNER_ID', '')
+        bot_guild_ids = {str(g.id) for g in bot_instance.guilds} if bot_instance and bot_instance.is_ready() else set()
+        user_guild_ids = {str(g['id']) for g in user_guilds}
+
+        # User must share at least one guild with the bot, or be the owner
+        shared = user_guild_ids & bot_guild_ids
+        if not shared and user_id != owner_id:
+            return redirect(url_for('login') + '?error=no_shared_server')
+
+        # Check if user has Manage Server in any shared guild
+        MANAGE_GUILD = 0x20
+        authorized_guilds = []
+        for g in user_guilds:
+            if str(g['id']) in bot_guild_ids:
+                perms = int(g.get('permissions', 0))
+                if perms & MANAGE_GUILD or perms & 0x8 or user_id == owner_id:  # manage guild or admin or owner
+                    authorized_guilds.append(str(g['id']))
+
+        if not authorized_guilds and user_id != owner_id:
+            return redirect(url_for('login') + '?error=no_permission')
+
+        session.permanent = True
+        session['user_id'] = user_id
+        session['username'] = username
+        session['discriminator'] = discriminator
+        session['avatar_url'] = avatar_url
+        session['login_time'] = datetime.utcnow().isoformat()
+        session['auth_method'] = 'discord'
+        session['authorized_guilds'] = authorized_guilds if user_id != owner_id else list(bot_guild_ids)
+        session.pop('oauth_state', None)
+
+        logger.info(f"Discord OAuth login: {username}#{discriminator} ({user_id})")
+        return redirect(url_for('index'))
+
+    except Exception as e:
+        logger.error(f"Discord OAuth error: {e}", exc_info=True)
+        return redirect(url_for('login') + '?error=oauth_failed')
+
+@app.route('/api/me')
+@require_auth
+def get_me():
+    """Get current logged-in user info"""
+    return jsonify({
+        'user_id': session.get('user_id'),
+        'username': session.get('username'),
+        'avatar_url': session.get('avatar_url'),
+        'auth_method': session.get('auth_method', 'password'),
+        'authorized_guilds': session.get('authorized_guilds', []),
+    })
+
 @app.route('/api/bot/status')
 @require_auth
 def bot_status():
@@ -1181,8 +1316,7 @@ def update_server_settings(server_id):
 # Get server members list
 @app.route('/api/server/<server_id>/members')
 @require_auth
-def get_server_members(server_id):
-    """Get list of server members"""
+def get_server_members(server_id):    """Get list of server members"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
@@ -1208,6 +1342,89 @@ def get_server_members(server_id):
     except Exception as e:
         logger.error(f"Error getting members: {e}")
         return jsonify({'error': 'Failed to get members'}), 500
+
+
+@app.route('/api/server/<server_id>/members/<member_id>/profile')
+@require_auth
+def get_member_profile(server_id, member_id):
+    """Get full member profile: roles, join date, XP, warnings, badges"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+        member = guild.get_member(int(member_id))
+        if not member:
+            return jsonify({'error': 'Member not found'}), 404
+
+        profile = {
+            'id': str(member.id),
+            'name': member.name,
+            'display_name': member.display_name,
+            'avatar': str(member.display_avatar.url),
+            'bot': member.bot,
+            'status': str(member.status),
+            'joined_at': member.joined_at.isoformat() if member.joined_at else None,
+            'created_at': member.created_at.isoformat(),
+            'roles': [{'id': str(r.id), 'name': r.name, 'color': str(r.color)} for r in member.roles if r.name != '@everyone'],
+            'top_role': member.top_role.name if member.top_role else None,
+            'top_role_color': str(member.top_role.color) if member.top_role else '#99aab5',
+            'xp': None, 'level': None, 'messages': None,
+            'warnings': [], 'badges': [],
+            'voice_seconds': None,
+        }
+
+        # XP / Leveling
+        lvl_cog = bot_instance.get_cog('Leveling')
+        if lvl_cog:
+            try:
+                from cogs.leveling import _xp_progress
+                g = lvl_cog._guild(int(server_id))
+                u = g.get('users', {}).get(str(member_id), {})
+                xp = u.get('xp', 0)
+                level, cur_xp, needed = _xp_progress(xp)
+                profile['xp'] = xp
+                profile['level'] = level
+                profile['messages'] = u.get('messages', 0)
+                profile['xp_progress'] = round(cur_xp / needed * 100) if needed else 0
+            except Exception:
+                pass
+
+        # Warnings
+        modlog_cog = bot_instance.get_cog('ModLog')
+        if modlog_cog:
+            try:
+                g = modlog_cog._guild(int(server_id))
+                cases = g.get('cases', [])
+                profile['warnings'] = [
+                    {'reason': c.get('reason', ''), 'mod': c.get('mod_name', ''), 'timestamp': c.get('timestamp', '')}
+                    for c in cases if str(c.get('user_id')) == str(member_id) and c.get('action') == 'warn'
+                ][-5:]  # last 5
+            except Exception:
+                pass
+
+        # Badges
+        badges_cog = bot_instance.get_cog('Badges')
+        if badges_cog:
+            try:
+                profile['badges'] = badges_cog.get_member_badges(int(server_id), int(member_id))
+            except Exception:
+                pass
+
+        # Voice XP
+        vxp_cog = bot_instance.get_cog('VoiceXP')
+        if vxp_cog:
+            try:
+                g = vxp_cog._guild(int(server_id))
+                profile['voice_seconds'] = g.get('users', {}).get(str(member_id), {}).get('seconds', 0)
+            except Exception:
+                pass
+
+        return jsonify(profile)
+    except Exception as e:
+        logger.error(f"Member profile error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # ===== WELCOME / GOODBYE / PROMOTION / AUTOROLE API =====
@@ -2334,5 +2551,406 @@ def logging_config_api(server_id):
             with open('logging_config.json', 'w') as f: _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         return jsonify(data.get(str(server_id), {}))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== COMMAND CENTER =====
+@app.route('/api/server/<server_id>/command-center', methods=['POST'])
+@require_auth
+def command_center(server_id):
+    """Execute moderation commands from dashboard"""
+    try:
+        body = request.json or {}
+        action = body.get('action')
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild: return jsonify({'error': 'Server not found'}), 404
+
+        async def _exec():
+            if action == 'warn':
+                member = guild.get_member(int(body['member_id']))
+                if not member: return {'error': 'Member not found'}
+                modlog = bot_instance.get_cog('ModLog')
+                if modlog:
+                    await modlog.add_case(guild, 'warn', member, guild.me, body.get('reason','No reason'))
+                try:
+                    await member.send(f"⚠️ You have been warned in **{guild.name}**: {body.get('reason','No reason')}")
+                except: pass
+                return {'success': True, 'msg': f'Warned {member.display_name}'}
+            elif action == 'mute':
+                import discord
+                from datetime import timedelta
+                member = guild.get_member(int(body['member_id']))
+                if not member: return {'error': 'Member not found'}
+                mins = int(body.get('duration', 10))
+                await member.timeout(timedelta(minutes=mins), reason=body.get('reason','Dashboard mute'))
+                return {'success': True, 'msg': f'Muted {member.display_name} for {mins}m'}
+            elif action == 'purge':
+                channel = guild.get_channel(int(body['channel_id']))
+                if not channel: return {'error': 'Channel not found'}
+                count = min(int(body.get('count', 10)), 100)
+                deleted = await channel.purge(limit=count)
+                return {'success': True, 'msg': f'Deleted {len(deleted)} messages'}
+            elif action == 'dm':
+                member = guild.get_member(int(body['member_id']))
+                if not member: return {'error': 'Member not found'}
+                await member.send(body.get('message',''))
+                return {'success': True, 'msg': f'DM sent to {member.display_name}'}
+            elif action == 'slowmode':
+                channel = guild.get_channel(int(body['channel_id']))
+                if not channel: return {'error': 'Channel not found'}
+                secs = int(body.get('seconds', 0))
+                await channel.edit(slowmode_delay=secs)
+                return {'success': True, 'msg': f'Slowmode set to {secs}s'}
+            elif action == 'lock':
+                channel = guild.get_channel(int(body['channel_id']))
+                if not channel: return {'error': 'Channel not found'}
+                import discord
+                overwrite = channel.overwrites_for(guild.default_role)
+                overwrite.send_messages = False if body.get('lock', True) else None
+                await channel.set_permissions(guild.default_role, overwrite=overwrite)
+                return {'success': True, 'msg': f'Channel {"locked" if body.get("lock",True) else "unlocked"}'}
+            return {'error': 'Unknown action'}
+
+        future = asyncio.run_coroutine_threadsafe(_exec(), bot_instance.loop)
+        result = future.result(timeout=15)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== SERVER HEALTH SCORE =====
+@app.route('/api/server/<server_id>/health')
+@require_auth
+def server_health(server_id):
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild: return jsonify({'error': 'Not found'}), 404
+
+        score = 0
+        factors = []
+
+        # Bot online (20pts)
+        score += 20
+        factors.append({'name': 'Bot Online', 'pts': 20, 'max': 20, 'ok': True})
+
+        # Online ratio (20pts)
+        total = guild.member_count or 1
+        online = sum(1 for m in guild.members if str(m.status) in ('online','idle','dnd'))
+        ratio = online / total
+        pts = round(ratio * 20)
+        score += pts
+        factors.append({'name': 'Active Members', 'pts': pts, 'max': 20, 'ok': ratio > 0.1, 'detail': f'{online}/{total} online'})
+
+        # Boost level (20pts)
+        bl = guild.premium_tier
+        bpts = bl * 7
+        score += min(bpts, 20)
+        factors.append({'name': 'Boost Level', 'pts': min(bpts,20), 'max': 20, 'ok': bl > 0, 'detail': f'Level {bl}'})
+
+        # Moderation activity (20pts) — has modlog cog with cases
+        modlog = bot_instance.get_cog('ModLog')
+        mod_pts = 0
+        if modlog:
+            try:
+                g = modlog._guild(int(server_id))
+                cases = g.get('cases', [])
+                mod_pts = min(len(cases) * 2, 20)
+            except: pass
+        score += mod_pts
+        factors.append({'name': 'Moderation Active', 'pts': mod_pts, 'max': 20, 'ok': mod_pts > 0})
+
+        # Verification (10pts)
+        vl = str(guild.verification_level)
+        vpts = 10 if vl not in ('none','low') else 5
+        score += vpts
+        factors.append({'name': 'Verification', 'pts': vpts, 'max': 10, 'ok': vpts >= 10, 'detail': vl})
+
+        # Channels configured (10pts)
+        cpts = min(len(guild.text_channels) * 1, 10)
+        score += cpts
+        factors.append({'name': 'Server Setup', 'pts': cpts, 'max': 10, 'ok': cpts >= 5})
+
+        return jsonify({'score': min(score, 100), 'factors': factors})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== MEMBER GROWTH (7/30 day) =====
+@app.route('/api/server/<server_id>/growth')
+@require_auth
+def member_growth(server_id):
+    """Return member join counts per day for last 30 days"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild: return jsonify({'error': 'Not found'}), 404
+        from datetime import datetime, timezone, timedelta
+        days = int(request.args.get('days', 7))
+        now = datetime.now(timezone.utc)
+        buckets = {}
+        for i in range(days):
+            d = (now - timedelta(days=days-1-i)).strftime('%m/%d')
+            buckets[d] = 0
+        for m in guild.members:
+            if m.joined_at:
+                diff = (now - m.joined_at).days
+                if diff < days:
+                    label = m.joined_at.strftime('%m/%d')
+                    if label in buckets:
+                        buckets[label] += 1
+        labels = list(buckets.keys())
+        data = list(buckets.values())
+        # cumulative total per day
+        total = guild.member_count
+        return jsonify({'labels': labels, 'joins': data, 'total': total})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== TOP MEMBERS =====
+@app.route('/api/server/<server_id>/top-members')
+@require_auth
+def top_members(server_id):
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        lvl_cog = bot_instance.get_cog('Leveling')
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild: return jsonify({'error': 'Not found'}), 404
+        top = []
+        if lvl_cog:
+            try:
+                g = lvl_cog._guild(int(server_id))
+                users = g.get('users', {})
+                sorted_users = sorted(users.items(), key=lambda x: x[1].get('xp', 0), reverse=True)[:5]
+                for uid, data in sorted_users:
+                    m = guild.get_member(int(uid))
+                    if m:
+                        top.append({
+                            'id': uid, 'name': m.display_name,
+                            'avatar': str(m.display_avatar.url),
+                            'xp': data.get('xp', 0), 'level': data.get('level', 0),
+                            'messages': data.get('messages', 0)
+                        })
+            except: pass
+        if not top:
+            # fallback: just return first 5 non-bot members
+            for m in list(guild.members)[:5]:
+                if not m.bot:
+                    top.append({'id': str(m.id), 'name': m.display_name,
+                                'avatar': str(m.display_avatar.url), 'xp': 0, 'level': 0, 'messages': 0})
+        return jsonify({'top': top})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== ROLE DISTRIBUTION =====
+@app.route('/api/server/<server_id>/role-distribution')
+@require_auth
+def role_distribution(server_id):
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild: return jsonify({'error': 'Not found'}), 404
+        dist = []
+        for role in sorted(guild.roles, key=lambda r: r.position, reverse=True):
+            if role.name == '@everyone': continue
+            count = len([m for m in role.members if not m.bot])
+            if count > 0:
+                dist.append({'name': role.name, 'count': count,
+                             'color': str(role.color) if str(role.color) != '#000000' else '#99aab5'})
+        return jsonify({'roles': dist[:15]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== MESSAGE HEATMAP =====
+@app.route('/api/server/<server_id>/heatmap')
+@require_auth
+def message_heatmap(server_id):
+    """Return message activity heatmap data (day x hour)"""
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('activity_heatmap.json'):
+            with open('activity_heatmap.json') as f: data = _json.load(f)
+        guild_data = data.get(str(server_id), {})
+        # Build 7x24 grid
+        days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+        grid = []
+        max_val = 1
+        for d_idx, day in enumerate(days):
+            for h in range(24):
+                val = guild_data.get(f'{d_idx}_{h}', 0)
+                if val > max_val: max_val = val
+                grid.append({'day': d_idx, 'hour': h, 'value': val})
+        return jsonify({'grid': grid, 'days': days, 'max': max_val})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== NOTIFICATIONS =====
+@app.route('/api/server/<server_id>/notifications')
+@require_auth
+def get_notifications(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('notifications.json'):
+            with open('notifications.json') as f: data = _json.load(f)
+        notifs = data.get(str(server_id), [])
+        return jsonify({'notifications': notifs[-30:][::-1]})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/notifications/clear', methods=['POST'])
+@require_auth
+def clear_notifications(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('notifications.json'):
+            with open('notifications.json') as f: data = _json.load(f)
+        data[str(server_id)] = []
+        with open('notifications.json', 'w') as f: _json.dump(data, f)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== EXPORT MEMBERS CSV =====
+@app.route('/api/server/<server_id>/export/members')
+@require_auth
+def export_members_csv(server_id):
+    try:
+        import csv, io
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild: return jsonify({'error': 'Not found'}), 404
+        lvl_cog = bot_instance.get_cog('Leveling')
+        xp_data = {}
+        if lvl_cog:
+            try:
+                g = lvl_cog._guild(int(server_id))
+                xp_data = g.get('users', {})
+            except: pass
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['ID','Username','Display Name','Bot','Status','Joined At','Account Created','Roles','XP','Level','Messages'])
+        for m in guild.members:
+            ud = xp_data.get(str(m.id), {})
+            writer.writerow([
+                m.id, m.name, m.display_name, m.bot, str(m.status),
+                m.joined_at.isoformat() if m.joined_at else '',
+                m.created_at.isoformat(),
+                '|'.join(r.name for r in m.roles if r.name != '@everyone'),
+                ud.get('xp', 0), ud.get('level', 0), ud.get('messages', 0)
+            ])
+        from flask import Response
+        return Response(output.getvalue(), mimetype='text/csv',
+                        headers={'Content-Disposition': f'attachment; filename=members_{server_id}.csv'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== BOT PREFIX CONFIG =====
+@app.route('/api/server/<server_id>/prefix', methods=['GET', 'POST'])
+@require_auth
+def prefix_config(server_id):
+    try:
+        import json as _json
+        data = {}
+        if os.path.exists('prefix_config.json'):
+            with open('prefix_config.json') as f: data = _json.load(f)
+        if request.method == 'POST':
+            prefix = (request.json or {}).get('prefix', '!')
+            data[str(server_id)] = prefix
+            with open('prefix_config.json', 'w') as f: _json.dump(data, f)
+            # Update bot if possible
+            if bot_instance:
+                try:
+                    if hasattr(bot_instance, '_prefixes'):
+                        bot_instance._prefixes[int(server_id)] = prefix
+                except: pass
+            return jsonify({'success': True, 'prefix': prefix})
+        return jsonify({'prefix': data.get(str(server_id), '!')})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== TEMP BAN =====
+@app.route('/api/server/<server_id>/members/<member_id>/tempban', methods=['POST'])
+@require_auth
+def temp_ban_member(server_id, member_id):
+    try:
+        body = request.json or {}
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild: return jsonify({'error': 'Not found'}), 404
+        member = guild.get_member(int(member_id))
+        if not member: return jsonify({'error': 'Member not found'}), 404
+        reason = body.get('reason', 'Temp ban via dashboard')
+        hours = int(body.get('hours', 24))
+        delete_days = int(body.get('delete_days', 0))
+
+        async def _ban():
+            await guild.ban(member, reason=reason, delete_message_days=delete_days)
+            # Schedule unban
+            import asyncio as _aio
+            async def _unban():
+                await _aio.sleep(hours * 3600)
+                try: await guild.unban(member, reason='Temp ban expired')
+                except: pass
+            bot_instance.loop.create_task(_unban())
+            return {'success': True, 'msg': f'Temp banned {member.display_name} for {hours}h'}
+
+        future = asyncio.run_coroutine_threadsafe(_ban(), bot_instance.loop)
+        return jsonify(future.result(timeout=10))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== BULK MODERATION =====
+@app.route('/api/server/<server_id>/bulk-mod', methods=['POST'])
+@require_auth
+def bulk_mod(server_id):
+    try:
+        body = request.json or {}
+        action = body.get('action')
+        member_ids = body.get('member_ids', [])
+        reason = body.get('reason', 'Bulk action via dashboard')
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild: return jsonify({'error': 'Not found'}), 404
+
+        async def _bulk():
+            results = []
+            for mid in member_ids[:20]:  # cap at 20
+                m = guild.get_member(int(mid))
+                if not m: continue
+                try:
+                    if action == 'kick': await m.kick(reason=reason)
+                    elif action == 'ban': await guild.ban(m, reason=reason)
+                    elif action == 'timeout':
+                        from datetime import timedelta
+                        await m.timeout(timedelta(minutes=int(body.get('duration',10))), reason=reason)
+                    results.append({'id': mid, 'name': m.display_name, 'ok': True})
+                except Exception as e:
+                    results.append({'id': mid, 'ok': False, 'error': str(e)})
+            return {'success': True, 'results': results}
+
+        future = asyncio.run_coroutine_threadsafe(_bulk(), bot_instance.loop)
+        return jsonify(future.result(timeout=30))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
