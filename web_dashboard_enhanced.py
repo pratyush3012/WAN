@@ -54,6 +54,14 @@ limiter = Limiter(
 # Global bot instance
 bot_instance = None
 
+# Persistent data directory — set DATA_DIR env var on Render to a disk mount path
+# Falls back to current directory for local dev
+DATA_DIR = os.getenv('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
+
+def data_path(filename):
+    """Return absolute path for a data file in the persistent data directory."""
+    return os.path.join(DATA_DIR, filename)
+
 # Dashboard data cache with timestamps
 dashboard_cache = {
     'servers': {},
@@ -1049,8 +1057,8 @@ def get_giveaways(server_id):
     import json as _json, os as _os
     try:
         data = {}
-        if _os.path.exists('giveaways.json'):
-            with open('giveaways.json') as f:
+        if _os.path.exists(data_path('giveaways.json')):
+            with open(data_path('giveaways.json')) as f:
                 data = _json.load(f)
         active = []
         for msg_id, g in data.items():
@@ -1991,9 +1999,9 @@ def server_analytics(server_id):
 def modlog_cases(server_id):
     try:
         import json as _json
-        if not os.path.exists('modlog.json'):
+        if not os.path.exists(data_path('modlog.json')):
             return jsonify({'cases': []})
-        with open('modlog.json') as f:
+        with open(data_path('modlog.json')) as f:
             data = _json.load(f)
         cases = data.get('cases', {}).get(str(server_id), [])
         return jsonify({'cases': list(reversed(cases[-50:]))})
@@ -2006,10 +2014,10 @@ def modlog_cases(server_id):
 def modlog_config(server_id):
     try:
         import json as _json
-        if not os.path.exists('modlog.json'):
+        if not os.path.exists(data_path('modlog.json')):
             data = {'cases': {}, 'config': {}, 'tempbans': []}
         else:
-            with open('modlog.json') as f:
+            with open(data_path('modlog.json')) as f:
                 data = _json.load(f)
         if request.method == 'POST':
             body = request.json or {}
@@ -2018,7 +2026,7 @@ def modlog_config(server_id):
                 cfg['log_channel'] = body['log_channel']
             if 'thresholds' in body:
                 cfg['thresholds'] = body['thresholds']
-            with open('modlog.json', 'w') as f:
+            with open(data_path('modlog.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         return jsonify(data.get('config', {}).get(str(server_id), {}))
@@ -2034,13 +2042,13 @@ def automod_config_api(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('automod.json'):
-            with open('automod.json') as f:
+        if os.path.exists(data_path('automod.json')):
+            with open(data_path('automod.json')) as f:
                 data = _json.load(f)
         if request.method == 'POST':
             body = request.json or {}
             data.setdefault(str(server_id), {}).update(body)
-            with open('automod.json', 'w') as f:
+            with open(data_path('automod.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
             # Reload in-memory config if cog is loaded
             if bot_instance:
@@ -2062,8 +2070,8 @@ def serverstats_api(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('serverstats.json'):
-            with open('serverstats.json') as f:
+        if os.path.exists(data_path('serverstats.json')):
+            with open(data_path('serverstats.json')) as f:
                 data = _json.load(f)
         channels = data.get(str(server_id), {})
         result = []
@@ -2099,11 +2107,11 @@ def serverstats_add(server_id):
             ch = await guild.create_voice_channel(fn(guild), overwrites=overwrites, reason='Stats channel via dashboard')
             import json as _json
             data = {}
-            if os.path.exists('serverstats.json'):
-                with open('serverstats.json') as f:
+            if os.path.exists(data_path('serverstats.json')):
+                with open(data_path('serverstats.json')) as f:
                     data = _json.load(f)
             data.setdefault(str(server_id), {})[str(ch.id)] = stat
-            with open('serverstats.json', 'w') as f:
+            with open(data_path('serverstats.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
             return ch.id
 
@@ -2122,8 +2130,8 @@ def scheduler_list(server_id):
     try:
         import json as _json
         jobs = []
-        if os.path.exists('scheduler.json'):
-            with open('scheduler.json') as f:
+        if os.path.exists(data_path('scheduler.json')):
+            with open(data_path('scheduler.json')) as f:
                 all_jobs = _json.load(f)
             jobs = [j for j in all_jobs if j.get('guild_id') == str(server_id)]
         return jsonify({'jobs': jobs})
@@ -2159,8 +2167,8 @@ def scheduler_add(server_id):
             return jsonify({'error': 'Invalid time format'}), 400
 
         jobs = []
-        if os.path.exists('scheduler.json'):
-            with open('scheduler.json') as f:
+        if os.path.exists(data_path('scheduler.json')):
+            with open(data_path('scheduler.json')) as f:
                 jobs = _json.load(f)
         job = {
             'id': len(jobs) + 1,
@@ -2172,7 +2180,7 @@ def scheduler_add(server_id):
             'created_by': 'dashboard',
         }
         jobs.append(job)
-        with open('scheduler.json', 'w') as f:
+        with open(data_path('scheduler.json'), 'w') as f:
             _json.dump(jobs, f, indent=2)
         return jsonify({'success': True, 'job': job})
     except Exception as e:
@@ -2184,12 +2192,12 @@ def scheduler_add(server_id):
 def scheduler_remove(server_id, job_id):
     try:
         import json as _json
-        if not os.path.exists('scheduler.json'):
+        if not os.path.exists(data_path('scheduler.json')):
             return jsonify({'error': 'No jobs'}), 404
-        with open('scheduler.json') as f:
+        with open(data_path('scheduler.json')) as f:
             jobs = _json.load(f)
         new_jobs = [j for j in jobs if not (j.get('guild_id') == str(server_id) and j['id'] == job_id)]
-        with open('scheduler.json', 'w') as f:
+        with open(data_path('scheduler.json'), 'w') as f:
             _json.dump(new_jobs, f, indent=2)
         return jsonify({'success': True})
     except Exception as e:
@@ -2204,8 +2212,8 @@ def tags_list(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('tags.json'):
-            with open('tags.json') as f:
+        if os.path.exists(data_path('tags.json')):
+            with open(data_path('tags.json')) as f:
                 data = _json.load(f)
         tags = data.get(str(server_id), {})
         return jsonify({'tags': [{'name': k, **v} for k, v in tags.items()]})
@@ -2225,13 +2233,13 @@ def tags_add(server_id):
         if not name or not content:
             return jsonify({'error': 'name and content required'}), 400
         data = {}
-        if os.path.exists('tags.json'):
-            with open('tags.json') as f:
+        if os.path.exists(data_path('tags.json')):
+            with open(data_path('tags.json')) as f:
                 data = _json.load(f)
         data.setdefault(str(server_id), {})[name] = {
             'content': content, 'aliases': aliases, 'author_id': 'dashboard', 'uses': 0
         }
-        with open('tags.json', 'w') as f:
+        with open(data_path('tags.json'), 'w') as f:
             _json.dump(data, f, indent=2)
         return jsonify({'success': True})
     except Exception as e:
@@ -2243,14 +2251,14 @@ def tags_add(server_id):
 def tags_delete(server_id, tag_name):
     try:
         import json as _json
-        if not os.path.exists('tags.json'):
+        if not os.path.exists(data_path('tags.json')):
             return jsonify({'error': 'Not found'}), 404
-        with open('tags.json') as f:
+        with open(data_path('tags.json')) as f:
             data = _json.load(f)
         gid = str(server_id)
         if gid in data and tag_name.lower() in data[gid]:
             del data[gid][tag_name.lower()]
-            with open('tags.json', 'w') as f:
+            with open(data_path('tags.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         return jsonify({'error': 'Tag not found'}), 404
@@ -2266,14 +2274,14 @@ def antiraid_config_api(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('antiraid.json'):
-            with open('antiraid.json') as f:
+        if os.path.exists(data_path('antiraid.json')):
+            with open(data_path('antiraid.json')) as f:
                 data = _json.load(f)
         from cogs.antiraid import DEFAULT_CFG as AR_DEFAULT
         if request.method == 'POST':
             body = request.json or {}
             data.setdefault(str(server_id), {}).update(body)
-            with open('antiraid.json', 'w') as f:
+            with open(data_path('antiraid.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         cfg = {**AR_DEFAULT, **data.get(str(server_id), {})}
@@ -2290,8 +2298,8 @@ def voicexp_leaderboard(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('voicexp.json'):
-            with open('voicexp.json') as f:
+        if os.path.exists(data_path('voicexp.json')):
+            with open(data_path('voicexp.json')) as f:
                 data = _json.load(f)
         users = data.get(str(server_id), {})
         guild = bot_instance.get_guild(int(server_id)) if bot_instance else None
@@ -2321,8 +2329,8 @@ def highlights_api(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('highlights.json'):
-            with open('highlights.json') as f:
+        if os.path.exists(data_path('highlights.json')):
+            with open(data_path('highlights.json')) as f:
                 data = _json.load(f)
         guild_hl = data.get(str(server_id), {})
         guild = bot_instance.get_guild(int(server_id)) if bot_instance else None
@@ -2347,13 +2355,13 @@ def tickets_config_api(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('tickets.json'):
-            with open('tickets.json') as f:
+        if os.path.exists(data_path('tickets.json')):
+            with open(data_path('tickets.json')) as f:
                 data = _json.load(f)
         if request.method == 'POST':
             body = request.json or {}
             data.setdefault(str(server_id), {}).update(body)
-            with open('tickets.json', 'w') as f:
+            with open(data_path('tickets.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         return jsonify(data.get(str(server_id), {}))
@@ -2369,8 +2377,8 @@ def smartmod_config(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('smartmod.json'):
-            with open('smartmod.json') as f:
+        if os.path.exists(data_path('smartmod.json')):
+            with open(data_path('smartmod.json')) as f:
                 data = _json.load(f)
         if request.method == 'POST':
             body = request.json or {}
@@ -2378,7 +2386,7 @@ def smartmod_config(server_id):
             if 'enabled' in body: g['enabled'] = body['enabled']
             if 'log_channel' in body: g['log_channel'] = body['log_channel']
             if 'strike_decay_days' in body: g['strike_decay_days'] = int(body['strike_decay_days'])
-            with open('smartmod.json', 'w') as f:
+            with open(data_path('smartmod.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         g = data.get(str(server_id), {'enabled': True, 'log_channel': None, 'strike_decay_days': 30})
@@ -2393,8 +2401,8 @@ def smartmod_strikes(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('smartmod.json'):
-            with open('smartmod.json') as f:
+        if os.path.exists(data_path('smartmod.json')):
+            with open(data_path('smartmod.json')) as f:
                 data = _json.load(f)
         g = data.get(str(server_id), {})
         strikes = g.get('strikes', {})
@@ -2418,14 +2426,14 @@ def smartmod_strikes(server_id):
 def smartmod_clear_strikes(server_id, user_id):
     try:
         import json as _json
-        if not os.path.exists('smartmod.json'):
+        if not os.path.exists(data_path('smartmod.json')):
             return jsonify({'error': 'No data'}), 404
-        with open('smartmod.json') as f:
+        with open(data_path('smartmod.json')) as f:
             data = _json.load(f)
         g = data.get(str(server_id), {})
         g.get('strikes', {}).pop(str(user_id), None)
         g.get('last_strike', {}).pop(str(user_id), None)
-        with open('smartmod.json', 'w') as f:
+        with open(data_path('smartmod.json'), 'w') as f:
             _json.dump(data, f, indent=2)
         return jsonify({'success': True})
     except Exception as e:
@@ -2440,15 +2448,15 @@ def channelguard_config(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('channelguard.json'):
-            with open('channelguard.json') as f:
+        if os.path.exists(data_path('channelguard.json')):
+            with open(data_path('channelguard.json')) as f:
                 data = _json.load(f)
         if request.method == 'POST':
             body = request.json or {}
             g = data.setdefault(str(server_id), {})
             for k in ('enabled', 'auto_detect', 'log_channel'):
                 if k in body: g[k] = body[k]
-            with open('channelguard.json', 'w') as f:
+            with open(data_path('channelguard.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         return jsonify(data.get(str(server_id), {'enabled': False, 'auto_detect': True}))
@@ -2492,12 +2500,12 @@ def channelguard_set(server_id):
         if not channel_id or not profile:
             return jsonify({'error': 'channel_id and profile required'}), 400
         data = {}
-        if os.path.exists('channelguard.json'):
-            with open('channelguard.json') as f:
+        if os.path.exists(data_path('channelguard.json')):
+            with open(data_path('channelguard.json')) as f:
                 data = _json.load(f)
         g = data.setdefault(str(server_id), {'enabled': True, 'auto_detect': True})
         g.setdefault('channels', {})[str(channel_id)] = {'profile': profile}
-        with open('channelguard.json', 'w') as f:
+        with open(data_path('channelguard.json'), 'w') as f:
             _json.dump(data, f, indent=2)
         return jsonify({'success': True})
     except Exception as e:
@@ -2509,13 +2517,13 @@ def channelguard_set(server_id):
 def channelguard_remove(server_id, channel_id):
     try:
         import json as _json
-        if not os.path.exists('channelguard.json'):
+        if not os.path.exists(data_path('channelguard.json')):
             return jsonify({'error': 'No data'}), 404
-        with open('channelguard.json') as f:
+        with open(data_path('channelguard.json')) as f:
             data = _json.load(f)
         g = data.get(str(server_id), {})
         g.get('channels', {}).pop(str(channel_id), None)
-        with open('channelguard.json', 'w') as f:
+        with open(data_path('channelguard.json'), 'w') as f:
             _json.dump(data, f, indent=2)
         return jsonify({'success': True})
     except Exception as e:
@@ -2530,12 +2538,12 @@ def joinleave_config(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('joinleave.json'):
-            with open('joinleave.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('joinleave.json')):
+            with open(data_path('joinleave.json')) as f: data = _json.load(f)
         if request.method == 'POST':
             body = request.json or {}
             data.setdefault(str(server_id), {}).update(body)
-            with open('joinleave.json', 'w') as f: _json.dump(data, f, indent=2)
+            with open(data_path('joinleave.json'), 'w') as f: _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         return jsonify(data.get(str(server_id), {}))
     except Exception as e:
@@ -2550,14 +2558,14 @@ def starboard_config(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('starboard.json'):
-            with open('starboard.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('starboard.json')):
+            with open(data_path('starboard.json')) as f: data = _json.load(f)
         if request.method == 'POST':
             body = request.json or {}
             cfg = data.setdefault(str(server_id), {})
             for k in ('channel_id', 'threshold', 'enabled'):
                 if k in body: cfg[k] = body[k]
-            with open('starboard.json', 'w') as f: _json.dump(data, f, indent=2)
+            with open(data_path('starboard.json'), 'w') as f: _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         cfg = data.get(str(server_id), {})
         return jsonify({k: v for k, v in cfg.items() if k != 'posted'})
@@ -2573,8 +2581,8 @@ def timedactions_list(server_id):
     try:
         import json as _json
         data = {'timed_roles': [], 'timed_mutes': []}
-        if os.path.exists('timedactions.json'):
-            with open('timedactions.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('timedactions.json')):
+            with open(data_path('timedactions.json')) as f: data = _json.load(f)
         guild = bot_instance.get_guild(int(server_id)) if bot_instance else None
         roles = []
         for e in data.get('timed_roles', []):
@@ -2597,8 +2605,8 @@ def embeds_list(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('saved_embeds.json'):
-            with open('saved_embeds.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('saved_embeds.json')):
+            with open(data_path('saved_embeds.json')) as f: data = _json.load(f)
         templates = data.get(str(server_id), {})
         return jsonify({'templates': [{'name': k, **v} for k, v in templates.items()]})
     except Exception as e:
@@ -2642,12 +2650,12 @@ def logging_config_api(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('logging_config.json'):
-            with open('logging_config.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('logging_config.json')):
+            with open(data_path('logging_config.json')) as f: data = _json.load(f)
         if request.method == 'POST':
             body = request.json or {}
             data.setdefault(str(server_id), {}).update(body)
-            with open('logging_config.json', 'w') as f: _json.dump(data, f, indent=2)
+            with open(data_path('logging_config.json'), 'w') as f: _json.dump(data, f, indent=2)
             return jsonify({'success': True})
         return jsonify(data.get(str(server_id), {}))
     except Exception as e:
@@ -2878,8 +2886,8 @@ def message_heatmap(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('activity_heatmap.json'):
-            with open('activity_heatmap.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('activity_heatmap.json')):
+            with open(data_path('activity_heatmap.json')) as f: data = _json.load(f)
         guild_data = data.get(str(server_id), {})
         # Build 7x24 grid
         days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
@@ -2902,8 +2910,8 @@ def get_notifications(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('notifications.json'):
-            with open('notifications.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('notifications.json')):
+            with open(data_path('notifications.json')) as f: data = _json.load(f)
         notifs = data.get(str(server_id), [])
         return jsonify({'notifications': notifs[-30:][::-1]})
     except Exception as e:
@@ -2916,10 +2924,10 @@ def clear_notifications(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('notifications.json'):
-            with open('notifications.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('notifications.json')):
+            with open(data_path('notifications.json')) as f: data = _json.load(f)
         data[str(server_id)] = []
-        with open('notifications.json', 'w') as f: _json.dump(data, f)
+        with open(data_path('notifications.json'), 'w') as f: _json.dump(data, f)
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2968,12 +2976,12 @@ def prefix_config(server_id):
     try:
         import json as _json
         data = {}
-        if os.path.exists('prefix_config.json'):
-            with open('prefix_config.json') as f: data = _json.load(f)
+        if os.path.exists(data_path('prefix_config.json')):
+            with open(data_path('prefix_config.json')) as f: data = _json.load(f)
         if request.method == 'POST':
             prefix = (request.json or {}).get('prefix', '!')
             data[str(server_id)] = prefix
-            with open('prefix_config.json', 'w') as f: _json.dump(data, f)
+            with open(data_path('prefix_config.json'), 'w') as f: _json.dump(data, f)
             # Update bot if possible
             if bot_instance:
                 try:

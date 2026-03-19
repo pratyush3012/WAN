@@ -2518,7 +2518,7 @@ async function startGiveaway(){
   const winners = document.getElementById('gwWinners').value;
   const channel = document.getElementById('gwChannel').value;
   if(!prize||!duration) return showToast('Fill in prize and duration','error');
-  const r = await fetch(`/api/server/${sid}/giveaway/start`,{
+  const r = await apiFetch(`/api/server/${sid}/giveaway/start`,{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({prize,duration,winners:parseInt(winners),channel_id:channel||null})
   });
@@ -2531,7 +2531,7 @@ async function startGiveaway(){
 async function loadGiveaways(){
   const sid = currentServer;
   if(!sid) return;
-  const r = await fetch(`/api/server/${sid}/giveaways`);
+  const r = await apiFetch(`/api/server/${sid}/giveaways`);
   const d = await r.json();
   const el = document.getElementById('giveawaysList');
   if(!d.giveaways||!d.giveaways.length){
@@ -2556,7 +2556,7 @@ async function loadGiveaways(){
 }
 async function endGiveaway(msgId){
   const sid = currentServer;
-  const r = await fetch(`/api/server/${sid}/giveaway/end`,{
+  const r = await apiFetch(`/api/server/${sid}/giveaway/end`,{
     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message_id:msgId})
   });
   const d = await r.json();
@@ -2565,7 +2565,7 @@ async function endGiveaway(msgId){
 }
 async function rerollGiveaway(msgId){
   const sid = currentServer;
-  const r = await fetch(`/api/server/${sid}/giveaway/reroll`,{
+  const r = await apiFetch(`/api/server/${sid}/giveaway/reroll`,{
     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message_id:msgId})
   });
   const d = await r.json();
@@ -2581,7 +2581,7 @@ async function createPoll(){
     .map(id=>document.getElementById(id).value.trim()).filter(Boolean);
   const duration = document.getElementById('pollDuration').value.trim();
   if(!question||opts.length<2) return showToast('Need a question and at least 2 options','error');
-  const r = await fetch(`/api/server/${sid}/poll/create`,{
+  const r = await apiFetch(`/api/server/${sid}/poll/create`,{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({question,options:opts,duration:duration||null})
   });
@@ -3157,7 +3157,7 @@ function initSocket(){
 async function loadTicketsConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/tickets/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/tickets/config`);
     const d=await r.json();
     if(d.transcript_channel)document.getElementById('ticketTranscriptCh').value=d.transcript_channel;
     if(d.support_role_id)document.getElementById('ticketSupportRole').value=d.support_role_id;
@@ -3171,7 +3171,7 @@ async function loadTicketsConfig(){
 async function saveTicketConfig(){
   if(!currentServer)return;
   const body={transcript_channel:document.getElementById('ticketTranscriptCh').value,support_role_id:document.getElementById('ticketSupportRole').value};
-  const r=await fetch(`/api/server/${currentServer}/tickets/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/tickets/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'Ticket config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
@@ -3181,7 +3181,7 @@ function openAddTicketCat(){notify('Use /ticket-category-add in Discord to add c
 async function loadTags(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/tags`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/tags`);
     const d=await r.json();
     const el=document.getElementById('tagsList');
     if(!d.tags||!d.tags.length){el.innerHTML='<p style="color:var(--text-muted)">No tags yet.</p>';return;}
@@ -3191,7 +3191,7 @@ async function loadTags(){
 }
 async function deleteTag(name){
   if(!confirm('Delete tag '+name+'?'))return;
-  const r=await fetch(`/api/server/${currentServer}/tags/delete/${encodeURIComponent(name)}`,{method:'DELETE',headers:{'X-Session-Token':sessionToken}});
+  const r=await apiFetch(`/api/server/${currentServer}/tags/delete/${encodeURIComponent(name)}`,{method:'DELETE',headers:{}});
   const d=await r.json();
   notify(d.success?'Tag deleted':'Error: '+d.error,d.success?'success':'danger');
   loadTags();
@@ -3210,7 +3210,7 @@ function openAddTag(){
     const content=document.getElementById('tagContent').value.trim();
     const aliases=document.getElementById('tagAliases').value;
     if(!name||!content){notify('Name and content required','warning');return;}
-    fetch(`/api/server/${currentServer}/tags/add`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
+    apiFetch(`/api/server/${currentServer}/tags/add`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name,content,aliases:aliases.split(',').map(a=>a.trim()).filter(Boolean)})})
       .then(r=>r.json()).then(d=>{notify(d.success?'Tag created!':'Error: '+d.error,d.success?'success':'danger');loadTags();closeModal();});
   });
@@ -3220,7 +3220,7 @@ function openAddTag(){
 async function loadScheduler(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/scheduler/list`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/scheduler/list`);
     const d=await r.json();
     const el=document.getElementById('scheduleList');
     if(!d.jobs||!d.jobs.length){el.innerHTML='<p style="color:var(--text-muted)">No scheduled messages.</p>';return;}
@@ -3229,7 +3229,7 @@ async function loadScheduler(){
   }catch(e){}
 }
 async function removeSchedule(id){
-  const r=await fetch(`/api/server/${currentServer}/scheduler/remove/${id}`,{method:'DELETE',headers:{'X-Session-Token':sessionToken}});
+  const r=await apiFetch(`/api/server/${currentServer}/scheduler/remove/${id}`,{method:'DELETE',headers:{}});
   const d=await r.json();
   notify(d.success?'Removed':'Error: '+d.error,d.success?'success':'danger');
   loadScheduler();
@@ -3252,7 +3252,7 @@ function openAddSchedule(){
     const when=document.getElementById('schWhen').value.trim();
     const recur=document.getElementById('schRecur').value;
     if(!chId||!msg||!when){notify('Fill all fields','warning');return;}
-    fetch(`/api/server/${currentServer}/scheduler/add`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
+    apiFetch(`/api/server/${currentServer}/scheduler/add`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({channel_id:chId,message:msg,when,recur})})
       .then(r=>r.json()).then(d=>{notify(d.success?'Scheduled!':'Error: '+d.error,d.success?'success':'danger');loadScheduler();closeModal();});
   });
@@ -3262,7 +3262,7 @@ function openAddSchedule(){
 async function loadServerStats(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/serverstats`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/serverstats`);
     const d=await r.json();
     const el=document.getElementById('statChannelList');
     if(!d.channels||!d.channels.length){el.innerHTML='<p style="color:var(--text-muted)">No stat channels yet.</p>';return;}
@@ -3273,7 +3273,7 @@ async function loadServerStats(){
 async function addStatChannel(){
   if(!currentServer)return;
   const stat=document.getElementById('statType').value;
-  const r=await fetch(`/api/server/${currentServer}/serverstats/add`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify({stat})});
+  const r=await apiFetch(`/api/server/${currentServer}/serverstats/add`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stat})});
   const d=await r.json();
   notify(d.success?'Stat channel created!':'Error: '+d.error,d.success?'success':'danger');
   loadServerStats();
@@ -3283,7 +3283,7 @@ async function addStatChannel(){
 async function loadVoiceXP(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/voicexp/leaderboard`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/voicexp/leaderboard`);
     const d=await r.json();
     const el=document.getElementById('voiceXPList');
     if(!d.leaderboard||!d.leaderboard.length){el.innerHTML='<p style="color:var(--text-muted)">No voice XP data yet.</p>';return;}
@@ -3297,7 +3297,7 @@ async function loadVoiceXP(){
 async function loadModLog(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/modlog/cases`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/modlog/cases`);
     const d=await r.json();
     const el=document.getElementById('modlogCases');
     if(!d.cases||!d.cases.length){el.innerHTML='<p style="color:var(--text-muted)">No cases yet.</p>';return;}
@@ -3309,7 +3309,7 @@ async function loadModLog(){
 async function loadModLogConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/modlog/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/modlog/config`);
     const d=await r.json();
     if(d.log_channel)document.getElementById('modlogChannel').value=d.log_channel;
   }catch(e){}
@@ -3320,7 +3320,7 @@ async function saveModLogConfig(){
   const count=document.getElementById('modlogThresholdCount').value;
   const action=document.getElementById('modlogThresholdAction').value;
   const body={log_channel:ch,thresholds:{[count]:action}};
-  const r=await fetch(`/api/server/${currentServer}/modlog/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/modlog/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'Mod log config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
@@ -3329,7 +3329,7 @@ async function saveModLogConfig(){
 async function loadAutoModConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/automod/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/automod/config`);
     const d=await r.json();
     const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=String(val);};
     set('am_spam',d.spam_enabled);set('am_spam_threshold',d.spam_threshold);
@@ -3352,7 +3352,7 @@ async function saveAutoModConfig(){
     emoji_flood_enabled:g('am_emoji').value==='true',slowmode_auto:g('am_slowmode').value==='true',
     bad_words_enabled:g('am_badwords').value==='true',log_channel:g('am_log_channel').value||null,
   };
-  const r=await fetch(`/api/server/${currentServer}/automod/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/automod/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'AutoMod config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
@@ -3361,7 +3361,7 @@ async function saveAutoModConfig(){
 async function loadAntiRaidConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/antiraid/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/antiraid/config`);
     const d=await r.json();
     const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=String(val);};
     set('ar_enabled',d.enabled);set('ar_threshold',d.join_threshold);set('ar_window',d.join_window);
@@ -3378,7 +3378,7 @@ async function saveAntiRaidConfig(){
     alt_min_age_days:parseInt(g('ar_alt_age').value),alt_action:g('ar_alt_action').value,
     log_channel:g('ar_log_channel').value||null,
   };
-  const r=await fetch(`/api/server/${currentServer}/antiraid/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/antiraid/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'Anti-raid config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
@@ -3387,7 +3387,7 @@ async function saveAntiRaidConfig(){
 async function loadSmartModConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/smartmod/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/smartmod/config`);
     const d=await r.json();
     document.getElementById('sm_enabled').value=String(d.enabled!==false);
     if(d.log_channel)document.getElementById('sm_log_channel').value=d.log_channel;
@@ -3402,14 +3402,14 @@ async function saveSmartModConfig(){
     log_channel:document.getElementById('sm_log_channel').value||null,
     strike_decay_days:parseInt(document.getElementById('sm_decay').value),
   };
-  const r=await fetch(`/api/server/${currentServer}/smartmod/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/smartmod/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'SmartMod config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
 async function loadSmartModStrikes(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/smartmod/strikes`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/smartmod/strikes`);
     const d=await r.json();
     const el=document.getElementById('smStrikesList');
     if(!d.strikes||!d.strikes.length){el.innerHTML='<p style="color:var(--text-muted)">No active strikes.</p>';return;}
@@ -3420,7 +3420,7 @@ async function loadSmartModStrikes(){
 }
 async function clearSmartModStrikes(uid,name){
   if(!confirm('Clear all strikes for '+name+'?'))return;
-  const r=await fetch(`/api/server/${currentServer}/smartmod/clearstrikes/${uid}`,{method:'DELETE',headers:{'X-Session-Token':sessionToken}});
+  const r=await apiFetch(`/api/server/${currentServer}/smartmod/clearstrikes/${uid}`,{method:'DELETE',headers:{}});
   const d=await r.json();
   notify(d.success?'Strikes cleared':'Error: '+d.error,d.success?'success':'danger');
   loadSmartModStrikes();
@@ -3431,7 +3431,7 @@ const CG_PROFILES=['voting','announcements','rules','media','introductions','bot
 async function loadChannelGuardConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/channelguard/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/channelguard/config`);
     const d=await r.json();
     document.getElementById('cg_enabled').value=String(!!d.enabled);
     document.getElementById('cg_auto').value=String(d.auto_detect!==false);
@@ -3454,7 +3454,7 @@ async function saveChannelGuardConfig(){
     auto_detect:document.getElementById('cg_auto').value==='true',
     log_channel:document.getElementById('cg_log_channel').value||null,
   };
-  const r=await fetch(`/api/server/${currentServer}/channelguard/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/channelguard/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'Channel Guard config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
@@ -3463,7 +3463,7 @@ async function scanChannelGuard(){
   const el=document.getElementById('cgScanList');
   el.innerHTML='<p style="color:var(--text-muted)">Scanning...</p>';
   try{
-    const r=await fetch(`/api/server/${currentServer}/channelguard/scan`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/channelguard/scan`);
     const d=await r.json();
     if(!d.channels||!d.channels.length){el.innerHTML='<p style="color:var(--text-muted)">No channels auto-detected. Use manual rules below.</p>';return;}
     el.innerHTML='<table class="table"><thead><tr><th>Channel</th><th>Detected Profile</th><th>Rule</th></tr></thead><tbody>'+
@@ -3471,7 +3471,7 @@ async function scanChannelGuard(){
   }catch(e){el.innerHTML='<p style="color:var(--danger)">Error scanning channels.</p>';}
 }
 async function removeChannelRule(cid){
-  const r=await fetch(`/api/server/${currentServer}/channelguard/remove/${cid}`,{method:'DELETE',headers:{'X-Session-Token':sessionToken}});
+  const r=await apiFetch(`/api/server/${currentServer}/channelguard/remove/${cid}`,{method:'DELETE',headers:{}});
   const d=await r.json();
   notify(d.success?'Rule removed':'Error: '+d.error,d.success?'success':'danger');
   loadChannelGuardConfig();
@@ -3490,7 +3490,7 @@ function openAddChannelRule(){
     const cid=document.getElementById('cgRuleCh').value;
     const profile=document.getElementById('cgRuleProfile').value;
     if(!cid){notify('Select a channel','warning');return;}
-    fetch(`/api/server/${currentServer}/channelguard/set`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
+    apiFetch(`/api/server/${currentServer}/channelguard/set`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({channel_id:cid,profile})})
       .then(r=>r.json()).then(d=>{notify(d.success?'Rule added!':'Error: '+d.error,d.success?'success':'danger');loadChannelGuardConfig();closeModal();});
   });
@@ -3500,7 +3500,7 @@ function openAddChannelRule(){
 async function loadJoinLeaveConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/joinleave/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/joinleave/config`);
     const d=await r.json();
     document.getElementById('jl_dm_enabled').value=String(!!d.join_dm_enabled);
     document.getElementById('jl_role_persist').value=String(!!d.role_persistence);
@@ -3516,7 +3516,7 @@ async function saveJoinLeaveConfig(){
     join_dm_title:document.getElementById('jl_dm_title').value,
     join_dm_message:document.getElementById('jl_dm_message').value,
   };
-  const r=await fetch(`/api/server/${currentServer}/joinleave/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/joinleave/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'Join DM config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
@@ -3525,7 +3525,7 @@ async function saveJoinLeaveConfig(){
 async function loadStarboardConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/starboard/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/starboard/config`);
     const d=await r.json();
     document.getElementById('sb_enabled').value=String(d.enabled!==false);
     if(d.threshold)document.getElementById('sb_threshold').value=d.threshold;
@@ -3539,7 +3539,7 @@ async function saveStarboardConfig(){
     threshold:parseInt(document.getElementById('sb_threshold').value),
     channel_id:document.getElementById('sb_channel').value||null,
   };
-  const r=await fetch(`/api/server/${currentServer}/starboard/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/starboard/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'Starboard config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
@@ -3548,7 +3548,7 @@ async function saveStarboardConfig(){
 async function loadTimedActions(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/timedactions/list`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/timedactions/list`);
     const d=await r.json();
     const el=document.getElementById('timedActionsList');
     const roles=d.timed_roles||[];
@@ -3573,7 +3573,7 @@ async function loadTimedActions(){
 async function loadEmbedTemplates(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/embeds`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/embeds`);
     const d=await r.json();
     const el=document.getElementById('embedTemplatesList');
     if(!d.templates||!d.templates.length){el.innerHTML='<p style="color:var(--text-muted)">No saved templates.</p>';return;}
@@ -3607,7 +3607,7 @@ async function postEmbed(){
     footer:document.getElementById('eb_footer').value,
     author:document.getElementById('eb_author').value,
   };
-  const r=await fetch(`/api/server/${currentServer}/embeds/post`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},
+  const r=await apiFetch(`/api/server/${currentServer}/embeds/post`,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({channel_id:chId,embed:embedData})});
   const d=await r.json();
   notify(d.success?'Embed posted!':'Error: '+d.error,d.success?'success':'danger');
@@ -3622,7 +3622,7 @@ const LOG_CATEGORIES=['message_delete','message_edit','message_bulk_delete','mem
 async function loadLogConfig(){
   if(!currentServer)return;
   try{
-    const r=await fetch(`/api/server/${currentServer}/logging/config`,{headers:{'X-Session-Token':sessionToken}});
+    const r=await apiFetch(`/api/server/${currentServer}/logging/config`);
     const d=await r.json();
     if(d.ch_default)document.getElementById('log_default').value=d.ch_default;
     const grid=document.getElementById('logCategoryGrid');
@@ -3648,7 +3648,7 @@ async function saveLogConfig(){
     const el=document.getElementById('log_'+cat);
     if(el&&el.value)body['ch_'+cat]=el.value;
   });
-  const r=await fetch(`/api/server/${currentServer}/logging/config`,{method:'POST',headers:{'Content-Type':'application/json','X-Session-Token':sessionToken},body:JSON.stringify(body)});
+  const r=await apiFetch(`/api/server/${currentServer}/logging/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
   notify(d.success?'Logging config saved!':'Error: '+d.error,d.success?'success':'danger');
 }
