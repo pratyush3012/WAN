@@ -1039,28 +1039,43 @@ def broadcast_update(event_type: str, data: dict, room: str = None):
     except Exception as e:
         logger.error(f"Error broadcasting update: {e}")
 
-def start_web_dashboard(bot, host='0.0.0.0', port=5000):
-    """Start the enhanced web dashboard"""
+def start_web_dashboard(bot, host='0.0.0.0', port=5000, ready_event=None):
+    """Start the enhanced web dashboard. Signals ready_event once the port is bound."""
     global bot_instance
     bot_instance = bot
 
     logger.info(f"🌐 Starting Enhanced Web Dashboard on http://{host}:{port}")
 
-    def _run():
-        # Try eventlet first (production), fall back to werkzeug threaded
-        try:
-            import eventlet.wsgi
-            listener = eventlet.listen((host, port))
-            logger.info(f"✅ Web server bound to port {port} via eventlet")
-            eventlet.wsgi.server(listener, app, log_output=False)
-        except Exception as e:
-            logger.warning(f"eventlet failed ({e}), trying werkzeug...")
-            try:
-                app.run(host=host, port=port, threaded=True, use_reloader=False)
-            except Exception as e2:
-                logger.error(f"werkzeug also failed: {e2}")
+    try:
+        import eventlet.wsgi
 
-    threading.Thread(target=_run, daemon=True).start()
+        # Create the listener FIRST (this is the actual bind call)
+        listener = eventlet.listen((host, port))
+        logger.info(f"✅ Web server bound to port {port} via eventlet")
+
+        # Signal that the port is bound — Render health check can now succeed
+        if ready_event:
+            ready_event.set()
+
+        # Serve forever (blocks this thread)
+        eventlet.wsgi.server(listener, app, log_output=False)
+
+    except Exception as e:
+        logger.error(f"❌ eventlet failed: {e}")
+        # Signal anyway so main() doesn't hang
+        if ready_event:
+            ready_event.set()
+        # Fallback: werkzeug threaded
+        try:
+            logger.warning("Falling back to werkzeug threaded server...")
+            app.run(host=host, port=port, threaded=True, use_reloader=False)
+        except Exception as e2:
+            logger.error(f"werkzeug also failed: {e2}")
+
+
+def start_web_dashboard_with_socket(bot, sock):
+    """Legacy — kept for compatibility, delegates to start_web_dashboard."""
+    start_web_dashboard(bot)
 
 if __name__ == '__main__':
     print("⚠️  Run this through bot.py, not directly!")
@@ -1441,7 +1456,8 @@ def update_server_settings(server_id):
 # Get server members list
 @app.route('/api/server/<server_id>/members')
 @require_auth
-def get_server_members(server_id):    """Get list of server members"""
+def get_server_members(server_id):
+    """Get list of server members"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503

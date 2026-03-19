@@ -391,33 +391,31 @@ class GamingBot(commands.Bot):
         await super().close()
     
     def start_web_dashboard(self):
-        """Start web dashboard in separate thread"""
-        try:
-            from web_dashboard_enhanced import start_web_dashboard
-            dashboard_thread = threading.Thread(
-                target=start_web_dashboard,
-                args=(self,),
-                kwargs={
-                    'host': os.getenv('DASHBOARD_HOST', '0.0.0.0'),
-                    'port': int(os.getenv('PORT', os.getenv('DASHBOARD_PORT', 5000)))
-                },
-                daemon=True
-            )
-            dashboard_thread.start()
-            logger.info("🌐 Web dashboard started successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to start web dashboard: {e}")
-            logger.info("ℹ️ Bot will continue without web dashboard")
+        """Kept for compatibility — actual startup is handled in main()"""
+        pass
 
 async def main():
+    port = int(os.getenv('PORT', os.getenv('DASHBOARD_PORT', 5000)))
+    host = os.getenv('DASHBOARD_HOST', '0.0.0.0')
+
     bot = GamingBot()
 
-    # Start Flask dashboard FIRST so the port is bound before the bot connects.
-    # Flask/eventlet binds immediately; Render health check will pass right away.
     if os.getenv('ENABLE_DASHBOARD', 'true').lower() == 'true':
-        bot.start_web_dashboard()
-        import time
-        time.sleep(2)  # give eventlet a moment to bind the socket
+        # Import here so eventlet.monkey_patch() runs before asyncio starts
+        from web_dashboard_enhanced import start_web_dashboard
+        ready = threading.Event()
+
+        def _start():
+            start_web_dashboard(bot, host=host, port=port, ready_event=ready)
+
+        t = threading.Thread(target=_start, daemon=True)
+        t.start()
+
+        # Wait up to 15s for Flask to actually bind — then proceed regardless
+        if not ready.wait(timeout=15):
+            logger.warning("⚠️ Dashboard did not signal ready in 15s — continuing anyway")
+        else:
+            logger.info("✅ Dashboard is up and serving")
 
     try:
         async with bot:
