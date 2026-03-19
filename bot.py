@@ -410,36 +410,14 @@ class GamingBot(commands.Bot):
             logger.info("ℹ️ Bot will continue without web dashboard")
 
 async def main():
-    port = int(os.getenv('PORT', os.getenv('DASHBOARD_PORT', 5000)))
-    host = os.getenv('DASHBOARD_HOST', '0.0.0.0')
-
-    # Step 1: Bind the port IMMEDIATELY with a tiny HTTP server so Render's
-    # health check passes within the first second. Flask replaces it shortly after.
-    import http.server, socket, time
-
-    class _QuickHandler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):
-            body = b'{"status":"starting"}'
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        def log_message(self, *a): pass  # silence access logs
-
-    quick_server = http.server.HTTPServer((host, port), _QuickHandler)
-    quick_thread = threading.Thread(target=quick_server.serve_forever, daemon=True)
-    quick_thread.start()
-    logger.info(f"⚡ Quick HTTP server bound to port {port} (Render health check ready)")
-
-    # Step 2: Start the real Flask dashboard (replaces quick server on same port after shutdown)
     bot = GamingBot()
+
+    # Start Flask dashboard FIRST so the port is bound before the bot connects.
+    # Flask/eventlet binds immediately; Render health check will pass right away.
     if os.getenv('ENABLE_DASHBOARD', 'true').lower() == 'true':
-        # Shut down quick server and hand port to Flask
-        time.sleep(1)
-        quick_server.shutdown()
         bot.start_web_dashboard()
-        time.sleep(1)  # let Flask bind
+        import time
+        time.sleep(2)  # give eventlet a moment to bind the socket
 
     try:
         async with bot:
