@@ -66,63 +66,81 @@ class GamingBot(commands.Bot):
         except Exception as e:
             logger.critical(f"❌ Failed to initialize database: {e}")
             raise
-        
-        # Load cogs — Discord hard limit is 100 slash commands
-        cogs = [
-            # ── Core ──────────────────────────────────────────────────────
-            'cogs.admin',           # addrole, removerole, setlogchannel, togglemodule, config, reload
-            'cogs.moderation',      # kick, ban, unban, timeout, lock, unlock, purge, lockdown
-            'cogs.utility',         # ping, uptime
-            'cogs.logging',         # background event logging
-            'cogs.roles',           # slowmode, nickname, setup-roles
-            # ── Automation ────────────────────────────────────────────────
-            'cogs.automod',         # automod-config, automod-toggle, automod-badword-add/remove
-            'cogs.autoresponder',   # ar-add, ar-remove, ar-list
-            'cogs.welcome',         # welcome-set, goodbye-set, autorole, welcome-test
-            'cogs.reactionroles',   # rr-add, rr-remove, rr-list, rr-panel
-            'cogs.leveling',        # rank, levels, set-level-role, xp-channel
-            'cogs.tickets',         # ticket-setup, ticket-close, ticket-add, ticket-remove
-            'cogs.tempvoice',       # tempvoice-setup, voice-lock, voice-unlock, voice-limit, voice-rename
-            # ── Features ──────────────────────────────────────────────────
-            # 'cogs.music',          # disabled — music being rebuilt
-            'cogs.translation',     # translate, languages
-            'cogs.roblox',          # roblox-link, roblox-stats, clan-stats, roblox-leaderboard, roblox-unlink, roblox-sync-bloxlink
-            'cogs.giveaways',       # giveaway start/end/reroll/list
-            'cogs.polls',           # poll, poll-end
-            'cogs.afk',             # afk
-            'cogs.reminders',       # remind, reminders
-            'cogs.info',            # serverinfo, userinfo, roleinfo, avatar, banner, ping, botinfo
-            'cogs.modlog',          # warn, warnings, clearwarnings, tempban, case, modhistory, note, modlog-setup, threshold-set
-            'cogs.serverstats',     # serverstats-setup, serverstats-update
-            'cogs.scheduler',       # schedule-add, schedule-list, schedule-remove
-            'cogs.highlights',      # highlight-add, highlight-remove, highlight-list, highlight-clear
-            'cogs.antiraid',        # antiraid-config, antiraid-toggle, antiraid-status
-            'cogs.tags',            # tag, tag-create, tag-edit, tag-delete, tag-list
-            'cogs.voicexp',         # voicexp-rank, voicexp-leaderboard, voicexp-config
-            'cogs.smartmod',        # smartmod-toggle, smartmod-setlog, smartmod-strikes, smartmod-clearstrikes
-            'cogs.channelguard',    # channelguard-enable/disable, channelguard-set, channelguard-scan
-            'cogs.joinleave',       # join-dm-set, join-dm-test, role-persistence
-            'cogs.starboard',       # starboard-setup, starboard-toggle, starboard-threshold
-            'cogs.timedactions',    # mute, unmute, role-add-timed, softban, massban
-            'cogs.embedbuilder',    # embed, embed-save, embed-post, embed-list
-            # ── Dashboard ─────────────────────────────────────────────────
-            'cogs.webdashboard',    # web
-            'cogs.dashboard',       # wan, dashboard, help
-            'cogs.dashboard_custom', # custom commands from web dashboard
-            'cogs.botanalyzer',     # bot-scan, bot-report — learns from other bots
+
+        # Discord global slash command limit is 100.
+        # Overflow cogs are registered guild-only (instant, no limit).
+        # Guild ID for VAMP CLAN — also read from env so it works on any server.
+        GUILD_ID = int(os.getenv('GUILD_ID', '1462688504436752489'))
+        self._home_guild = discord.Object(id=GUILD_ID)
+
+        # Global cogs — these slash commands appear in every server (~99 commands)
+        global_cogs = [
+            'cogs.admin',         # 6
+            'cogs.moderation',    # 8
+            'cogs.utility',       # 1
+            'cogs.logging',       # 3
+            'cogs.roles',         # 4
+            'cogs.automod',       # 4
+            'cogs.autoresponder', # 3
+            'cogs.welcome',       # 4
+            'cogs.reactionroles', # 4
+            'cogs.leveling',      # 4
+            'cogs.tickets',       # 6
+            'cogs.tempvoice',     # 5
+            'cogs.translation',   # 2
+            'cogs.roblox',        # 6
+            'cogs.giveaways',     # 3
+            'cogs.polls',         # 2
+            'cogs.afk',           # 1
+            'cogs.reminders',     # 2
+            'cogs.info',          # 7
+            'cogs.modlog',        # 9
+            'cogs.scheduler',     # 3
+            'cogs.highlights',    # 4
+            'cogs.antiraid',      # 4
+            'cogs.webdashboard',  # 1
+            'cogs.dashboard_custom',  # 0
+        ]  # total: ~97
+
+        # Guild-only cogs — slash commands only appear in GUILD_ID (no global limit used)
+        guild_cogs = [
+            'cogs.serverstats',   # 3
+            'cogs.tags',          # 6
+            'cogs.voicexp',       # 4
+            'cogs.smartmod',      # 7
+            'cogs.channelguard',  # 7
+            'cogs.joinleave',     # 4
+            'cogs.starboard',     # 4
+            'cogs.timedactions',  # 6
+            'cogs.embedbuilder',  # 5
+            'cogs.dashboard',     # 3
+            'cogs.botanalyzer',   # 2
         ]
-        
-        self.cog_errors = {}  # store load errors for /api/health
-        for cog in cogs:
+
+        self.cog_errors = {}
+
+        for cog in global_cogs:
             try:
                 await self.load_extension(cog)
                 logger.info(f'✅ Loaded {cog}')
             except Exception as e:
                 import traceback
-                err = traceback.format_exc()
-                logger.error(f'❌ Failed to load {cog}: {e}\n{err}')
                 self.cog_errors[cog] = str(e)
-        
+                logger.error(f'❌ Failed to load {cog}: {e}\n{traceback.format_exc()}')
+
+        for cog in guild_cogs:
+            try:
+                await self.load_extension(cog)
+                # Copy all global commands from this cog into the guild tree
+                cog_obj = self.cogs.get(cog.split('.')[-1].title().replace('_', ''))
+                # Use tree.copy_global_to to register as guild commands
+                self.tree.copy_global_to(guild=self._home_guild)
+                logger.info(f'✅ Loaded {cog} (guild-only)')
+            except Exception as e:
+                import traceback
+                self.cog_errors[cog] = str(e)
+                logger.error(f'❌ Failed to load {cog}: {e}\n{traceback.format_exc()}')
+
         # Set up global error handler
         self.tree.error(self.on_app_command_error)
     
@@ -331,7 +349,10 @@ class GamingBot(commands.Bot):
         try:
             synced = await self.tree.sync()
             logger.info(f'✅ Synced {len(synced)} slash commands globally')
-            logger.info('⚠️ Note: Global commands may take up to 1 hour to appear in all servers')
+            # Also sync guild-specific commands
+            if hasattr(self, '_home_guild'):
+                guild_synced = await self.tree.sync(guild=self._home_guild)
+                logger.info(f'✅ Synced {len(guild_synced)} slash commands to home guild')
         except Exception as e:
             logger.error(f'❌ Failed to sync commands: {e}')
         

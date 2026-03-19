@@ -143,7 +143,7 @@ class BotAnalyzer(commands.Cog):
 
     @app_commands.command(name='bot-scan', description='Scan all bots in this server and show what they do')
     @app_commands.default_permissions(manage_guild=True)
-    async def bot_scan(self, interaction: discord.Interaction):
+    async def scan_bots(self, interaction: discord.Interaction):
         """Scan all bots in the server."""
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild

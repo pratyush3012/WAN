@@ -19,3 +19,5 @@ services:
         sync: false
       - key: DASHBOARD_URL
         sync: false
+      - key: GUILD_ID
+        value: "1462688504436752489"
