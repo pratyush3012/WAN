@@ -108,6 +108,8 @@ class GamingBot(commands.Bot):
             # ── Dashboard ─────────────────────────────────────────────────
             'cogs.webdashboard',    # web
             'cogs.dashboard',       # wan, dashboard, help
+            'cogs.dashboard_custom', # custom commands from web dashboard
+            'cogs.botanalyzer',     # bot-scan, bot-report — learns from other bots
         ]
         
         self.cog_errors = {}  # store load errors for /api/health

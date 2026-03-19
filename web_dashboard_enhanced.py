@@ -13,7 +13,7 @@ from discord.ext import commands
 import asyncio
 import threading
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import secrets
 import bcrypt
@@ -250,10 +250,13 @@ def bot_status():
     """Get bot status"""
     try:
         if bot_instance and bot_instance.is_ready():
-            # Fix timezone issue - make both timezone-aware
+            # Fix timezone issue - always use UTC
             if hasattr(bot_instance, 'start_time'):
-                now = datetime.now(bot_instance.start_time.tzinfo)
-                uptime = now - bot_instance.start_time
+                now = datetime.now(timezone.utc)
+                start = bot_instance.start_time
+                if start.tzinfo is None:
+                    start = start.replace(tzinfo=timezone.utc)
+                uptime = now - start
             else:
                 uptime = timedelta(0)
             
@@ -455,8 +458,47 @@ def health_check():
     return jsonify({'status': status, 'checks': checks})
 
 
-@app.route('/api/server/<server_id>/audit')
+@app.route('/api/server/<server_id>/bot-analyzer')
 @require_auth
+def get_bot_analyzer(server_id):
+    """Get bot analyzer data for a server"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        analyzer_cog = bot_instance.get_cog('BotAnalyzer')
+        if not analyzer_cog:
+            return jsonify({'error': 'BotAnalyzer cog not loaded'}), 503
+
+        raw = analyzer_cog.get_guild_data(int(server_id))
+        bots = []
+        for bid, entry in raw.items():
+            member = guild.get_member(int(bid))
+            cmds = sorted(entry.get('commands', {}).items(), key=lambda x: x[1].get('count', 0), reverse=True)
+            bots.append({
+                'id': bid,
+                'name': entry.get('name', f'Bot {bid}'),
+                'display_name': entry.get('display_name', entry.get('name', f'Bot {bid}')),
+                'avatar': entry.get('avatar') or (str(member.display_avatar.url) if member else None),
+                'online': str(member.status) != 'offline' if member else False,
+                'message_count': entry.get('message_count', 0),
+                'command_count': len(entry.get('commands', {})),
+                'prefixes': list(entry.get('prefixes', [])),
+                'top_commands': [{'name': k, 'count': v.get('count', 0), 'example': v.get('example_response', '')[:100]} for k, v in cmds[:10]],
+                'first_seen': entry.get('first_seen', ''),
+                'last_seen': entry.get('last_seen', ''),
+            })
+        bots.sort(key=lambda x: x['message_count'], reverse=True)
+        return jsonify({'bots': bots, 'total': len(bots), 'timestamp': datetime.utcnow().isoformat()})
+    except Exception as e:
+        logger.error(f"Bot analyzer error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+
 def get_audit_log(server_id):
     """Get recent audit log events for a server"""
     audit_log = dashboard_cache.get('audit_log', {}).get(str(server_id), [])
