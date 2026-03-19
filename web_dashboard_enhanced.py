@@ -598,7 +598,8 @@ def health_check():
         'timestamp': datetime.utcnow().isoformat()
     }
     status = 'healthy' if checks['bot'] else 'degraded'
-    return jsonify({'status': status, 'checks': checks})
+    # Always return 200 so Render health checks pass even while bot is connecting
+    return jsonify({'status': status, 'checks': checks}), 200
 
 
 @app.route('/api/server/<server_id>/bot-analyzer')

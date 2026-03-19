@@ -1,6 +1,7 @@
 """
 WAN Bot - Translation Cog
-React 🌐 on ANY message → translates to English + language picker buttons.
+React with 🌐 to translate any message to English instantly.
+Use /translate for custom language.
 """
 import discord
 from discord import app_commands
@@ -9,109 +10,171 @@ from deep_translator import GoogleTranslator
 import asyncio
 import logging
 import time
+from collections import deque
 
 logger = logging.getLogger('discord_bot.translation')
 
 
-class LangView(discord.ui.View):
-    LANGS = [
-        ("🇺🇸","en","English"),("🇪🇸","es","Spanish"),("🇫🇷","fr","French"),
-        ("🇩🇪","de","German"),("🇯🇵","ja","Japanese"),("🇰🇷","ko","Korean"),
-        ("🇷🇺","ru","Russian"),("🇮🇳","hi","Hindi"),("🇧🇷","pt","Portuguese"),
-        ("🇨🇳","zh-CN","Chinese"),
+class TranslationLanguageView(discord.ui.View):
+    """Shown after 🌐 reaction — lets user pick a target language."""
+
+    LANGUAGES = [
+        ("🇺🇸", "en",  "English"),
+        ("🇪🇸", "es",  "Spanish"),
+        ("🇫🇷", "fr",  "French"),
+        ("🇩🇪", "de",  "German"),
+        ("🇯🇵", "ja",  "Japanese"),
+        ("🇰🇷", "ko",  "Korean"),
+        ("🇷🇺", "ru",  "Russian"),
+        ("🇮🇳", "hi",  "Hindi"),
+        ("🇧🇷", "pt",  "Portuguese"),
+        ("🇨🇳", "zh-CN", "Chinese"),
     ]
-    def __init__(self, text: str):
-        super().__init__(timeout=120)
-        self.text = text
-        for emoji, code, name in self.LANGS:
+
+    def __init__(self, original_text: str, timeout: int = 60):
+        super().__init__(timeout=timeout)
+        self.original_text = original_text
+        for emoji, code, name in self.LANGUAGES:
             btn = discord.ui.Button(emoji=emoji, label=name,
-                                    style=discord.ButtonStyle.secondary)
-            btn.callback = self._cb(code, name)
+                                    style=discord.ButtonStyle.secondary, custom_id=code)
+            btn.callback = self._make_cb(code, name)
             self.add_item(btn)
 
-    def _cb(self, code, name):
+    def _make_cb(self, code: str, name: str):
         async def callback(interaction: discord.Interaction):
             await interaction.response.defer(ephemeral=True)
             try:
-                translated = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: GoogleTranslator(source='auto', target=code).translate(self.text)
+                loop = asyncio.get_event_loop()
+                translated = await loop.run_in_executor(
+                    None,
+                    lambda: GoogleTranslator(source='auto', target=code).translate(self.original_text)
                 )
-                embed = discord.Embed(title=f"🌐 → {name}", description=translated, color=0x5865f2)
-                embed.add_field(name="Original", value=self.text[:900], inline=False)
+                embed = discord.Embed(
+                    title=f"🌐 Translation → {name}",
+                    description=translated,
+                    color=0x5865f2
+                )
+                embed.add_field(name="Original", value=self.original_text[:1000], inline=False)
+                embed.set_footer(text=f"Translated for {interaction.user.display_name}")
                 await interaction.followup.send(embed=embed, ephemeral=True)
             except Exception as e:
-                await interaction.followup.send(f"❌ Translation failed: {e}", ephemeral=True)
+                logger.error(f"Translation error: {e}")
+                await interaction.followup.send("❌ Translation failed. Try again later.", ephemeral=True)
         return callback
 
 
 class Translation(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self._cd: dict[int, float] = {}
+        # Simple per-user cooldown (5s)
+        self._cooldowns: dict[int, float] = {}
 
-    def _check_cd(self, uid: int) -> bool:
+    def _on_cooldown(self, user_id: int) -> bool:
         now = time.time()
-        if now - self._cd.get(uid, 0) < 5:
+        last = self._cooldowns.get(user_id, 0)
+        if now - last < 5:
             return True
-        self._cd[uid] = now
+        self._cooldowns[user_id] = now
         return False
+
+    # ── REACTION HANDLER ─────────────────────────────────────────────────
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        # Only care about 🌐
         if str(payload.emoji) != "🌐":
             return
+        # Ignore bot's own reactions
         if payload.user_id == self.bot.user.id:
             return
-        if self._check_cd(payload.user_id):
+
+        # Per-user cooldown
+        if self._on_cooldown(payload.user_id):
             return
+
         try:
-            channel = self.bot.get_channel(payload.channel_id) or \
-                      await self.bot.fetch_channel(payload.channel_id)
+            channel = self.bot.get_channel(payload.channel_id)
+            if not channel:
+                channel = await self.bot.fetch_channel(payload.channel_id)
+
             message = await channel.fetch_message(payload.message_id)
 
-            # Get text — from content or embeds
-            text = message.content.strip()
-            if not text and message.embeds:
-                text = (message.embeds[0].description or "").strip()
-            if not text or len(text) < 2:
+            if not message.content or message.author.bot:
                 return
 
-            translated = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: GoogleTranslator(source='auto', target='en').translate(text)
+            text = message.content.strip()
+            if len(text) < 2:
+                return
+
+            # Translate to English immediately
+            loop = asyncio.get_event_loop()
+            translated = await loop.run_in_executor(
+                None,
+                lambda: GoogleTranslator(source='auto', target='en').translate(text)
             )
 
-            embed = discord.Embed(title="🌐 Translation → English",
-                                  description=translated, color=0x5865f2)
-            embed.add_field(name="Original", value=text[:900], inline=False)
-            who = payload.member.display_name if payload.member else "Someone"
-            embed.set_footer(text=f"Requested by {who} • Pick another language below")
+            embed = discord.Embed(
+                title="🌐 Translation → English",
+                description=translated,
+                color=0x5865f2
+            )
+            embed.add_field(name="Original", value=text[:1000], inline=False)
+            embed.set_footer(text=f"From #{channel.name} • Pick a language below to retranslate")
 
-            await message.reply(embed=embed, view=LangView(text), mention_author=False)
+            # Also attach a view so they can pick another language
+            view = TranslationLanguageView(text)
+
+            # Send privately to the person who reacted — DM first, fallback to temp channel msg
+            reactor = payload.member or channel.guild.get_member(payload.user_id)
+            if reactor:
+                try:
+                    await reactor.send(embed=embed, view=view)
+                except discord.Forbidden:
+                    # DMs closed — send a temporary channel message visible only briefly
+                    try:
+                        await channel.send(
+                            content=f"{reactor.mention} (enable DMs to receive translations privately)",
+                            embed=embed,
+                            view=view,
+                            delete_after=30
+                        )
+                    except Exception:
+                        pass
 
         except discord.Forbidden:
-            logger.debug(f"No permission to send translation in {payload.channel_id}")
+            logger.debug(f"Missing permissions to send translation in channel {payload.channel_id}")
         except Exception as e:
             logger.error(f"Translation reaction error: {e}", exc_info=True)
 
-    @app_commands.command(name="translate", description="🌐 Translate text to any language")
+    # ── SLASH COMMANDS ────────────────────────────────────────────────────
+
+    @app_commands.command(name="translate", description="Translate text to any language")
     async def translate(self, interaction: discord.Interaction, text: str, language: str = "en"):
+        """Translate text. Language = language code e.g. en, es, fr, de, ja"""
         await interaction.response.defer(ephemeral=True)
         try:
-            translated = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: GoogleTranslator(source='auto', target=language).translate(text)
+            loop = asyncio.get_event_loop()
+            translated = await loop.run_in_executor(
+                None,
+                lambda: GoogleTranslator(source='auto', target=language).translate(text)
             )
-            embed = discord.Embed(title=f"🌐 → {language.upper()}",
+            embed = discord.Embed(title=f"🌐 Translation → {language.upper()}",
                                   description=translated, color=0x5865f2)
-            embed.add_field(name="Original", value=text[:900], inline=False)
+            embed.add_field(name="Original", value=text[:1000], inline=False)
             await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed: {e}", ephemeral=True)
+            logger.error(f"Translate command error: {e}")
+            await interaction.followup.send(
+                "❌ Translation failed. Check the language code (e.g. `en`, `es`, `fr`, `de`, `ja`, `ko`, `ru`, `hi`, `pt`, `zh-CN`).",
+                ephemeral=True
+            )
 
-    @app_commands.command(name="languages", description="🌐 Show supported translation languages")
+    @app_commands.command(name="languages", description="Show all supported translation languages")
     async def languages(self, interaction: discord.Interaction):
-        lines = "\n".join(f"{e} **{n}** — `{c}`" for e, c, n in LangView.LANGS)
-        embed = discord.Embed(title="🌐 Supported Languages", description=lines, color=0x5865f2)
-        embed.set_footer(text="React 🌐 on any message to translate it instantly!")
+        langs = "\n".join(f"{e} **{name}** — `{code}`"
+                          for e, code, name in TranslationLanguageView.LANGUAGES)
+        embed = discord.Embed(title="🌐 Supported Languages", description=langs, color=0x5865f2)
+        embed.set_footer(text="React 🌐 on any message to translate it to English instantly!")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
