@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>WAN Bot — Dashboard</title>
@@ -21,6 +21,12 @@
   --grad4:linear-gradient(135deg,#ec4899 0%,#8b5cf6 100%);
   --grad5:linear-gradient(135deg,#06b6d4 0%,#3b82f6 100%);
   --sidebar-w:240px;
+}
+[data-theme="light"]{
+  --bg:#f0f2f8;--surface:#ffffff;--surface2:#f5f6fa;--surface3:#eceef5;
+  --border:rgba(80,90,140,0.12);--border-bright:rgba(80,90,140,0.22);
+  --text:#1a1d2e;--text-muted:#5a6080;--text-dim:#9aa0bc;
+  --accent-glow:rgba(124,58,237,.25);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html{scroll-behavior:smooth;}
@@ -146,12 +152,67 @@ select.form-control option{background:var(--surface2);}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:rgba(124,58,237,.3);border-radius:10px;}
 ::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.5);}
+/* Theme transition */
+*{transition:background-color .2s,border-color .2s,color .15s;}
+.btn,.stat-card,.live-stat-card,.card,.modal-content,.notification{transition:all .2s cubic-bezier(.4,0,.2,1)!important;}
+
+/* Audit event colors */
+.audit-icon.ev-join{background:rgba(16,185,129,.18)!important;color:#34d399!important;}
+.audit-icon.ev-leave{background:rgba(239,68,68,.18)!important;color:#f87171!important;}
+.audit-icon.ev-ban{background:rgba(239,68,68,.22)!important;color:#ef4444!important;}
+.audit-icon.ev-kick{background:rgba(245,158,11,.18)!important;color:#fbbf24!important;}
+.audit-icon.ev-role{background:rgba(88,101,242,.18)!important;color:#818cf8!important;}
+.audit-icon.ev-channel{background:rgba(6,182,212,.18)!important;color:#22d3ee!important;}
+.audit-icon.ev-message{background:rgba(124,58,237,.18)!important;color:#a78bfa!important;}
+.audit-icon.ev-mod{background:rgba(245,158,11,.18)!important;color:#fbbf24!important;}
+.audit-icon.ev-server{background:rgba(59,130,246,.18)!important;color:#60a5fa!important;}
+.audit-live-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(16,185,129,.12);color:#34d399;border:1px solid rgba(16,185,129,.22);}
+.audit-live-badge .pulse-dot{background:#34d399;}
+.audit-scroll-toggle{font-size:11px;color:var(--text-muted);cursor:pointer;padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:none;font-family:inherit;transition:all .2s;}
+.audit-scroll-toggle:hover{border-color:var(--accent);color:var(--accent);}
+.audit-scroll-toggle.active{background:rgba(124,58,237,.1);border-color:var(--accent);color:#a78bfa;}
+
+/* Member profile modal */
+.profile-modal .modal-content{max-width:600px;}
+.profile-avatar{width:80px;height:80px;border-radius:50%;border:3px solid var(--accent);box-shadow:0 0 20px var(--accent-glow);}
+.profile-stat{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;}
+.profile-stat-val{font-size:22px;font-weight:900;font-family:'Space Grotesk',sans-serif;letter-spacing:-.5px;}
+.profile-stat-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-top:3px;}
+.profile-role-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--surface2);margin:3px;}
+.profile-badge-chip{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;background:rgba(124,58,237,.12);color:#a78bfa;border:1px solid rgba(124,58,237,.22);margin:3px;}
+
+/* Top-bar user avatar */
+.topbar-user{display:flex;align-items:center;gap:9px;padding:6px 12px;border-radius:12px;background:var(--surface2);border:1px solid var(--border);cursor:pointer;transition:all .2s;}
+.topbar-user:hover{border-color:var(--accent);background:rgba(124,58,237,.08);}
+.topbar-user img{width:30px;height:30px;border-radius:50%;border:2px solid var(--accent);}
+.topbar-user-placeholder{width:30px;height:30px;border-radius:50%;background:var(--grad1);display:flex;align-items:center;justify-content:center;font-size:13px;}
+.topbar-user span{font-size:13px;font-weight:600;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* Theme toggle button */
+.theme-toggle{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .2s;flex-shrink:0;}
+.theme-toggle:hover{border-color:var(--accent);color:var(--accent);background:rgba(124,58,237,.08);}
+
+/* Mobile hamburger */
+#menuToggle{display:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+#sidebarOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:99;}
+#sidebarOverlay.open{display:block;}
+
 @media(max-width:860px){.ov-grid{grid-template-columns:1fr!important;}}
-@media(max-width:640px){.grid2{grid-template-columns:1fr;}.sidebar{width:58px;}.sidebar span,.sidebar-logo p,.menu-section{display:none;}.menu-item{justify-content:center;padding:10px;}.menu-item i{width:auto;}.main-content{margin-left:58px;}}
+@media(max-width:768px){
+  .grid2{grid-template-columns:1fr;}
+  .sidebar{transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);z-index:200;}
+  .sidebar.mobile-open{transform:translateX(0);}
+  .main-content{margin-left:0!important;padding:16px;}
+  #menuToggle{display:flex;}
+  .top-bar{padding:12px 14px;}
+  .stats-grid{grid-template-columns:repeat(2,1fr);}
+  .topbar-user span{display:none;}
+}
 </style>
 </head>
 <body>
-<div class="sidebar">
+<div id="sidebarOverlay" onclick="closeSidebar()"></div>
+<div class="sidebar" id="sidebar">
   <div class="sidebar-header">
     <div class="sidebar-logo">
       <div class="sidebar-logo-icon">🎮</div>
@@ -200,13 +261,21 @@ select.form-control option{background:var(--surface2);}
 </div>
 <div class="main-content">
   <div class="top-bar">
-    <div>
-      <h2>Welcome back, {{ username }} 👋</h2>
-      <p id="serverSubtitle">Select a server to manage</p>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button id="menuToggle" onclick="toggleSidebar()" aria-label="Toggle menu"><i class="fas fa-bars"></i></button>
+      <div>
+        <h2>Welcome back, {{ username }} 👋</h2>
+        <p id="serverSubtitle">Select a server to manage</p>
+      </div>
     </div>
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span id="botStatusBadge" class="badge badge-success"><span class="pulse-dot"></span> Online</span>
       <select id="serverSelector" class="server-selector" onchange="selectServer(this.value)"><option value="">— Select a server —</option></select>
+      <button class="theme-toggle" onclick="toggleTheme()" id="themeToggleBtn" title="Toggle theme"><i class="fas fa-moon" id="themeIcon"></i></button>
+      <div class="topbar-user" id="topbarUser" onclick="window.location='/logout'" title="Logout">
+        <div class="topbar-user-placeholder" id="topbarAvatar">👤</div>
+        <span id="topbarUsername">{{ username }}</span>
+      </div>
     </div>
   </div>
   <div class="stats-grid">
@@ -673,7 +742,22 @@ select.form-control option{background:var(--surface2);}
   <!-- AUDIT LOG -->
   <div id="sec-audit" class="section">
     <div class="card">
-      <div class="card-header"><h3 class="card-title"><i class="fas fa-scroll"></i> Audit Log</h3><button class="btn btn-ghost btn-sm" onclick="loadAuditLog()"><i class="fas fa-sync"></i> Refresh</button></div>
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-scroll"></i> Audit Log <span class="audit-live-badge" id="auditLiveBadge" style="margin-left:8px;"><span class="pulse-dot"></span> Live</span></h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="audit-scroll-toggle active" id="auditAutoScrollBtn" onclick="toggleAuditScroll(this)" title="Auto-scroll">Auto-scroll</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadAuditLog()"><i class="fas fa-sync"></i> Refresh</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;" id="auditFilters">
+        <button class="btn btn-sm btn-ghost audit-filter active" data-type="all" onclick="setAuditFilter('all',this)">All</button>
+        <button class="btn btn-sm btn-ghost audit-filter" data-type="join" onclick="setAuditFilter('join',this)">Joins</button>
+        <button class="btn btn-sm btn-ghost audit-filter" data-type="leave" onclick="setAuditFilter('leave',this)">Leaves</button>
+        <button class="btn btn-sm btn-ghost audit-filter" data-type="ban" onclick="setAuditFilter('ban',this)">Bans</button>
+        <button class="btn btn-sm btn-ghost audit-filter" data-type="mod" onclick="setAuditFilter('mod',this)">Mod</button>
+        <button class="btn btn-sm btn-ghost audit-filter" data-type="message" onclick="setAuditFilter('message',this)">Messages</button>
+        <button class="btn btn-sm btn-ghost audit-filter" data-type="role" onclick="setAuditFilter('role',this)">Roles</button>
+      </div>
       <div id="auditFeed" class="audit-feed"><p style="color:var(--text-muted);">Select a server to load audit log.</p></div>
     </div>
   </div>
@@ -1016,6 +1100,37 @@ select.form-control option{background:var(--surface2);}
 
 </div><!-- /main-content -->
 
+<!-- MEMBER PROFILE MODAL -->
+<div id="profileModal" class="modal profile-modal">
+  <div class="modal-content" style="max-width:600px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h3 id="profileModalTitle" style="font-family:'Space Grotesk',sans-serif;">Member Profile</h3>
+      <button onclick="closeProfileModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text-muted);">&times;</button>
+    </div>
+    <div id="profileModalBody">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+        <img id="profileAvatar" src="" class="profile-avatar" style="display:none;">
+        <div id="profileAvatarPlaceholder" style="width:80px;height:80px;border-radius:50%;background:var(--grad1);display:flex;align-items:center;justify-content:center;font-size:32px;border:3px solid var(--accent);box-shadow:0 0 20px var(--accent-glow);">👤</div>
+        <div>
+          <div id="profileName" style="font-size:20px;font-weight:800;font-family:'Space Grotesk',sans-serif;"></div>
+          <div id="profileUsername" style="color:var(--text-muted);font-size:13px;margin-top:2px;"></div>
+          <div id="profileTopRole" style="margin-top:6px;"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;" id="profileStats"></div>
+      <div style="margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px;">Roles</div>
+        <div id="profileRoles" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+      </div>
+      <div style="margin-bottom:16px;" id="profileBadgesSection">
+        <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px;">Badges</div>
+        <div id="profileBadges" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;" id="profileDates"></div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL -->
 <div id="modal" class="modal">
   <div class="modal-content">
@@ -1049,6 +1164,8 @@ function show(name,el){
   if(sec)sec.style.display='block';
   if(el)el.classList.add('active');
   else document.querySelectorAll('.menu-item').forEach(m=>{if((m.getAttribute('onclick')||'').includes("'"+name+"'"))m.classList.add('active');});
+  // Close mobile sidebar on nav
+  closeSidebar();
   if(name==='leaderboard'&&currentServer)loadLeaderboard('score');
   if(name==='audit'&&currentServer)loadAuditLog();
   if(name==='music'&&currentServer)loadMusicStatus();
@@ -1343,12 +1460,12 @@ function renderMembers(members){
   const humans=members.filter(m=>!m.bot);
   if(!humans.length){c.innerHTML='<p style="color:var(--text-muted);">No members.</p>';return;}
   c.innerHTML=`<table class="table"><thead><tr><th>Member</th><th>Status</th><th>Roles</th><th>Actions</th></tr></thead><tbody>${humans.map(m=>`
-    <tr>
+    <tr style="cursor:pointer;" onclick="openMemberProfile('${m.id}')">
       <td><div style="display:flex;align-items:center;gap:10px;">${m.avatar?`<img src="${m.avatar}" style="width:32px;height:32px;border-radius:50%;">`:'<div style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;">👤</div>'}
         <div><div style="font-weight:600;">${escHtml(m.display_name)}</div><div style="color:var(--text-muted);font-size:12px;">${escHtml(m.name)}</div></div></div></td>
       <td><span class="badge badge-${m.status==='online'?'success':m.status==='idle'?'warning':m.status==='dnd'?'danger':'secondary'}">${m.status}</span></td>
       <td style="font-size:12px;color:var(--text-muted);">${m.roles.slice(0,3).map(r=>r.name).join(', ')||'—'}</td>
-      <td><div style="display:flex;gap:6px;">
+      <td onclick="event.stopPropagation()"><div style="display:flex;gap:6px;">
         <button class="btn btn-sm btn-ghost" onclick="openAssignRole('${m.id}','${escHtml(m.display_name)}')"><i class="fas fa-user-tag"></i></button>
         <button class="btn btn-sm btn-warning" onclick="openKick('${m.id}','${escHtml(m.display_name)}')"><i class="fas fa-user-minus"></i></button>
         <button class="btn btn-sm btn-danger" onclick="openBan('${m.id}','${escHtml(m.display_name)}')"><i class="fas fa-ban"></i></button>
@@ -1673,6 +1790,80 @@ async function loadAnalytics(){
 }
 
 // AUDIT LOG
+let _auditAutoScroll=true;
+let _auditFilter='all';
+let _auditEntries=[];
+
+const _auditEventMap={
+  member_join:{cls:'ev-join',icon:'👋'},member_leave:{cls:'ev-leave',icon:'🚪'},
+  member_ban:{cls:'ev-ban',icon:'🔨'},member_unban:{cls:'ev-ban',icon:'✅'},
+  member_kick:{cls:'ev-kick',icon:'👢'},kick:{cls:'ev-kick',icon:'👢'},ban:{cls:'ev-ban',icon:'🔨'},
+  role_create:{cls:'ev-role',icon:'🏷️'},role_delete:{cls:'ev-role',icon:'🏷️'},role_update:{cls:'ev-role',icon:'🏷️'},
+  channel_create:{cls:'ev-channel',icon:'#️⃣'},channel_delete:{cls:'ev-channel',icon:'#️⃣'},
+  message_delete:{cls:'ev-message',icon:'🗑️'},message_edit:{cls:'ev-message',icon:'✏️'},
+  warn:{cls:'ev-mod',icon:'⚠️'},timeout:{cls:'ev-mod',icon:'⏱️'},
+  server_update:{cls:'ev-server',icon:'⚙️'},
+};
+
+function _auditEventClass(e){
+  const key=e.type||e.action||'';
+  return _auditEventMap[key]||{cls:'ev-message',icon:e.icon||'📋'};
+}
+
+function _auditMatchesFilter(e){
+  if(_auditFilter==='all')return true;
+  const key=(e.type||e.action||'').toLowerCase();
+  if(_auditFilter==='join')return key.includes('join');
+  if(_auditFilter==='leave')return key.includes('leave');
+  if(_auditFilter==='ban')return key.includes('ban')||key.includes('kick');
+  if(_auditFilter==='mod')return ['warn','timeout','kick','ban','mute'].some(k=>key.includes(k));
+  if(_auditFilter==='message')return key.includes('message');
+  if(_auditFilter==='role')return key.includes('role');
+  return true;
+}
+
+function _formatAuditTime(ts){
+  if(!ts)return 'just now';
+  const d=new Date(ts);
+  const now=new Date();
+  const diff=Math.floor((now-d)/1000);
+  if(diff<60)return diff+'s ago';
+  if(diff<3600)return Math.floor(diff/60)+'m ago';
+  if(diff<86400)return Math.floor(diff/3600)+'h ago';
+  return d.toLocaleDateString();
+}
+
+function _renderAuditFeed(){
+  const feed=document.getElementById('auditFeed');
+  if(!feed)return;
+  const filtered=_auditEntries.filter(_auditMatchesFilter);
+  if(!filtered.length){feed.innerHTML='<p style="color:var(--text-muted);">No events match this filter.</p>';return;}
+  feed.innerHTML=filtered.map(e=>{
+    const ev=_auditEventClass(e);
+    return `<div class="audit-entry" data-type="${e.type||e.action||''}">
+      <div class="audit-icon ${ev.cls}">${ev.icon}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:13px;">${escHtml(e.title||'')}</div>
+        <div style="color:var(--text-muted);font-size:12px;margin-top:2px;">${escHtml(e.desc||'')} <span style="color:var(--text-dim);">• ${_formatAuditTime(e.timestamp)}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+  if(_auditAutoScroll)feed.scrollTop=0;
+}
+
+function setAuditFilter(type,btn){
+  _auditFilter=type;
+  document.querySelectorAll('.audit-filter').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  _renderAuditFeed();
+}
+
+function toggleAuditScroll(btn){
+  _auditAutoScroll=!_auditAutoScroll;
+  btn.classList.toggle('active',_auditAutoScroll);
+  btn.textContent=_auditAutoScroll?'Auto-scroll':'Paused';
+}
+
 async function loadAuditLog(){
   if(!currentServer)return;
   try{
@@ -1680,22 +1871,18 @@ async function loadAuditLog(){
     const d=await res.json();
     const feed=document.getElementById('auditFeed');
     if(!d.events||!d.events.length){feed.innerHTML='<p style="color:var(--text-muted);">No recent events.</p>';return;}
-    feed.innerHTML=d.events.map(e=>`
-      <div class="audit-entry">
-        <div class="audit-icon" style="background:rgba(124,58,237,.2);color:#a78bfa;">${e.icon||'📋'}</div>
-        <div><div style="font-weight:600;">${escHtml(e.title||'')}</div><div style="color:var(--text-muted);font-size:12px;">${escHtml(e.desc||'')} • ${e.timestamp?new Date(e.timestamp).toLocaleTimeString():''}</div></div>
-      </div>`).join('');
+    _auditEntries=d.events;
+    _renderAuditFeed();
   }catch(e){}
 }
 
 function prependAuditEntry(e){
-  const feed=document.getElementById('auditFeed');
-  if(!feed)return;
-  const div=document.createElement('div');
-  div.className='audit-entry';
-  div.innerHTML=`<div class="audit-icon" style="background:rgba(124,58,237,.2);color:#a78bfa;">${e.icon||'📋'}</div><div><div style="font-weight:600;">${escHtml(e.title||'')}</div><div style="color:var(--text-muted);font-size:12px;">${escHtml(e.desc||'')} • just now</div></div>`;
-  feed.prepend(div);
-  if(feed.children.length>50)feed.lastChild.remove();
+  _auditEntries.unshift(e);
+  if(_auditEntries.length>100)_auditEntries.pop();
+  _renderAuditFeed();
+  // Flash the live badge
+  const badge=document.getElementById('auditLiveBadge');
+  if(badge){badge.style.background='rgba(16,185,129,.3)';setTimeout(()=>badge.style.background='',600);}
 }
 
 // MUSIC
@@ -1941,6 +2128,121 @@ function notify(msg,type){
   setTimeout(()=>{n.style.opacity='0';setTimeout(()=>n.remove(),300);},3000);
 }
 
+// MEMBER PROFILE MODAL
+async function openMemberProfile(memberId){
+  if(!currentServer)return;
+  const modal=document.getElementById('profileModal');
+  modal.classList.add('open');
+  document.getElementById('profileModalTitle').textContent='Loading...';
+  document.getElementById('profileStats').innerHTML='<div style="grid-column:1/-1;color:var(--text-muted);text-align:center;padding:20px;"><i class="fas fa-spinner fa-spin"></i> Loading profile...</div>';
+  document.getElementById('profileRoles').innerHTML='';
+  document.getElementById('profileBadges').innerHTML='';
+  document.getElementById('profileDates').innerHTML='';
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/members/'+memberId+'/profile')).json();
+    if(d.error){document.getElementById('profileStats').innerHTML='<p style="color:var(--danger);">'+escHtml(d.error)+'</p>';return;}
+    document.getElementById('profileModalTitle').textContent='Member Profile';
+    // Avatar
+    const avatarImg=document.getElementById('profileAvatar');
+    const avatarPh=document.getElementById('profileAvatarPlaceholder');
+    if(d.avatar){avatarImg.src=d.avatar;avatarImg.style.display='block';avatarPh.style.display='none';}
+    else{avatarImg.style.display='none';avatarPh.style.display='flex';}
+    document.getElementById('profileName').textContent=d.display_name||d.name||'Unknown';
+    document.getElementById('profileUsername').textContent='@'+(d.name||'');
+    // Top role
+    const topRoleEl=document.getElementById('profileTopRole');
+    if(d.top_role&&d.top_role!=='@everyone'){topRoleEl.innerHTML=`<span class="profile-role-chip" style="border-color:${d.top_role_color||'var(--border)'}"><span style="width:8px;height:8px;border-radius:50%;background:${d.top_role_color||'#99aab5'};display:inline-block;"></span>${escHtml(d.top_role)}</span>`;}
+    else topRoleEl.innerHTML='';
+    // Stats
+    const voiceHours=d.voice_seconds!=null?Math.round(d.voice_seconds/3600*10)/10:'—';
+    const warnCount=Array.isArray(d.warnings)?d.warnings.length:(d.warnings??0);
+    const statsHtml=[
+      {val:d.level??'—',lbl:'Level',icon:'⭐'},
+      {val:d.xp??'—',lbl:'XP',icon:'✨'},
+      {val:warnCount,lbl:'Warnings',icon:'⚠️'},
+      {val:voiceHours,lbl:'Voice Hours',icon:'🎙️'},
+      {val:d.messages??'—',lbl:'Messages',icon:'💬'},
+      {val:(d.roles||[]).length,lbl:'Roles',icon:'🏷️'},
+    ].map(s=>`<div class="profile-stat"><div class="profile-stat-val">${s.icon} ${s.val}</div><div class="profile-stat-lbl">${s.lbl}</div></div>`).join('');
+    document.getElementById('profileStats').innerHTML=statsHtml;
+    // Roles
+    const rolesEl=document.getElementById('profileRoles');
+    const roles=d.roles||[];
+    if(roles.length){
+      rolesEl.innerHTML=roles.filter(r=>r.name!=='@everyone').map(r=>`<span class="profile-role-chip" style="border-color:${r.color&&r.color!=='#000000'?r.color:'var(--border)'}"><span style="width:7px;height:7px;border-radius:50%;background:${r.color&&r.color!=='#000000'?r.color:'#99aab5'};display:inline-block;"></span>${escHtml(r.name)}</span>`).join('');
+    }else rolesEl.innerHTML='<span style="color:var(--text-muted);font-size:13px;">No roles</span>';
+    // Badges
+    const badgesEl=document.getElementById('profileBadges');
+    const badges=d.badges||[];
+    const badgeSection=document.getElementById('profileBadgesSection');
+    if(badges.length){
+      badgeSection.style.display='block';
+      badgesEl.innerHTML=badges.map(b=>`<span class="profile-badge-chip">${b}</span>`).join('');
+    }else badgeSection.style.display='none';
+    // Dates
+    document.getElementById('profileDates').innerHTML=`
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;">Joined Server</div>
+        <div style="font-size:13px;font-weight:600;">${d.joined_at?new Date(d.joined_at).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}):'—'}</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;">Account Created</div>
+        <div style="font-size:13px;font-weight:600;">${d.created_at?new Date(d.created_at).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}):'—'}</div>
+      </div>`;
+  }catch(e){document.getElementById('profileStats').innerHTML='<p style="color:var(--danger);">Failed to load profile.</p>';}
+}
+
+function closeProfileModal(){
+  document.getElementById('profileModal').classList.remove('open');
+}
+document.getElementById('profileModal').addEventListener('click',function(e){if(e.target===this)closeProfileModal();});
+
+// THEME TOGGLE
+function toggleTheme(){
+  const html=document.documentElement;
+  const isDark=html.getAttribute('data-theme')==='dark';
+  html.setAttribute('data-theme',isDark?'light':'dark');
+  document.getElementById('themeIcon').className=isDark?'fas fa-sun':'fas fa-moon';
+  localStorage.setItem('wan_theme',isDark?'light':'dark');
+}
+function initTheme(){
+  const saved=localStorage.getItem('wan_theme')||'dark';
+  document.documentElement.setAttribute('data-theme',saved);
+  document.getElementById('themeIcon').className=saved==='dark'?'fas fa-moon':'fas fa-sun';
+}
+
+// MOBILE SIDEBAR
+function toggleSidebar(){
+  const sb=document.getElementById('sidebar');
+  const ov=document.getElementById('sidebarOverlay');
+  sb.classList.toggle('mobile-open');
+  ov.classList.toggle('open');
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('sidebarOverlay').classList.remove('open');
+}
+
+// LOAD CURRENT USER
+async function loadCurrentUser(){
+  try{
+    const d=await(await apiFetch('/api/me')).json();
+    if(d.id){
+      const avatarEl=document.getElementById('topbarAvatar');
+      const nameEl=document.getElementById('topbarUsername');
+      if(d.avatar){
+        const img=document.createElement('img');
+        img.src=`https://cdn.discordapp.com/avatars/${d.id}/${d.avatar}.png?size=64`;
+        img.style.cssText='width:30px;height:30px;border-radius:50%;border:2px solid var(--accent);';
+        img.onerror=()=>{};
+        avatarEl.replaceWith(img);
+        img.id='topbarAvatar';
+      }
+      if(nameEl&&d.username)nameEl.textContent=d.global_name||d.username;
+    }
+  }catch(e){}
+}
+
 // SOCKET.IO
 function initSocket(){
   try{
@@ -1955,6 +2257,8 @@ function initSocket(){
 
 // INIT
 (async()=>{
+  initTheme();
+  loadCurrentUser();
   try{
     const res=await apiFetch('/api/servers');
     const d=await res.json();
