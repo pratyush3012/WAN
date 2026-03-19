@@ -80,11 +80,10 @@ class AutoMod(commands.Cog):
             return True
         return False
 
-    async def _log(self, guild, action: str, user: discord.Member, reason: str, cfg: dict):
+    async def _log(self, guild, action: str, user: discord.Member, reason: str, cfg: dict, channel=None):
         ch_id = cfg.get('log_channel')
-        if not ch_id:
-            return
-        ch = guild.get_channel(int(ch_id))
+        # Fall back to the channel where the violation happened
+        ch = guild.get_channel(int(ch_id)) if ch_id else channel
         if not ch:
             return
         embed = discord.Embed(
@@ -125,7 +124,7 @@ class AutoMod(commands.Cog):
                 await message.delete()
                 await message.channel.send(f'⚠️ {message.author.mention} Slow down! (spam)', delete_after=5)
                 await message.author.timeout(timedelta(minutes=1), reason='AutoMod: spam')
-                await self._log(message.guild, 'Spam', message.author, f'{len(self._msg_history[uid])} msgs/{cfg["spam_window"]}s', cfg)
+                await self._log(message.guild, 'Spam', message.author, f'{len(self._msg_history[uid])} msgs/{cfg["spam_window"]}s', cfg, message.channel)
             except: pass
             return True
         return False
@@ -135,7 +134,7 @@ class AutoMod(commands.Cog):
             try:
                 await message.delete()
                 await message.channel.send(f'⚠️ {message.author.mention} Links are not allowed here.', delete_after=5)
-                await self._log(message.guild, 'Link Blocked', message.author, message.content[:100], cfg)
+                await self._log(message.guild, 'Link Blocked', message.author, message.content[:100], cfg, message.channel)
             except: pass
             return True
         return False
@@ -145,7 +144,7 @@ class AutoMod(commands.Cog):
             try:
                 await message.delete()
                 await message.channel.send(f'⚠️ {message.author.mention} Discord invites are not allowed.', delete_after=5)
-                await self._log(message.guild, 'Invite Blocked', message.author, message.content[:100], cfg)
+                await self._log(message.guild, 'Invite Blocked', message.author, message.content[:100], cfg, message.channel)
             except: pass
             return True
         return False
@@ -157,7 +156,7 @@ class AutoMod(commands.Cog):
                 try:
                     await message.delete()
                     await message.channel.send(f'⚠️ {message.author.mention} Watch your language!', delete_after=5)
-                    await self._log(message.guild, 'Bad Word', message.author, f'Matched: {word}', cfg)
+                    await self._log(message.guild, 'Bad Word', message.author, f'Matched: {word}', cfg, message.channel)
                 except: pass
                 return True
         return False
@@ -171,7 +170,7 @@ class AutoMod(commands.Cog):
             try:
                 await message.delete()
                 await message.channel.send(f'⚠️ {message.author.mention} Excessive caps!', delete_after=5)
-                await self._log(message.guild, 'Caps Filter', message.author, f'{int(caps/len(text)*100)}% caps', cfg)
+                await self._log(message.guild, 'Caps Filter', message.author, f'{int(caps/len(text)*100)}% caps', cfg, message.channel)
             except: pass
             return True
         return False
@@ -182,7 +181,7 @@ class AutoMod(commands.Cog):
                 await message.delete()
                 await message.channel.send(f'⚠️ {message.author.mention} Too many mentions!', delete_after=5)
                 await message.author.timeout(timedelta(minutes=5), reason='AutoMod: mention spam')
-                await self._log(message.guild, 'Mention Spam', message.author, f'{len(message.mentions)} mentions', cfg)
+                await self._log(message.guild, 'Mention Spam', message.author, f'{len(message.mentions)} mentions', cfg, message.channel)
             except: pass
             return True
         return False
@@ -193,7 +192,7 @@ class AutoMod(commands.Cog):
             try:
                 await message.delete()
                 await message.channel.send(f'⚠️ {message.author.mention} Too many emojis!', delete_after=5)
-                await self._log(message.guild, 'Emoji Flood', message.author, f'{emoji_count} emojis', cfg)
+                await self._log(message.guild, 'Emoji Flood', message.author, f'{emoji_count} emojis', cfg, message.channel)
             except: pass
             return True
         return False
