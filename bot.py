@@ -431,11 +431,14 @@ class GamingBot(commands.Bot):
 
 async def main():
     bot = GamingBot()
-    
-    # Start web dashboard if enabled
+
+    # Start web dashboard FIRST so Render's port scanner finds it immediately
     if os.getenv('ENABLE_DASHBOARD', 'true').lower() == 'true':
         bot.start_web_dashboard()
-    
+        # Give the server a moment to bind before the bot starts connecting
+        import time
+        time.sleep(2)
+
     try:
         async with bot:
             token = os.getenv('DISCORD_TOKEN')

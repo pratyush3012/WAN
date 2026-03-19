@@ -177,7 +177,7 @@ class BotAnalyzer(commands.Cog):
 
     @app_commands.command(name='bot-report', description='Get a detailed report on a specific bot')
     @app_commands.default_permissions(manage_guild=True)
-    async def bot_report(self, interaction: discord.Interaction, bot_user: discord.Member):
+    async def report_bot(self, interaction: discord.Interaction, bot_user: discord.Member):
         """Get detailed info on a specific bot."""
         if not bot_user.bot:
             await interaction.response.send_message('That is not a bot.', ephemeral=True)
