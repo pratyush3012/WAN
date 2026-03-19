@@ -128,18 +128,24 @@ class GamingBot(commands.Bot):
                 self.cog_errors[cog] = str(e)
                 logger.error(f'❌ Failed to load {cog}: {e}\n{traceback.format_exc()}')
 
+        # Guild-only cogs: patch tree.add_command to redirect to guild during loading
+        _orig_add = self.tree.add_command
+        def _guild_add(command, *, guild=None, guilds=[], override=False):
+            # Force all commands into the home guild tree only
+            return _orig_add(command, guild=self._home_guild, override=override)
+        self.tree.add_command = _guild_add
+
         for cog in guild_cogs:
             try:
                 await self.load_extension(cog)
-                # Copy all global commands from this cog into the guild tree
-                cog_obj = self.cogs.get(cog.split('.')[-1].title().replace('_', ''))
-                # Use tree.copy_global_to to register as guild commands
-                self.tree.copy_global_to(guild=self._home_guild)
                 logger.info(f'✅ Loaded {cog} (guild-only)')
             except Exception as e:
                 import traceback
                 self.cog_errors[cog] = str(e)
                 logger.error(f'❌ Failed to load {cog}: {e}\n{traceback.format_exc()}')
+
+        # Restore original add_command
+        self.tree.add_command = _orig_add
 
         # Set up global error handler
         self.tree.error(self.on_app_command_error)
