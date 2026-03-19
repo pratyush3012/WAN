@@ -44,6 +44,17 @@ class GamingBot(commands.Bot):
         )
         self.db = None
         self.start_time = datetime.now(timezone.utc)  # Track bot start time for uptime
+        # Live activity counters — reset daily, keyed by guild_id (str)
+        self._live_stats: dict = {}  # {guild_id: {messages, joins, leaves, commands, date}}
+
+    def _get_live_stats(self, guild_id: str) -> dict:
+        """Return today's live stats for a guild, resetting if it's a new day."""
+        today = datetime.now(timezone.utc).date().isoformat()
+        entry = self._live_stats.get(guild_id)
+        if not entry or entry.get('date') != today:
+            entry = {'messages': 0, 'joins': 0, 'leaves': 0, 'commands': 0, 'date': today}
+            self._live_stats[guild_id] = entry
+        return entry
         
     async def setup_hook(self):
         """Load all cogs and initialize database"""
@@ -121,7 +132,15 @@ class GamingBot(commands.Bot):
         except Exception:
             pass
 
+    async def on_message(self, message: discord.Message):
+        if message.author.bot or not message.guild:
+            return
+        stats = self._get_live_stats(str(message.guild.id))
+        stats['messages'] += 1
+        await self.process_commands(message)
+
     async def on_member_join(self, member: discord.Member):
+        self._get_live_stats(str(member.guild.id))['joins'] += 1
         self._broadcast('member_join', {
             'guild_id': member.guild.id,
             'user_id': member.id,
@@ -139,6 +158,7 @@ class GamingBot(commands.Bot):
         })
 
     async def on_member_remove(self, member: discord.Member):
+        self._get_live_stats(str(member.guild.id))['leaves'] += 1
         self._broadcast('member_leave', {
             'guild_id': member.guild.id,
             'user_id': member.id,

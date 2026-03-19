@@ -6,6 +6,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:rgba(255,255,255,0.07);--text:#e8eaf6;--text-muted:#8b92b8;--accent:#7c3aed;--accent2:#5865f2;--success:#10b981;--danger:#ef4444;--warning:#f59e0b;--info:#3b82f6;}
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -86,6 +87,22 @@ select.form-control option{background:var(--surface2);}
 .tab{padding:8px 16px;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-muted);font-weight:600;font-size:13px;transition:all .15s;}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+/* LIVE STAT CARDS */
+.live-stat-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;display:flex;align-items:center;gap:14px;position:relative;overflow:hidden;transition:border-color .2s;}
+.live-stat-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(124,58,237,.04),transparent);pointer-events:none;}
+.live-stat-card.flash{animation:cardFlash .5s ease;}
+@keyframes cardFlash{0%,100%{border-color:var(--border);}50%{border-color:var(--accent);}}
+.lsc-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;font-size:18px;}
+.lsc-body{flex:1;}
+.lsc-val{font-size:26px;font-weight:800;line-height:1;transition:all .3s;}
+.lsc-lbl{font-size:11px;color:var(--text-muted);margin-top:4px;text-transform:uppercase;letter-spacing:.5px;}
+.lsc-trend{font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;}
+.lsc-trend.up{background:rgba(16,185,129,.15);color:#34d399;}
+.lsc-trend.down{background:rgba(239,68,68,.15);color:#f87171;}
+/* OV ROW */
+.ov-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);}
+.ov-row:last-child{border-bottom:none;}
+@media(max-width:700px){.ov-grid{grid-template-columns:1fr!important;}}
 @media(max-width:600px){.grid2{grid-template-columns:1fr;}.sidebar{width:60px;}.sidebar span,.sidebar-header p,.sidebar-header h1{display:none;}.main-content{margin-left:60px;}}
 </style>
 </head>
@@ -148,26 +165,61 @@ select.form-control option{background:var(--surface2);}
 
   <!-- OVERVIEW -->
   <div id="sec-overview" class="section active">
-    <div class="card">
-      <div class="card-header"><h3 class="card-title">Server Overview</h3><span id="botUptime" style="color:var(--text-muted);font-size:13px;"></span></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;">
-        <div><p class="form-label">SERVER NAME</p><p style="font-weight:700;" id="ovServerName">—</p></div>
-        <div><p class="form-label">OWNER</p><p style="font-weight:700;" id="ovOwner">—</p></div>
-        <div><p class="form-label">BOOST LEVEL</p><p style="font-weight:700;" id="ovBoost">—</p></div>
-        <div><p class="form-label">VERIFICATION</p><p style="font-weight:700;" id="ovVerification">—</p></div>
-        <div><p class="form-label">ONLINE</p><p style="font-weight:700;" id="ovOnline">—</p></div>
-        <div><p class="form-label">BOTS</p><p style="font-weight:700;" id="ovBots">—</p></div>
+    <!-- Live activity strip -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:20px;">
+      <div class="live-stat-card" id="lsc-messages">
+        <div class="lsc-icon" style="background:linear-gradient(135deg,#7c3aed,#5865f2)"><i class="fas fa-comment-dots"></i></div>
+        <div class="lsc-body"><div class="lsc-val" id="lsMessages">—</div><div class="lsc-lbl">Messages Today</div></div>
+        <div class="lsc-trend" id="lsTrendMsg"></div>
+      </div>
+      <div class="live-stat-card" id="lsc-joins">
+        <div class="lsc-icon" style="background:linear-gradient(135deg,#10b981,#34d399)"><i class="fas fa-user-plus"></i></div>
+        <div class="lsc-body"><div class="lsc-val" id="lsJoins">—</div><div class="lsc-lbl">New Joins Today</div></div>
+        <div class="lsc-trend" id="lsTrendJoin"></div>
+      </div>
+      <div class="live-stat-card" id="lsc-leaves">
+        <div class="lsc-icon" style="background:linear-gradient(135deg,#ef4444,#f87171)"><i class="fas fa-user-minus"></i></div>
+        <div class="lsc-body"><div class="lsc-val" id="lsLeaves">—</div><div class="lsc-lbl">Left Today</div></div>
+        <div class="lsc-trend" id="lsTrendLeave"></div>
+      </div>
+      <div class="live-stat-card" id="lsc-online">
+        <div class="lsc-icon" style="background:linear-gradient(135deg,#f59e0b,#fbbf24)"><i class="fas fa-circle" style="font-size:12px"></i></div>
+        <div class="lsc-body"><div class="lsc-val" id="lsOnline">—</div><div class="lsc-lbl">Online Now</div></div>
+        <div class="lsc-trend" id="lsTrendOnline"></div>
       </div>
     </div>
+
+    <!-- Server info + activity chart row -->
+    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:16px;margin-bottom:20px;" class="ov-grid">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><h3 class="card-title">Server Info</h3><span id="botUptime" style="color:var(--text-muted);font-size:12px;"></span></div>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="ov-row"><span class="form-label" style="margin:0">SERVER</span><span style="font-weight:700;" id="ovServerName">—</span></div>
+          <div class="ov-row"><span class="form-label" style="margin:0">OWNER</span><span style="font-weight:700;" id="ovOwner">—</span></div>
+          <div class="ov-row"><span class="form-label" style="margin:0">BOOST</span><span style="font-weight:700;" id="ovBoost">—</span></div>
+          <div class="ov-row"><span class="form-label" style="margin:0">VERIFICATION</span><span style="font-weight:700;" id="ovVerification">—</span></div>
+          <div class="ov-row"><span class="form-label" style="margin:0">ONLINE</span><span style="font-weight:700;" id="ovOnline">—</span></div>
+          <div class="ov-row"><span class="form-label" style="margin:0">BOTS</span><span style="font-weight:700;" id="ovBots">—</span></div>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0">
+        <div class="card-header"><h3 class="card-title">Today's Activity</h3><span style="color:var(--text-muted);font-size:12px;" id="ovActivityDate"></span></div>
+        <canvas id="activityChart" height="160"></canvas>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
     <div class="card">
-      <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">
+      <div class="card-header"><h3 class="card-title">Quick Actions</h3><a href="/invite" target="_blank" class="btn btn-ghost btn-sm"><i class="fab fa-discord"></i> Invite Bot</a></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
         <button class="btn btn-primary" onclick="show('welcome',null)"><i class="fas fa-door-open"></i> Welcome</button>
         <button class="btn btn-primary" onclick="show('verification',null)"><i class="fas fa-user-check"></i> Verification</button>
         <button class="btn btn-primary" onclick="show('reactionroles',null)"><i class="fas fa-hand-pointer"></i> Reaction Roles</button>
         <button class="btn btn-primary" onclick="show('leveling',null)"><i class="fas fa-star"></i> Leveling</button>
         <button class="btn btn-primary" onclick="show('autoresponder',null)"><i class="fas fa-robot"></i> Auto Responder</button>
         <button class="btn btn-primary" onclick="show('announce',null)"><i class="fas fa-bullhorn"></i> Announce</button>
+        <button class="btn btn-primary" onclick="show('moderation',null)"><i class="fas fa-shield-alt"></i> Moderation</button>
+        <button class="btn btn-primary" onclick="show('tickets',null)"><i class="fas fa-ticket-alt"></i> Tickets</button>
       </div>
     </div>
   </div>
@@ -933,7 +985,7 @@ async function selectServer(id){
   currentServer=id||null;
   if(!id)return;
   notify('Loading...','info');
-  await Promise.all([loadServerDetails(id),loadBotStatus()]);
+  await Promise.all([loadServerDetails(id),loadBotStatus(),loadLiveStats()]);
   if(socket)socket.emit('subscribe_server',{server_id:id});
 }
 
@@ -980,6 +1032,78 @@ async function loadBotStatus(){
       document.getElementById('botStatusBadge').className='badge badge-danger';
     }
   }catch(e){}
+}
+
+// ===== LIVE STATS =====
+let _activityChart=null;
+let _prevLiveStats={messages:0,joins:0,leaves:0,online:0};
+
+function _animateVal(el,newVal){
+  const cur=parseInt(el.textContent)||0;
+  if(cur===newVal)return;
+  el.textContent=newVal;
+  el.closest('.live-stat-card')?.classList.remove('flash');
+  void el.closest('.live-stat-card')?.offsetWidth;
+  el.closest('.live-stat-card')?.classList.add('flash');
+}
+
+function _setTrend(el,cur,prev){
+  if(!el)return;
+  if(cur>prev){el.textContent='▲ '+cur;el.className='lsc-trend up';}
+  else if(cur<prev){el.textContent='▼ '+cur;el.className='lsc-trend down';}
+  else{el.textContent='';el.className='lsc-trend';}
+}
+
+async function loadLiveStats(){
+  if(!currentServer)return;
+  try{
+    const d=await(await apiFetch('/api/server/'+currentServer+'/live-stats')).json();
+    if(d.error)return;
+    _animateVal(document.getElementById('lsMessages'),d.messages_today);
+    _animateVal(document.getElementById('lsJoins'),d.joins_today);
+    _animateVal(document.getElementById('lsLeaves'),d.leaves_today);
+    _animateVal(document.getElementById('lsOnline'),d.online_now);
+    _setTrend(document.getElementById('lsTrendMsg'),d.messages_today,_prevLiveStats.messages);
+    _setTrend(document.getElementById('lsTrendJoin'),d.joins_today,_prevLiveStats.joins);
+    _setTrend(document.getElementById('lsTrendLeave'),d.leaves_today,_prevLiveStats.leaves);
+    _setTrend(document.getElementById('lsTrendOnline'),d.online_now,_prevLiveStats.online);
+    _prevLiveStats={messages:d.messages_today,joins:d.joins_today,leaves:d.leaves_today,online:d.online_now};
+    document.getElementById('ovActivityDate').textContent=d.date||'';
+    _updateActivityChart(d);
+  }catch(e){}
+}
+
+function _updateActivityChart(d){
+  const ctx=document.getElementById('activityChart');
+  if(!ctx)return;
+  const labels=['Messages','Joins','Leaves','Online'];
+  const values=[d.messages_today,d.joins_today,d.leaves_today,d.online_now];
+  const colors=['rgba(124,58,237,.8)','rgba(16,185,129,.8)','rgba(239,68,68,.8)','rgba(245,158,11,.8)'];
+  if(_activityChart){
+    _activityChart.data.datasets[0].data=values;
+    _activityChart.update('active');
+    return;
+  }
+  _activityChart=new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[{
+        data:values,
+        backgroundColor:colors,
+        borderRadius:8,
+        borderSkipped:false,
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y}}},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8b92b8',font:{size:12}}},
+        y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8b92b8',font:{size:11}},beginAtZero:true}
+      }
+    }
+  });
 }
 
 // ROLES
@@ -1663,6 +1787,7 @@ async function createPoll(){
 }
 
 
+function showModal(title,body,onConfirm){
   document.getElementById('modalTitle').textContent=title;
   document.getElementById('modalBody').innerHTML=body;
   const btn=document.getElementById('modalConfirm');
@@ -1691,8 +1816,8 @@ function initSocket(){
     socket.on('connect',()=>{if(currentServer)socket.emit('subscribe_server',{server_id:currentServer});});
     socket.on('audit',e=>{if(currentServer&&String(e.guild_id)===String(currentServer))prependAuditEntry(e);});
     socket.on('music_update',d=>{if(currentServer&&String(d.guild_id)===String(currentServer))loadMusicStatus();});
-    socket.on('member_join',d=>{if(currentServer&&String(d.guild_id)===String(currentServer)){notify(d.name+' joined!','success');loadServerDetails(currentServer);}});
-    socket.on('member_leave',d=>{if(currentServer&&String(d.guild_id)===String(currentServer)){notify(d.name+' left','warning');loadServerDetails(currentServer);}});
+    socket.on('member_join',d=>{if(currentServer&&String(d.guild_id)===String(currentServer)){notify(d.name+' joined!','success');loadServerDetails(currentServer);loadLiveStats();}});
+    socket.on('member_leave',d=>{if(currentServer&&String(d.guild_id)===String(currentServer)){notify(d.name+' left','warning');loadServerDetails(currentServer);loadLiveStats();}});
   }catch(e){console.warn('Socket.IO not available');}
 }
 
@@ -1711,6 +1836,7 @@ function initSocket(){
   }catch(e){}
   loadBotStatus();
   setInterval(loadBotStatus,15000);
+  setInterval(()=>{if(currentServer)loadLiveStats();},10000);
   // Live uptime ticker — increments every second client-side
   setInterval(()=>{
     const el=document.getElementById('statUptime');

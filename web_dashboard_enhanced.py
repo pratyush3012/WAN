@@ -462,6 +462,54 @@ def get_audit_log(server_id):
     audit_log = dashboard_cache.get('audit_log', {}).get(str(server_id), [])
     return jsonify({'events': audit_log[:50]})
 
+@app.route('/api/server/<server_id>/live-stats')
+@require_auth
+def get_live_stats(server_id):
+    """Get today's live activity counters for a server"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+        stats = bot_instance._get_live_stats(str(server_id))
+        online = sum(1 for m in guild.members if m.status != discord.Status.offline)
+        return jsonify({
+            'messages_today': stats['messages'],
+            'joins_today': stats['joins'],
+            'leaves_today': stats['leaves'],
+            'commands_today': stats.get('commands', 0),
+            'online_now': online,
+            'member_count': guild.member_count,
+            'date': stats['date'],
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error getting live stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/invite')
+def invite():
+    """Public bot invite page"""
+    client_id = os.getenv('DISCORD_CLIENT_ID', '')
+    invite_url = (
+        f"https://discord.com/api/oauth2/authorize"
+        f"?client_id={client_id}"
+        f"&permissions=8"
+        f"&scope=bot%20applications.commands"
+    ) if client_id else '#'
+    return render_template('invite.html', invite_url=invite_url, client_id=client_id)
+
+@app.route('/terms')
+def terms():
+    """Terms of Service page"""
+    return render_template('terms.html')
+
+@app.route('/privacy')
+def privacy():
+    """Privacy Policy page"""
+    return render_template('privacy.html')
+
 # ===== Roblox Integration API Endpoints =====
 
 @app.route('/api/roblox/linked-members')
