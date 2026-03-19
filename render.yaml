@@ -3,6 +3,7 @@ services:
     name: WAN
     runtime: docker
     dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
     envVars:
       - key: DISCORD_TOKEN
         sync: false

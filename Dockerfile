@@ -22,6 +22,7 @@ COPY . .
 
 RUN mkdir -p /app/data
 
-EXPOSE 5000
+# Render injects PORT env var; expose it (actual value set at runtime)
+EXPOSE 10000
 
 CMD ["python3", "bot.py"]

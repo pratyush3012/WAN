@@ -3,6 +3,13 @@ WAN Bot - Enhanced Ultimate Web Dashboard
 Complete server control with enterprise-grade security and performance!
 """
 
+# eventlet monkey-patch must happen before any other imports
+try:
+    import eventlet
+    eventlet.monkey_patch()
+except ImportError:
+    pass
+
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_limiter import Limiter
@@ -42,7 +49,7 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
 # Initialize extensions
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 cache = Cache(app, config={'CACHE_TYPE': 'simple', 'CACHE_DEFAULT_TIMEOUT': 300})
 limiter = Limiter(
     app=app,
@@ -1036,14 +1043,22 @@ def start_web_dashboard(bot, host='0.0.0.0', port=5000):
     """Start the enhanced web dashboard"""
     global bot_instance
     bot_instance = bot
-    
+
     logger.info(f"🌐 Starting Enhanced Web Dashboard on http://{host}:{port}")
-    logger.info("✨ Features: Security, Caching, Rate Limiting, Export, WebSocket")
-    
+
     try:
-        socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
+        import eventlet
+        import eventlet.wsgi
+        eventlet.monkey_patch()
+        listener = eventlet.listen((host, port))
+        eventlet.wsgi.server(listener, app, log_output=False)
     except Exception as e:
-        logger.error(f"Failed to start dashboard: {e}")
+        logger.error(f"Failed to start dashboard with eventlet: {e}")
+        # Fallback to werkzeug
+        try:
+            socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
+        except Exception as e2:
+            logger.error(f"Failed to start dashboard with werkzeug fallback: {e2}")
 
 if __name__ == '__main__':
     print("⚠️  Run this through bot.py, not directly!")
