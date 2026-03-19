@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>WAN Bot — Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' stop-color='%237c3aed'/><stop offset='100%25' stop-color='%235865f2'/></linearGradient></defs><rect width='100' height='100' rx='22' fill='url(%23g)'/><text y='.9em' font-size='72' x='12'>🎮</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
@@ -64,10 +65,14 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;bac
 .stat-icon{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;}
 .stat-value{font-size:24px;font-weight:900;letter-spacing:-.8px;font-family:'Space Grotesk',sans-serif;}
 .stat-label{color:var(--text-muted);font-size:11px;margin-top:2px;font-weight:500;letter-spacing:.3px;}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:22px;margin-bottom:18px;transition:all .25s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;}
+.card{background:rgba(11,14,22,.72);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid var(--border);border-radius:18px;padding:22px;margin-bottom:18px;transition:all .25s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(124,58,237,.35),transparent);opacity:0;transition:opacity .3s;}
-.card:hover{border-color:var(--border-bright);}
+/* Gradient border sweep on hover */
+.card::after{content:'';position:absolute;inset:-1px;border-radius:19px;background:linear-gradient(135deg,#7c3aed,#5865f2,#06b6d4,#10b981,#7c3aed);background-size:300% 300%;opacity:0;z-index:-1;transition:opacity .35s;animation:gradBorderSpin 4s linear infinite paused;}
+.card:hover::after{opacity:.55;animation-play-state:running;}
+.card:hover{border-color:transparent;box-shadow:0 8px 40px rgba(0,0,0,.45);}
 .card:hover::before{opacity:1;}
+@keyframes gradBorderSpin{0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;}}
 .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
 .card-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:9px;font-family:'Space Grotesk',sans-serif;}
 .card-title i{color:var(--accent);font-size:14px;}
@@ -110,7 +115,8 @@ select.form-control option{background:var(--surface2);}
 .table td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:middle;font-size:13px;}
 .table tr:last-child td{border-bottom:none;}
 .table tbody tr{transition:background .15s;}
-.table tbody tr:hover{background:rgba(124,58,237,.04);}
+.table tbody tr:hover{background:rgba(124,58,237,.06);box-shadow:inset 3px 0 0 var(--accent);}
+.table tbody tr:hover td:first-child{padding-left:17px;}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);z-index:1000;align-items:center;justify-content:center;}
 .modal.open{display:flex;animation:sectionIn .2s ease;}
 .modal-content{background:var(--surface);border:1px solid var(--border-bright);border-radius:20px;padding:28px;width:90%;max-width:520px;max-height:88vh;overflow-y:auto;box-shadow:0 32px 96px rgba(0,0,0,.7),0 0 0 1px rgba(124,58,237,.1);}
@@ -148,10 +154,10 @@ select.form-control option{background:var(--surface2);}
 .ch-select{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 13px;border-radius:10px;font-size:13px;font-family:inherit;transition:all .2s;cursor:pointer;}
 .ch-select:focus{outline:none;border-color:var(--accent);background:var(--surface3);box-shadow:0 0 0 3px rgba(124,58,237,.14);}
 .ch-select option{background:var(--surface2);}
-::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar{width:6px;height:6px;}
 ::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:rgba(124,58,237,.3);border-radius:10px;}
-::-webkit-scrollbar-thumb:hover{background:rgba(124,58,237,.5);}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#7c3aed,#5865f2);border-radius:10px;}
+::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,#9d5cf6,#7c8ef8);}
 /* Theme transition */
 *{transition:background-color .2s,border-color .2s,color .15s;}
 .btn,.stat-card,.live-stat-card,.card,.modal-content,.notification{transition:all .2s cubic-bezier(.4,0,.2,1)!important;}
@@ -289,9 +295,59 @@ select.form-control option{background:var(--surface2);}
   .stats-grid{grid-template-columns:repeat(2,1fr);}
   .topbar-user span{display:none;}
 }
+
+/* ── Input focus heartbeat ── */
+@keyframes inputPulse{0%{box-shadow:0 0 0 3px rgba(124,58,237,.14);}50%{box-shadow:0 0 0 5px rgba(124,58,237,.22);}100%{box-shadow:0 0 0 3px rgba(124,58,237,.14);}}
+.form-control:focus,.ch-select:focus{animation:inputPulse 1.2s ease 1;}
+
+/* ── Button ripple ── */
+.btn .ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.3);transform:scale(0);animation:rippleAnim .55s linear;pointer-events:none;}
+@keyframes rippleAnim{to{transform:scale(4);opacity:0;}}
+
+/* ── Top progress bar ── */
+#topProgress{position:fixed;top:0;left:0;height:2px;width:0%;background:linear-gradient(90deg,#7c3aed,#5865f2,#06b6d4);z-index:9999;transition:width .25s ease,opacity .3s ease;border-radius:0 2px 2px 0;box-shadow:0 0 8px rgba(124,58,237,.7);}
+#topProgress.done{opacity:0;}
+
+/* ── Breadcrumb ── */
+#breadcrumb{font-size:11px;color:var(--text-dim);margin-bottom:14px;display:flex;align-items:center;gap:6px;font-weight:500;}
+#breadcrumb span{color:var(--text-muted);}
+#breadcrumb .bc-sep{color:var(--text-dim);opacity:.5;}
+#breadcrumb .bc-current{color:#a78bfa;font-weight:700;}
+
+/* ── Tooltip ── */
+#tooltip{position:fixed;background:rgba(8,10,18,.95);backdrop-filter:blur(12px);border:1px solid var(--border-bright);color:var(--text);font-size:11px;font-weight:600;padding:6px 11px;border-radius:8px;pointer-events:none;z-index:9998;opacity:0;transition:opacity .15s;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+#tooltip.show{opacity:1;}
+
+/* ── Server switcher in sidebar ── */
+.server-switcher{padding:10px 12px;border-bottom:1px solid var(--border);}
+.server-card{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;cursor:pointer;transition:all .18s;border:1px solid transparent;position:relative;}
+.server-card:hover{background:rgba(124,58,237,.1);border-color:rgba(124,58,237,.2);}
+.server-card.active-server{background:linear-gradient(90deg,rgba(124,58,237,.18),rgba(124,58,237,.04));border-color:rgba(124,58,237,.3);}
+.server-card-icon{width:36px;height:36px;border-radius:10px;background:var(--grad1);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;overflow:hidden;}
+.server-card-icon img{width:100%;height:100%;object-fit:cover;border-radius:10px;}
+.server-card-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;}
+.server-card-count{font-size:10px;color:var(--text-muted);margin-top:1px;}
+.server-card-check{margin-left:auto;color:#a78bfa;font-size:11px;opacity:0;}
+.server-card.active-server .server-card-check{opacity:1;}
+
+/* ── Section transition ── */
+.section{display:none;opacity:0;}
+.section.active{display:block;animation:sectionSlide .28s cubic-bezier(.4,0,.2,1) forwards;}
+@keyframes sectionSlide{from{opacity:0;transform:translateY(12px) scale(.995);}to{opacity:1;transform:translateY(0) scale(1);}}
+
+/* ── Print styles ── */
+@media print{
+  .sidebar,.top-bar,.stats-grid,.btn,.notif-bell,.theme-toggle,#menuToggle,#topProgress,#breadcrumb{display:none!important;}
+  .main-content{margin-left:0!important;padding:0!important;}
+  .card{border:1px solid #ccc!important;background:#fff!important;color:#000!important;break-inside:avoid;box-shadow:none!important;}
+  .section{display:block!important;}
+  body{background:#fff!important;color:#000!important;}
+}
 </style>
 </head>
 <body>
+<div id="topProgress"></div>
+<div id="tooltip"></div>
 <div id="sidebarOverlay" onclick="closeSidebar()"></div>
 <div class="sidebar" id="sidebar">
   <div class="sidebar-header">
@@ -299,6 +355,11 @@ select.form-control option{background:var(--surface2);}
       <div class="sidebar-logo-icon">🎮</div>
       <div><h1>WAN Bot</h1><p>Dashboard</p></div>
     </div>
+  </div>
+  <!-- Server switcher -->
+  <div class="server-switcher" id="serverSwitcher">
+    <div style="font-size:9px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:1.6px;margin-bottom:7px;padding:0 2px;">Your Servers</div>
+    <div id="serverCardList"><div style="color:var(--text-dim);font-size:11px;padding:6px 2px;">Loading servers...</div></div>
   </div>
   <div class="sidebar-menu">
     <div class="menu-section">General</div>
@@ -355,7 +416,10 @@ select.form-control option{background:var(--surface2);}
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span id="botStatusBadge" class="badge badge-success"><span class="pulse-dot"></span> Online</span>
-      <select id="serverSelector" class="server-selector" onchange="selectServer(this.value)"><option value="">— Select a server —</option></select>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div id="topbarServerIcon" style="width:28px;height:28px;border-radius:8px;background:var(--grad1);display:none;align-items:center;justify-content:center;font-size:13px;overflow:hidden;flex-shrink:0;"></div>
+        <select id="serverSelector" class="server-selector" onchange="selectServer(this.value)"><option value="">— Select a server —</option></select>
+      </div>
       <button class="theme-toggle" onclick="toggleTheme()" id="themeToggleBtn" title="Toggle theme"><i class="fas fa-moon" id="themeIcon"></i></button>
       <!-- Notification bell -->
       <div style="position:relative;" id="notifWrap">
@@ -377,12 +441,20 @@ select.form-control option{background:var(--surface2);}
       </div>
     </div>
   </div>
+  <!-- Breadcrumb -->
+  <div id="breadcrumb">
+    <span>WAN Bot</span>
+    <span class="bc-sep">/</span>
+    <span id="bcSection" class="bc-current">Overview</span>
+    <span class="bc-sep" id="bcServerSep" style="display:none;">/</span>
+    <span id="bcServer" style="display:none;color:var(--text-muted);"></span>
+  </div>
   <div class="stats-grid">
-    <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#7c3aed,#5865f2)"><i class="fas fa-users" style="color:#fff"></i></div><div><div class="stat-value" id="statMembers">—</div><div class="stat-label">Members</div></div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#06b6d4,#3b82f6)"><i class="fas fa-hashtag" style="color:#fff"></i></div><div><div class="stat-value" id="statChannels">—</div><div class="stat-label">Channels</div></div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#10b981,#06b6d4)"><i class="fas fa-user-tag" style="color:#fff"></i></div><div><div class="stat-value" id="statRoles">—</div><div class="stat-label">Roles</div></div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444)"><i class="fas fa-bolt" style="color:#fff"></i></div><div><div class="stat-value" id="statLatency">—</div><div class="stat-label">Latency</div></div></div>
-    <div class="stat-card"><div class="stat-icon" style="background:linear-gradient(135deg,#ec4899,#8b5cf6)"><i class="fas fa-clock" style="color:#fff"></i></div><div><div class="stat-value" id="statUptime">—</div><div class="stat-label">Uptime</div></div></div>
+    <div class="stat-card" data-tip="Total members in this server"><div class="stat-icon" style="background:linear-gradient(135deg,#7c3aed,#5865f2)"><i class="fas fa-users" style="color:#fff"></i></div><div><div class="stat-value" id="statMembers">—</div><div class="stat-label">Members</div></div></div>
+    <div class="stat-card" data-tip="Total text + voice channels"><div class="stat-icon" style="background:linear-gradient(135deg,#06b6d4,#3b82f6)"><i class="fas fa-hashtag" style="color:#fff"></i></div><div><div class="stat-value" id="statChannels">—</div><div class="stat-label">Channels</div></div></div>
+    <div class="stat-card" data-tip="Number of roles in this server"><div class="stat-icon" style="background:linear-gradient(135deg,#10b981,#06b6d4)"><i class="fas fa-user-tag" style="color:#fff"></i></div><div><div class="stat-value" id="statRoles">—</div><div class="stat-label">Roles</div></div></div>
+    <div class="stat-card" data-tip="Bot response latency in milliseconds"><div class="stat-icon" style="background:linear-gradient(135deg,#f59e0b,#ef4444)"><i class="fas fa-bolt" style="color:#fff"></i></div><div><div class="stat-value" id="statLatency">—</div><div class="stat-label">Latency</div></div></div>
+    <div class="stat-card" data-tip="How long the bot has been running"><div class="stat-icon" style="background:linear-gradient(135deg,#ec4899,#8b5cf6)"><i class="fas fa-clock" style="color:#fff"></i></div><div><div class="stat-value" id="statUptime">—</div><div class="stat-label">Uptime</div></div></div>
   </div>
 
   <!-- OVERVIEW -->
@@ -1534,9 +1606,16 @@ function show(name,el){
   else document.querySelectorAll('.menu-item').forEach(m=>{if((m.getAttribute('onclick')||'').includes("'"+name+"'"))m.classList.add('active');});
   // Close mobile sidebar on nav
   closeSidebar();
-  // Update page title
+  // Update page title + breadcrumb
   const serverName=document.getElementById('ovServerName')?.textContent||'';
-  document.title='WAN Bot — '+name.charAt(0).toUpperCase()+name.slice(1)+(serverName&&serverName!=='Select a Server'?' — '+serverName:'');
+  const sectionLabel=name.charAt(0).toUpperCase()+name.slice(1).replace(/([A-Z])/g,' $1');
+  document.title='WAN Bot — '+sectionLabel+(serverName&&serverName!=='Select a Server'?' — '+serverName:'');
+  const bcSection=document.getElementById('bcSection');
+  const bcServer=document.getElementById('bcServer');
+  const bcServerSep=document.getElementById('bcServerSep');
+  if(bcSection)bcSection.textContent=sectionLabel;
+  if(bcServer&&serverName&&serverName!=='Select a Server'){bcServer.textContent=serverName;bcServer.style.display='';bcServerSep.style.display='';}
+  else if(bcServer){bcServer.style.display='none';bcServerSep.style.display='none';}
   if(name==='leaderboard'&&currentServer)loadLeaderboard('score');
   if(name==='audit'&&currentServer)loadAuditLog();
   if(name==='music'&&currentServer)loadMusicStatus();
@@ -1572,18 +1651,39 @@ function show(name,el){
 async function selectServer(id){
   currentServer=id||null;
   if(!id)return;
+  // Progress bar start
+  const prog=document.getElementById('topProgress');
+  prog.style.width='0%';prog.style.opacity='1';prog.classList.remove('done');
+  setTimeout(()=>prog.style.width='40%',50);
   notify('Loading...','info');
   await Promise.all([loadServerDetails(id),loadBotStatus(),loadLiveStats()]);
+  prog.style.width='80%';
   if(socket)socket.emit('subscribe_server',{server_id:id});
-  // Load overview widgets
   loadHealthScore();
   loadGrowthChart(7,document.getElementById('growth7btn'));
   loadTopMembers();
   loadRolePie('rolePieChart',_rolePieChart).then(c=>{if(c)_rolePieChart=c;});
   loadServerNotifications();
-  // Update page title
-  const serverName=document.getElementById('serverSelector').options[document.getElementById('serverSelector').selectedIndex]?.text||'';
+  prog.style.width='100%';
+  setTimeout(()=>prog.classList.add('done'),350);
+  // Update page title + server switcher highlight
+  const selEl=document.getElementById('serverSelector');
+  const serverName=selEl.options[selEl.selectedIndex]?.text||'';
   document.title='WAN Bot — '+serverName;
+  // Highlight active server card in sidebar
+  document.querySelectorAll('.server-card').forEach(c=>{
+    c.classList.toggle('active-server',c.dataset.sid===String(id));
+  });
+  // Show server icon in topbar
+  const iconEl=document.getElementById('topbarServerIcon');
+  if(iconEl){
+    iconEl.style.display='flex';
+    // Try to find icon from server cards
+    const card=document.querySelector(`.server-card[data-sid="${id}"]`);
+    const img=card?.querySelector('img');
+    if(img){iconEl.innerHTML=`<img src="${img.src}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;}
+    else{iconEl.innerHTML='🎮';}
+  }
 }
 
 async function loadServerDetails(id){
@@ -1596,9 +1696,9 @@ async function loadServerDetails(id){
     allTextChannels=d.channels.text||[];
     allVoiceChannels=d.channels.voice||[];
     populateChannelDropdowns(allTextChannels);
-    document.getElementById('statMembers').textContent=d.members.total;
-    document.getElementById('statChannels').textContent=d.channels.text.length+d.channels.voice.length;
-    document.getElementById('statRoles').textContent=d.roles.length;
+    animateCounter(document.getElementById('statMembers'),d.members.total);
+    animateCounter(document.getElementById('statChannels'),d.channels.text.length+d.channels.voice.length);
+    animateCounter(document.getElementById('statRoles'),d.roles.length);
     document.getElementById('serverSubtitle').textContent=d.name;
     // Hero
     document.getElementById('ovServerName').textContent=d.name;
@@ -1722,17 +1822,20 @@ function _updateActivityChart(d){
       labels,
       datasets:[{
         data:values,
-        backgroundColor:colors,
-        borderRadius:8,
+        backgroundColor:['rgba(124,58,237,.75)','rgba(16,185,129,.75)','rgba(239,68,68,.75)','rgba(245,158,11,.75)'],
+        borderColor:['#7c3aed','#10b981','#ef4444','#f59e0b'],
+        borderWidth:1,
+        borderRadius:10,
         borderSkipped:false,
+        hoverBackgroundColor:['rgba(124,58,237,1)','rgba(16,185,129,1)','rgba(239,68,68,1)','rgba(245,158,11,1)'],
       }]
     },
     options:{
       responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y}}},
       scales:{
-        x:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8b92b8',font:{size:12}}},
-        y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8b92b8',font:{size:11}},beginAtZero:true}
+        x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:12}}},
+        y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:11}},beginAtZero:true}
       }
     }
   });
@@ -2641,7 +2744,7 @@ async function loadGrowthChart(days,btn){
     if(d.error)return;
     const ctx=document.getElementById('growthChart');
     if(!ctx)return;
-    const cfg={type:'line',data:{labels:d.labels,datasets:[{label:'New Joins',data:d.joins,borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.15)',fill:true,tension:.4,pointRadius:3,pointBackgroundColor:'#7c3aed'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}},beginAtZero:true}}}};
+    const cfg={type:'line',data:{labels:d.labels,datasets:[{label:'New Joins',data:d.joins,borderColor:'#7c3aed',backgroundColor:(ctx)=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height);g.addColorStop(0,'rgba(124,58,237,.35)');g.addColorStop(1,'rgba(124,58,237,.01)');return g;},fill:true,tension:.4,pointRadius:4,pointBackgroundColor:'#7c3aed',pointBorderColor:'#fff',pointBorderWidth:2,borderWidth:2.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}},beginAtZero:true}}}};
     if(_growthChart){_growthChart.data=cfg.data;_growthChart.update();return;}
     _growthChart=new Chart(ctx,cfg);
   }catch(e){}
@@ -2653,7 +2756,7 @@ async function loadGrowthChart2(days,btn){
     if(d.error)return;
     const ctx=document.getElementById('growthChart2');
     if(!ctx)return;
-    const cfg={type:'line',data:{labels:d.labels,datasets:[{label:'New Joins',data:d.joins,borderColor:'#7c3aed',backgroundColor:'rgba(124,58,237,.15)',fill:true,tension:.4,pointRadius:3,pointBackgroundColor:'#7c3aed'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}},beginAtZero:true}}}};
+    const cfg={type:'line',data:{labels:d.labels,datasets:[{label:'New Joins',data:d.joins,borderColor:'#7c3aed',backgroundColor:(ctx)=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height);g.addColorStop(0,'rgba(124,58,237,.35)');g.addColorStop(1,'rgba(124,58,237,.01)');return g;},fill:true,tension:.4,pointRadius:4,pointBackgroundColor:'#7c3aed',pointBorderColor:'#fff',pointBorderWidth:2,borderWidth:2.5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b92b8',font:{size:10}},beginAtZero:true}}}};
     if(_growthChart2){_growthChart2.data=cfg.data;_growthChart2.update();return;}
     _growthChart2=new Chart(ctx,cfg);
   }catch(e){}
@@ -3738,6 +3841,105 @@ async function triggerBotScan(){
     }
     if(name==='roblox'&&currentServer)loadRoblox();
   };
+
+  // ── Animated counter ──
+  window.animateCounter=function(el,target,duration=900){
+    if(!el)return;
+    const start=parseInt(el.textContent)||0;
+    if(start===target){el.textContent=target;return;}
+    const startTime=performance.now();
+    function step(now){
+      const p=Math.min((now-startTime)/duration,1);
+      const ease=1-Math.pow(1-p,3); // ease-out cubic
+      el.textContent=Math.round(start+(target-start)*ease);
+      if(p<1)requestAnimationFrame(step);
+      else el.textContent=target;
+    }
+    requestAnimationFrame(step);
+  };
+
+  // ── Button ripple ──
+  document.addEventListener('click',function(e){
+    const btn=e.target.closest('.btn');
+    if(!btn)return;
+    const r=document.createElement('span');
+    r.className='ripple';
+    const rect=btn.getBoundingClientRect();
+    const size=Math.max(rect.width,rect.height);
+    r.style.cssText=`width:${size}px;height:${size}px;left:${e.clientX-rect.left-size/2}px;top:${e.clientY-rect.top-size/2}px;`;
+    btn.appendChild(r);
+    setTimeout(()=>r.remove(),600);
+  });
+
+  // ── Tooltip system ──
+  const _tip=document.getElementById('tooltip');
+  document.addEventListener('mouseover',function(e){
+    const el=e.target.closest('[data-tip]');
+    if(!el||!_tip)return;
+    _tip.textContent=el.dataset.tip;
+    _tip.classList.add('show');
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!_tip.classList.contains('show'))return;
+    _tip.style.left=(e.clientX+14)+'px';
+    _tip.style.top=(e.clientY-8)+'px';
+  });
+  document.addEventListener('mouseout',function(e){
+    if(!e.target.closest('[data-tip]'))return;
+    _tip.classList.remove('show');
+  });
+
+  // ── Server switcher builder ──
+  async function buildServerSwitcher(){
+    try{
+      const d=await(await apiFetch('/api/servers')).json();
+      const servers=d.servers||[];
+      const sel=document.getElementById('serverSelector');
+      const list=document.getElementById('serverCardList');
+      // Populate hidden <select> for compatibility
+      sel.innerHTML='<option value="">— Select a server —</option>'+
+        servers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+      // Build sidebar cards
+      if(!list)return;
+      if(!servers.length){list.innerHTML='<div style="color:var(--text-dim);font-size:11px;padding:6px 2px;">No servers found</div>';return;}
+      list.innerHTML=servers.map(s=>{
+        const icon=s.icon
+          ?`<img src="${s.icon}" style="width:100%;height:100%;object-fit:cover;border-radius:10px;" onerror="this.parentElement.textContent='🎮'">`
+          :'🎮';
+        return `<div class="server-card" data-sid="${s.id}" onclick="selectServer('${s.id}');document.getElementById('serverSelector').value='${s.id}';">
+          <div class="server-card-icon">${icon}</div>
+          <div style="flex:1;min-width:0;">
+            <div class="server-card-name">${escHtml(s.name)}</div>
+            <div class="server-card-count">${s.member_count||''} members</div>
+          </div>
+          <i class="fas fa-check server-card-check"></i>
+        </div>`;
+      }).join('');
+    }catch(e){console.warn('Server switcher error:',e);}
+  }
+  buildServerSwitcher();
+
+  // ── Chart gradient helper ──
+  window.chartGradient=function(ctx,color1,color2){
+    const g=ctx.createLinearGradient(0,0,0,ctx.canvas.height);
+    g.addColorStop(0,color1);
+    g.addColorStop(1,color2);
+    return g;
+  };
+
+  // ── Themed Chart defaults ──
+  Chart.defaults.color='#8892b8';
+  Chart.defaults.borderColor='rgba(120,130,180,0.09)';
+  Chart.defaults.font.family="'Inter',sans-serif";
+  Chart.defaults.plugins.legend.labels.usePointStyle=true;
+  Chart.defaults.plugins.tooltip.backgroundColor='rgba(8,10,18,.95)';
+  Chart.defaults.plugins.tooltip.borderColor='rgba(120,130,180,0.18)';
+  Chart.defaults.plugins.tooltip.borderWidth=1;
+  Chart.defaults.plugins.tooltip.padding=10;
+  Chart.defaults.plugins.tooltip.titleFont={weight:'700',size:12};
+  Chart.defaults.plugins.tooltip.bodyFont={size:12};
+  Chart.defaults.plugins.tooltip.cornerRadius=10;
+
 })();
 </script>
 </body>
