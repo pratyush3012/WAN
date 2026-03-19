@@ -1047,24 +1047,20 @@ def start_web_dashboard(bot, host='0.0.0.0', port=5000):
     logger.info(f"🌐 Starting Enhanced Web Dashboard on http://{host}:{port}")
 
     def _run():
+        # Try eventlet first (production), fall back to werkzeug threaded
         try:
-            import eventlet
             import eventlet.wsgi
             listener = eventlet.listen((host, port))
-            logger.info(f"✅ Web server bound to port {port}")
+            logger.info(f"✅ Web server bound to port {port} via eventlet")
             eventlet.wsgi.server(listener, app, log_output=False)
         except Exception as e:
-            logger.error(f"eventlet failed: {e} — falling back to werkzeug")
+            logger.warning(f"eventlet failed ({e}), trying werkzeug...")
             try:
-                socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True)
+                app.run(host=host, port=port, threaded=True, use_reloader=False)
             except Exception as e2:
-                logger.error(f"werkzeug fallback also failed: {e2}")
+                logger.error(f"werkzeug also failed: {e2}")
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    # Block briefly to confirm the port is bound before returning
-    import time
-    time.sleep(1)
+    threading.Thread(target=_run, daemon=True).start()
 
 if __name__ == '__main__':
     print("⚠️  Run this through bot.py, not directly!")
