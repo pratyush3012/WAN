@@ -1304,8 +1304,14 @@ def get_text_channels(server_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ===== MUSIC STATUS STUB =====
+@app.route('/api/server/<server_id>/music/status')
+@require_auth
+def music_status(server_id):
+    """Music status stub — returns not playing since music cog is not loaded."""
+    return jsonify({'playing': False, 'track': None, 'queue': [], 'volume': 100})
+
 # ===== MANAGEMENT API ENDPOINTS =====
-# Import management functions
 from web_dashboard_management import (
     create_role_action, edit_role_action, delete_role_action, assign_role_action,
     create_channel_action, edit_channel_action, delete_channel_action,
