@@ -725,7 +725,7 @@ def get_roblox_linked_members(server_id):
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
         
-        is_demo = not roblox_cog.api_configured
+        is_demo = not roblox_cog.has_game_api
         members = []
         for discord_id, member_info in roblox_cog.clan_members.items():
             # Filter to this guild only
@@ -742,16 +742,17 @@ def get_roblox_linked_members(server_id):
                 'roblox_username': member_info['roblox_username'],
                 'roblox_id': member_info['roblox_id'],
                 'linked_at': member_info['linked_at'],
-                'source': member_info.get('source', 'manual')
+                'source': member_info.get('source', 'manual'),
+                # real-time data from cache
+                'avatar_url':    player_data.get('avatar_url')      if player_data else None,
+                'is_online':     player_data.get('is_online', False) if player_data else False,
+                'is_in_game':    player_data.get('is_in_game', False) if player_data else False,
+                'last_location': player_data.get('last_location', 'Offline') if player_data else 'Offline',
+                'friend_count':  player_data.get('friend_count', 0) if player_data else 0,
+                'badge_count':   player_data.get('badge_count', 0)  if player_data else 0,
+                'stats':         player_data.get('stats', {'has_game_data': False}) if player_data else {'has_game_data': False},
+                'last_updated':  player_data.get('last_updated')     if player_data else None,
             }
-            
-            if player_data:
-                member_entry.update({
-                    'is_online': player_data.get('is_online', False),
-                    'currently_playing': player_data.get('currently_playing', False),
-                    'stats': player_data.get('stats', {}),
-                    'last_updated': player_data.get('last_updated')
-                })
             
             members.append(member_entry)
         
@@ -759,6 +760,7 @@ def get_roblox_linked_members(server_id):
             'members': members,
             'total': len(members),
             'is_demo': is_demo,
+            'auto_dm_enabled': server_id in roblox_cog.auto_dm_guilds,
             'timestamp': datetime.utcnow().isoformat()
         })
     except Exception as e:
@@ -905,7 +907,7 @@ def get_roblox_clan_stats_server(server_id):
         guild = bot_instance.get_guild(server_id)
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
-        is_demo = not roblox_cog.api_configured
+        is_demo = not roblox_cog.has_game_api
         all_stats = []
         online_count = 0
         playing_count = 0
@@ -917,12 +919,12 @@ def get_roblox_clan_stats_server(server_id):
                 all_stats.append(player_data)
                 if player_data.get('is_online'):
                     online_count += 1
-                if player_data.get('currently_playing'):
+                if player_data.get('is_in_game'):
                     playing_count += 1
-        total_playtime = sum(p['stats']['playtime'] for p in all_stats)
-        total_kills = sum(p['stats']['kills'] for p in all_stats)
-        total_deaths = sum(p['stats']['deaths'] for p in all_stats)
-        avg_level = sum(p['stats']['level'] for p in all_stats) / len(all_stats) if all_stats else 0
+        total_playtime = sum(p.get('stats', {}).get('playtime', 0) for p in all_stats)
+        total_kills = sum(p.get('stats', {}).get('kills', 0) for p in all_stats)
+        total_deaths = sum(p.get('stats', {}).get('deaths', 0) for p in all_stats)
+        avg_level = sum(p.get('stats', {}).get('level', 0) for p in all_stats) / len(all_stats) if all_stats else 0
         return jsonify({
             'total_linked': len([d for d in roblox_cog.clan_members if guild.get_member(d)]),
             'tracked_members': len(all_stats),
@@ -1675,25 +1677,70 @@ async def _dm_role_members(guild, role, roblox_cog):
             already_linked += 1
             continue
         try:
-            embed = discord.Embed(
-                title="🎮 What's your Roblox username?",
-                description=(
-                    f"Hey **{member.display_name}**! The admins of **{guild.name}** are collecting "
-                    f"Roblox in-game names to track clan stats on the dashboard.\n\n"
-                    f"Please reply to this message with your **exact Roblox username**.\n\n"
-                    f"Example: `Builderman`\n\n"
-                    f"*You can also use `/roblox-link` in the server anytime.*"
-                ),
-                color=discord.Color.from_rgb(102, 126, 234)
-            )
-            embed.set_footer(text=f"{guild.name} • Wizard West Clan")
-            dm = await member.create_dm()
-            await dm.send(embed=embed)
+            await roblox_cog._send_roblox_dm(member, guild)
             sent += 1
             await asyncio.sleep(0.5)
         except Exception:
             failed += 1
     return {'sent': sent, 'failed': failed, 'already_linked': already_linked, 'role': role.name}
+
+@app.route('/api/server/<int:server_id>/roblox/dm-all', methods=['POST'])
+@require_auth
+def roblox_dm_all(server_id):
+    """DM ALL unlinked members asking for their Roblox username"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+        roblox_cog = bot_instance.get_cog('RobloxIntegration')
+        if not roblox_cog:
+            return jsonify({'error': 'Roblox cog not loaded'}), 503
+        loop = bot_instance.loop
+        if not (loop and loop.is_running()):
+            return jsonify({'error': 'Bot loop not available'}), 503
+
+        async def _dm_all():
+            sent = failed = already_linked = 0
+            for member in guild.members:
+                if member.bot:
+                    continue
+                if member.id in roblox_cog.clan_members:
+                    already_linked += 1
+                    continue
+                try:
+                    await roblox_cog._send_roblox_dm(member, guild)
+                    sent += 1
+                    await asyncio.sleep(0.6)
+                except Exception:
+                    failed += 1
+            return {'sent': sent, 'failed': failed, 'already_linked': already_linked}
+
+        result = asyncio.run_coroutine_threadsafe(_dm_all(), loop).result(timeout=120)
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        logger.error(f"DM all error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<int:server_id>/roblox/autodm', methods=['POST'])
+@require_auth
+def roblox_autodm_toggle(server_id):
+    """Toggle auto-DM for new joiners"""
+    try:
+        roblox_cog = bot_instance.get_cog('RobloxIntegration') if bot_instance else None
+        if not roblox_cog:
+            return jsonify({'error': 'Roblox cog not loaded'}), 503
+        data = request.get_json() or {}
+        enabled = bool(data.get('enabled', False))
+        if enabled:
+            roblox_cog.auto_dm_guilds.add(server_id)
+        else:
+            roblox_cog.auto_dm_guilds.discard(server_id)
+        roblox_cog._save_auto_dm()
+        return jsonify({'success': True, 'enabled': enabled})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Get server members list
 
