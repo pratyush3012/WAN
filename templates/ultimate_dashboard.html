@@ -103,6 +103,17 @@ select.form-control option{background:var(--surface2);}
 .btn-ghost:hover{background:rgba(255,255,255,.09);border-color:var(--border-bright);}
 .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:5px;letter-spacing:.2px;}
 .badge-success{background:rgba(16,185,129,.12);color:#34d399;border:1px solid rgba(16,185,129,.22);}
+/* Feature toggle switch */
+.feat-toggle{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);margin-bottom:8px;}
+.feat-toggle-label{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;}
+.feat-toggle-label i{width:20px;text-align:center;color:var(--accent);}
+.toggle-switch{position:relative;width:42px;height:24px;flex-shrink:0;}
+.toggle-switch input{opacity:0;width:0;height:0;}
+.toggle-slider{position:absolute;inset:0;background:rgba(255,255,255,.1);border-radius:24px;cursor:pointer;transition:.25s;border:1px solid var(--border);}
+.toggle-slider:before{content:'';position:absolute;width:18px;height:18px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.25s;}
+.toggle-switch input:checked+.toggle-slider{background:var(--accent);border-color:var(--accent);}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(18px);}
+.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
 .badge-danger{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.22);}
 .badge-warning{background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.22);}
 .badge-secondary{background:rgba(255,255,255,.06);color:var(--text-muted);border:1px solid var(--border);}
@@ -396,6 +407,7 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('embedbuilder',this)"><i class="fas fa-palette"></i><span>Embed Builder</span></button>
     <button class="menu-item" onclick="show('logconfig',this)"><i class="fas fa-file-alt"></i><span>Log Config</span></button>
     <button class="menu-item" onclick="show('settings',this)"><i class="fas fa-cog"></i><span>Settings</span></button>
+    <button class="menu-item" onclick="show('featuretoggles',this)"><i class="fas fa-toggle-on"></i><span>Feature Toggles</span></button>
     <div class="menu-section">Intelligence</div>
     <button class="menu-item" onclick="show('botanalyzer',this)"><i class="fas fa-microscope"></i><span>Bot Analyzer</span></button>
     <button class="menu-item" onclick="show('commandcenter',this)"><i class="fas fa-terminal"></i><span>Command Center</span></button>
@@ -1302,6 +1314,18 @@ select.form-control option{background:var(--surface2);}
     </div>
   </div>
 
+  <!-- FEATURE TOGGLES -->
+  <div id="sec-featuretoggles" class="section">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-toggle-on"></i> Feature Toggles</h3>
+        <span style="color:var(--text-muted);font-size:12px;">Enable or disable features per server</span>
+      </div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:20px;">Toggle features on or off for this server. Disabled features won't respond to commands or events.</p>
+      <div id="featureToggleList"><p style="color:var(--text-muted);">Select a server to manage features.</p></div>
+    </div>
+  </div>
+
   <!-- SETTINGS -->
   <div id="sec-settings" class="section">
     <div class="card">
@@ -1508,8 +1532,28 @@ select.form-control option{background:var(--surface2);}
     </div>
 
     <!-- Link member form -->
+    <!-- Send DM by role -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-paper-plane"></i> Collect Usernames by Role</h3>
+        <span style="color:var(--text-muted);font-size:12px;">Bot DMs all members of the selected role</span>
+      </div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">Select a role — the bot will personally message every member in that role asking for their Roblox username. When they reply, it's automatically registered and shown here.</p>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;margin-bottom:12px;">
+        <div class="form-group" style="margin:0;">
+          <label class="form-label">Select Role to Message</label>
+          <select id="robloxDmRole" class="form-control">
+            <option value="">Choose a role...</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="sendRobloxDmByRole()" id="robloxDmBtn"><i class="fas fa-paper-plane"></i> Send DMs</button>
+      </div>
+      <div id="robloxDmResult" style="display:none;padding:12px;border-radius:10px;font-size:13px;"></div>
+    </div>
+
+    <!-- Link member form -->
     <div class="card">
-      <div class="card-header"><h3 class="card-title"><i class="fas fa-user-plus"></i> Link a Member</h3></div>
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-user-plus"></i> Link a Member Manually</h3></div>
       <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;">
         <div class="form-group" style="margin:0;">
           <label class="form-label">Discord Member</label>
@@ -3730,6 +3774,12 @@ async function loadRoblox(){
       sel.innerHTML = '<option value="">Select member...</option>' +
         allMembers.filter(m=>!m.bot).map(m=>`<option value="${m.id}">${escHtml(m.display_name||m.username)}</option>`).join('');
     }
+    // Populate DM-by-role select
+    const roleSel = document.getElementById('robloxDmRole');
+    if(roleSel && allRoles.length){
+      roleSel.innerHTML = '<option value="">Choose a role...</option>' +
+        allRoles.filter(r=>r.name!=='@everyone').map(r=>`<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
+    }
   }catch(e){
     document.getElementById('robloxLeaderboard').innerHTML=`<p style="color:var(--danger);padding:16px;">Error: ${e.message}</p>`;
   }
@@ -3898,6 +3948,39 @@ async function linkRobloxMember(){
   }
 }
 
+async function sendRobloxDmByRole(){
+  if(!currentServer)return;
+  const roleId = document.getElementById('robloxDmRole').value;
+  if(!roleId){notify('Select a role first','warning');return;}
+  const btn = document.getElementById('robloxDmBtn');
+  const res = document.getElementById('robloxDmResult');
+  btn.disabled=true; btn.innerHTML='<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Sending...';
+  res.style.display='none';
+  try{
+    const r = await apiFetch(`/api/server/${currentServer}/roblox/dm-by-role`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role_id:roleId})});
+    const d = await r.json();
+    if(d.success){
+      res.style.display='block';
+      res.style.background='rgba(16,185,129,.1)';
+      res.style.border='1px solid rgba(16,185,129,.3)';
+      res.style.color='#34d399';
+      res.innerHTML=`✅ DMs sent to <strong>${d.sent}</strong> members in <strong>${escHtml(d.role)}</strong>. `+
+        `${d.already_linked>0?`<span style="color:var(--text-muted)">(${d.already_linked} already linked, ${d.failed} failed)</span>`:''}`;
+      notify(`Sent ${d.sent} DMs to ${d.role}`,'success');
+    } else {
+      res.style.display='block';
+      res.style.background='rgba(239,68,68,.1)';
+      res.style.border='1px solid rgba(239,68,68,.3)';
+      res.style.color='#f87171';
+      res.innerHTML='❌ '+escHtml(d.error||'Unknown error');
+    }
+  }catch(e){
+    notify('Error: '+e.message,'danger');
+  }finally{
+    btn.disabled=false; btn.innerHTML='<i class="fas fa-paper-plane"></i> Send DMs';
+  }
+}
+
 async function unlinkRobloxMember(discordId){
   if(!currentServer||!confirm('Unlink this member from Roblox?'))return;
   const r = await apiFetch(`/api/server/${currentServer}/roblox/unlink/${discordId}`,{method:'DELETE'});
@@ -3971,7 +4054,72 @@ async function triggerBotScan(){
       if(lch&&allTextChannels.length)lch.innerHTML='<option value="">Same channel as message</option>'+allTextChannels.map(c=>`<option value="${c.id}"># ${escHtml(c.name)}</option>`).join('');
     }
     if(name==='roblox'&&currentServer)loadRoblox();
+    if(name==='featuretoggles'&&currentServer)loadFeatureToggles();
   };
+
+// ===== FEATURE TOGGLES =====
+const _FEATURE_DEFS = [
+  {key:'leveling',label:'XP & Leveling',icon:'fas fa-star',desc:'Message XP, level-up announcements, level roles'},
+  {key:'automod',label:'AutoMod',icon:'fas fa-shield-virus',desc:'Spam detection, link filtering, caps control'},
+  {key:'antiraid',label:'Anti-Raid',icon:'fas fa-user-shield',desc:'Join rate limiting, lockdown protection'},
+  {key:'smartmod',label:'SmartMod (Toxicity)',icon:'fas fa-brain',desc:'AI-powered bad word and slur detection'},
+  {key:'welcome',label:'Welcome / Goodbye',icon:'fas fa-door-open',desc:'Welcome messages, goodbye messages, join DMs'},
+  {key:'translation',label:'Translation',icon:'fas fa-language',desc:'React 🌐 to translate any message'},
+  {key:'economy',label:'Economy',icon:'fas fa-coins',desc:'Coins, shop, daily rewards'},
+  {key:'tickets',label:'Tickets',icon:'fas fa-ticket-alt',desc:'Support ticket system'},
+  {key:'starboard',label:'Starboard',icon:'fas fa-star',desc:'Pin popular messages to a starboard channel'},
+  {key:'roblox',label:'Roblox Integration',icon:'fas fa-gamepad',desc:'Wizard West stats, leaderboard, clan tracking'},
+  {key:'music',label:'Music',icon:'fas fa-music',desc:'Music playback in voice channels'},
+  {key:'giveaways',label:'Giveaways',icon:'fas fa-gift',desc:'Create and manage giveaways'},
+  {key:'polls',label:'Polls',icon:'fas fa-poll',desc:'Create polls with reactions'},
+  {key:'badges',label:'Badges',icon:'fas fa-award',desc:'Custom member badge system'},
+  {key:'voicexp',label:'Voice XP',icon:'fas fa-microphone',desc:'XP for time spent in voice channels'},
+  {key:'modlog',label:'Mod Log',icon:'fas fa-gavel',desc:'Log all moderation actions'},
+];
+
+async function loadFeatureToggles(){
+  if(!currentServer)return;
+  const container=document.getElementById('featureToggleList');
+  container.innerHTML='<p style="color:var(--text-muted);">Loading...</p>';
+  try{
+    const r=await apiFetch(`/api/server/${currentServer}/features`);
+    const d=await r.json();
+    const features=d.features||{};
+    container.innerHTML=_FEATURE_DEFS.map(f=>`
+      <div class="feat-toggle">
+        <div class="feat-toggle-label">
+          <i class="${f.icon}"></i>
+          <div>
+            <div style="font-weight:700;">${f.label}</div>
+            <div style="color:var(--text-muted);font-size:11px;font-weight:400;">${f.desc}</div>
+          </div>
+        </div>
+        <label class="toggle-switch" title="${features[f.key]!==false?'Enabled — click to disable':'Disabled — click to enable'}">
+          <input type="checkbox" ${features[f.key]!==false?'checked':''} onchange="toggleFeature('${f.key}',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>`).join('');
+  }catch(e){
+    container.innerHTML='<p style="color:var(--danger);">Error: '+e.message+'</p>';
+  }
+}
+
+async function toggleFeature(feature, enabled){
+  if(!currentServer)return;
+  try{
+    const r=await apiFetch(`/api/server/${currentServer}/features`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feature,enabled})});
+    const d=await r.json();
+    if(d.success){
+      notify(`${feature} ${enabled?'enabled':'disabled'}`,'success');
+    } else {
+      notify('Error: '+(d.error||'Unknown'),'danger');
+      loadFeatureToggles(); // revert UI
+    }
+  }catch(e){
+    notify('Error: '+e.message,'danger');
+    loadFeatureToggles();
+  }
+}
 
   // ── Animated counter ──
   window.animateCounter=function(el,target,duration=900){

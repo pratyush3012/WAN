@@ -65,8 +65,12 @@ class Leveling(commands.Cog):
         g = self._guild(gid)
         key = str(uid)
         if key not in g['users']:
-            g['users'][key] = {'xp': 0, 'messages': 0}
-        return g['users'][key]
+            g['users'][key] = {'xp': 0, 'messages': 0, 'level': 0}
+        # Backfill level field for existing users
+        u = g['users'][key]
+        if 'level' not in u:
+            u['level'] = _level_from_xp(u.get('xp', 0))
+        return u
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -79,11 +83,13 @@ class Leveling(commands.Cog):
         self._cd[key] = now
 
         u = self._user(message.guild.id, message.author.id)
-        old_level, _, _ = _xp_progress(u['xp'])
+        old_level = u.get('level', _level_from_xp(u['xp']))  # use stored level to avoid re-announce on restart
         gain = random.randint(15, 25)
         u['xp'] += gain
         u['messages'] = u.get('messages', 0) + 1
         new_level, cur_xp, needed = _xp_progress(u['xp'])
+        # Always keep stored level in sync
+        u['level'] = new_level
         self._save()
 
         if new_level > old_level:

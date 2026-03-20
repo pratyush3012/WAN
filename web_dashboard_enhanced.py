@@ -226,6 +226,12 @@ def login():
                 return jsonify({'success': False, 'error': 'Username and password required'}), 400
             
             user = ADMIN_USERS.get(username)
+            # Also check persistent users file
+            if not user:
+                persistent_users = _load_users()
+                pu = persistent_users.get(username)
+                if pu:
+                    user = {'password_hash': pu['password_hash'].encode() if isinstance(pu['password_hash'], str) else pu['password_hash'], 'permissions': pu.get('permissions', ['dashboard'])}
             if user and verify_password(password, user['password_hash']):
                 session.permanent = True
                 session['user_id'] = username
@@ -1445,7 +1451,252 @@ def update_server_settings(server_id):
     """Update server settings"""
     return update_server_settings_action(server_id, request.json)
 
+# ===== FEATURE TOGGLES =====
+# Stored per-guild in a JSON file: {guild_id: {feature: bool}}
+_FEATURES_FILE = data_path('feature_toggles.json')
+_DEFAULT_FEATURES = {
+    'leveling': True, 'automod': True, 'antiraid': True, 'smartmod': True,
+    'welcome': True, 'translation': True, 'economy': True, 'tickets': True,
+    'starboard': True, 'roblox': True, 'music': True, 'giveaways': True,
+    'polls': True, 'badges': True, 'voicexp': True, 'modlog': True,
+}
+
+def _load_feature_toggles():
+    try:
+        if os.path.exists(_FEATURES_FILE):
+            with open(_FEATURES_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_feature_toggles(data):
+    try:
+        with open(_FEATURES_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"Error saving feature toggles: {e}")
+
+@app.route('/api/server/<server_id>/features', methods=['GET'])
+@require_auth
+def get_features(server_id):
+    data = _load_feature_toggles()
+    guild_features = {**_DEFAULT_FEATURES, **data.get(str(server_id), {})}
+    return jsonify({'features': guild_features})
+
+@app.route('/api/server/<server_id>/features', methods=['POST'])
+@require_auth
+def set_features(server_id):
+    body = request.get_json() or {}
+    feature = body.get('feature')
+    enabled = body.get('enabled')
+    if feature is None or enabled is None:
+        return jsonify({'error': 'feature and enabled required'}), 400
+    data = _load_feature_toggles()
+    if str(server_id) not in data:
+        data[str(server_id)] = {}
+    data[str(server_id)][feature] = bool(enabled)
+    _save_feature_toggles(data)
+    return jsonify({'success': True, 'feature': feature, 'enabled': bool(enabled)})
+
+# ===== REGISTER / OTP AUTH =====
+_USERS_FILE = data_path('dashboard_users.json')
+_OTP_STORE = {}  # email -> {otp, expires, pending_user}
+
+def _load_users():
+    try:
+        if os.path.exists(_USERS_FILE):
+            with open(_USERS_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_users(data):
+    try:
+        with open(_USERS_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"Error saving users: {e}")
+
+def _send_otp_email(to_email: str, otp: str, username: str) -> bool:
+    """Send OTP via SMTP. Requires SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars."""
+    import smtplib
+    from email.mime.text import MIMEText
+    smtp_host = os.getenv('SMTP_HOST')
+    smtp_port = int(os.getenv('SMTP_PORT', '587'))
+    smtp_user = os.getenv('SMTP_USER')
+    smtp_pass = os.getenv('SMTP_PASS')
+    if not all([smtp_host, smtp_user, smtp_pass]):
+        logger.warning("SMTP not configured — OTP email not sent")
+        return False
+    try:
+        msg = MIMEText(
+            f"Hi {username},\n\nYour WAN Bot Dashboard verification code is:\n\n"
+            f"  {otp}\n\nThis code expires in 10 minutes.\n\n"
+            f"If you didn't request this, ignore this email.",
+            'plain'
+        )
+        msg['Subject'] = f'WAN Bot Dashboard — Verification Code: {otp}'
+        msg['From'] = smtp_user
+        msg['To'] = to_email
+        with smtplib.SMTP(smtp_host, smtp_port) as s:
+            s.starttls()
+            s.login(smtp_user, smtp_pass)
+            s.sendmail(smtp_user, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        logger.error(f"SMTP error: {e}")
+        return False
+
+@app.route('/api/auth/register', methods=['POST'])
+@limiter.limit("3 per minute")
+def api_register():
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    email = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+    if not username or not email or not password:
+        return jsonify({'success': False, 'error': 'All fields required'}), 400
+    if len(username) < 3 or len(username) > 32:
+        return jsonify({'success': False, 'error': 'Username must be 3–32 characters'}), 400
+    if len(password) < 8:
+        return jsonify({'success': False, 'error': 'Password must be at least 8 characters'}), 400
+    if '@' not in email or '.' not in email:
+        return jsonify({'success': False, 'error': 'Invalid email address'}), 400
+    users = _load_users()
+    if username in users:
+        return jsonify({'success': False, 'error': 'Username already taken'}), 409
+    if any(u.get('email') == email for u in users.values()):
+        return jsonify({'success': False, 'error': 'Email already registered'}), 409
+    # Generate OTP
+    import random as _r
+    otp = str(_r.randint(100000, 999999))
+    _OTP_STORE[email] = {
+        'otp': otp,
+        'expires': datetime.utcnow().timestamp() + 600,
+        'pending': {'username': username, 'email': email, 'password_hash': hash_password(password).decode()}
+    }
+    sent = _send_otp_email(email, otp, username)
+    if not sent:
+        # Dev fallback: log OTP to console
+        logger.info(f"[DEV] OTP for {email}: {otp}")
+    return jsonify({'success': True, 'email_sent': sent, 'dev_otp': otp if not sent else None})
+
+@app.route('/api/auth/verify-otp', methods=['POST'])
+@limiter.limit("5 per minute")
+def api_verify_otp():
+    data = request.get_json() or {}
+    email = data.get('email', '').strip().lower()
+    otp = data.get('otp', '').strip()
+    entry = _OTP_STORE.get(email)
+    if not entry:
+        return jsonify({'success': False, 'error': 'No pending verification for this email'}), 400
+    if datetime.utcnow().timestamp() > entry['expires']:
+        del _OTP_STORE[email]
+        return jsonify({'success': False, 'error': 'OTP expired — please register again'}), 400
+    if entry['otp'] != otp:
+        return jsonify({'success': False, 'error': 'Incorrect code'}), 400
+    # Confirm user
+    pending = entry['pending']
+    users = _load_users()
+    users[pending['username']] = {
+        'email': pending['email'],
+        'password_hash': pending['password_hash'],
+        'permissions': ['dashboard'],
+        'created_at': datetime.utcnow().isoformat(),
+        'verified': True
+    }
+    _save_users(users)
+    del _OTP_STORE[email]
+    # Auto-login
+    session.permanent = True
+    session['user_id'] = pending['username']
+    session['username'] = pending['username']
+    session['login_time'] = datetime.utcnow().isoformat()
+    return jsonify({'success': True})
+
+@app.route('/api/auth/resend-otp', methods=['POST'])
+@limiter.limit("2 per minute")
+def api_resend_otp():
+    data = request.get_json() or {}
+    email = data.get('email', '').strip().lower()
+    entry = _OTP_STORE.get(email)
+    if not entry:
+        return jsonify({'success': False, 'error': 'No pending verification'}), 400
+    import random as _r
+    otp = str(_r.randint(100000, 999999))
+    entry['otp'] = otp
+    entry['expires'] = datetime.utcnow().timestamp() + 600
+    sent = _send_otp_email(email, otp, entry['pending']['username'])
+    if not sent:
+        logger.info(f"[DEV] Resent OTP for {email}: {otp}")
+    return jsonify({'success': True, 'email_sent': sent, 'dev_otp': otp if not sent else None})
+
+# ===== ROBLOX DM BY ROLE =====
+@app.route('/api/server/<int:server_id>/roblox/dm-by-role', methods=['POST'])
+@require_auth
+def roblox_dm_by_role(server_id):
+    """Send DM to all members with a specific role asking for their Roblox username"""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        data = request.get_json() or {}
+        role_id = int(data.get('role_id', 0))
+        if not role_id:
+            return jsonify({'error': 'role_id required'}), 400
+        guild = bot_instance.get_guild(server_id)
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+        role = guild.get_role(role_id)
+        if not role:
+            return jsonify({'error': 'Role not found'}), 404
+        roblox_cog = bot_instance.get_cog('RobloxIntegration')
+        if not roblox_cog:
+            return jsonify({'error': 'Roblox cog not loaded'}), 503
+        loop = bot_instance.loop
+        if not (loop and loop.is_running()):
+            return jsonify({'error': 'Bot loop not available'}), 503
+        future = asyncio.run_coroutine_threadsafe(
+            _dm_role_members(guild, role, roblox_cog), loop
+        )
+        result = future.result(timeout=30)
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        logger.error(f"DM by role error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+async def _dm_role_members(guild, role, roblox_cog):
+    sent, failed, already_linked = 0, 0, 0
+    for member in role.members:
+        if member.bot:
+            continue
+        if member.id in roblox_cog.clan_members:
+            already_linked += 1
+            continue
+        try:
+            embed = discord.Embed(
+                title="🎮 What's your Roblox username?",
+                description=(
+                    f"Hey **{member.display_name}**! The admins of **{guild.name}** are collecting "
+                    f"Roblox in-game names to track clan stats on the dashboard.\n\n"
+                    f"Please reply to this message with your **exact Roblox username**.\n\n"
+                    f"Example: `Builderman`\n\n"
+                    f"*You can also use `/roblox-link` in the server anytime.*"
+                ),
+                color=discord.Color.from_rgb(102, 126, 234)
+            )
+            embed.set_footer(text=f"{guild.name} • Wizard West Clan")
+            dm = await member.create_dm()
+            await dm.send(embed=embed)
+            sent += 1
+            await asyncio.sleep(0.5)
+        except Exception:
+            failed += 1
+    return {'sent': sent, 'failed': failed, 'already_linked': already_linked, 'role': role.name}
+
 # Get server members list
+
 @app.route('/api/server/<server_id>/members')
 @require_auth
 def get_server_members(server_id):
