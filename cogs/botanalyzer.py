@@ -199,3 +199,7 @@ class BotAnalyzer(commands.Cog):
     def get_guild_data(self, guild_id: int) -> dict:
         """Return analyzer data for a guild (used by dashboard API)."""
         return self._guild(guild_id)
+
+
+async def setup(bot):
+    await bot.add_cog(BotAnalyzer(bot))
