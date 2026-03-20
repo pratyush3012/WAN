@@ -680,6 +680,9 @@ def get_live_stats(server_id):
 def invite():
     """Public bot invite page"""
     client_id = os.getenv('DISCORD_CLIENT_ID', '')
+    # Fall back to bot's own application ID if env var not set
+    if not client_id and bot_instance and bot_instance.is_ready():
+        client_id = str(bot_instance.user.id)
     invite_url = (
         f"https://discord.com/api/oauth2/authorize"
         f"?client_id={client_id}"
