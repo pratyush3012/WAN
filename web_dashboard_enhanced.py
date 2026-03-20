@@ -652,9 +652,41 @@ def get_bot_analyzer(server_id):
 @app.route('/api/server/<server_id>/audit')
 @require_auth
 def get_audit_log(server_id):
-    """Get recent audit log events for a server"""
-    audit_log = dashboard_cache.get('audit_log', {}).get(str(server_id), [])
-    return jsonify({'events': audit_log[:50]})
+    """Get recent audit log events — combines in-memory cache + Discord audit log"""
+    try:
+        cached = dashboard_cache.get('audit_log', {}).get(str(server_id), [])
+        if cached:
+            return jsonify({'events': cached[:50]})
+        # Fallback: pull from Discord audit log via bot
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'events': []})
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'events': []})
+        async def _fetch_audit():
+            events = []
+            try:
+                async for entry in guild.audit_logs(limit=50):
+                    events.append({
+                        'type': str(entry.action).split('.')[-1].lower(),
+                        'user': str(entry.user) if entry.user else 'Unknown',
+                        'target': str(entry.target) if entry.target else '',
+                        'reason': entry.reason or '',
+                        'timestamp': entry.created_at.isoformat(),
+                        'guild_id': str(server_id),
+                    })
+            except Exception:
+                pass
+            return events
+        loop = bot_instance.loop
+        if loop and loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(_fetch_audit(), loop)
+            events = future.result(timeout=10)
+            return jsonify({'events': events})
+        return jsonify({'events': []})
+    except Exception as e:
+        logger.error(f"Audit log error: {e}")
+        return jsonify({'events': []})
 
 @app.route('/api/server/<server_id>/live-stats')
 @require_auth
@@ -952,35 +984,41 @@ def get_activity_leaderboard(category):
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
 
-        lb_cog = bot_instance.get_cog('Leaderboard')
-        if not lb_cog:
-            return jsonify({'error': 'Leaderboard cog not loaded'}), 503
-
-        # Use first guild
-        guild = bot_instance.guilds[0] if bot_instance.guilds else None
+        server_id = request.args.get('server_id')
+        guild = bot_instance.get_guild(int(server_id)) if server_id else (bot_instance.guilds[0] if bot_instance.guilds else None)
         if not guild:
             return jsonify({'error': 'No guild found'}), 404
 
-        g = lb_cog._guild(guild.id)
+        # Use Leveling cog data as the activity source
+        lvl_cog = bot_instance.get_cog('Leveling')
         entries = []
-        for uid, stats in g.items():
-            member = guild.get_member(int(uid))
-            score = stats.get("messages", 0) + (stats.get("voice_seconds", 0) // 60) * 2 + int(stats.get("reactions", 0) * 0.5)
-            entries.append({
-                'user_id': uid,
-                'name': member.display_name if member else f"User {uid}",
-                'avatar': str(member.display_avatar.url) if member else None,
-                'messages': stats.get("messages", 0),
-                'voice_seconds': stats.get("voice_seconds", 0),
-                'reactions': stats.get("reactions", 0),
-                'score': score
-            })
+        if lvl_cog:
+            g = lvl_cog._guild(guild.id)
+            for uid, stats in g.get('users', {}).items():
+                member = guild.get_member(int(uid))
+                xp = stats.get('xp', 0)
+                msgs = stats.get('messages', 0)
+                from cogs.leveling import _xp_progress
+                level, _, _ = _xp_progress(xp)
+                score = xp
+                entries.append({
+                    'user_id': uid,
+                    'name': member.display_name if member else f'User {uid}',
+                    'avatar': str(member.display_avatar.url) if member else None,
+                    'messages': msgs,
+                    'voice_seconds': 0,
+                    'reactions': 0,
+                    'level': level,
+                    'xp': xp,
+                    'score': score,
+                })
 
         key_map = {
             'score': lambda x: x['score'],
             'messages': lambda x: x['messages'],
             'voice': lambda x: x['voice_seconds'],
             'reactions': lambda x: x['reactions'],
+            'level': lambda x: x['level'],
         }
         entries.sort(key=key_map.get(category, key_map['score']), reverse=True)
 
@@ -2281,15 +2319,19 @@ def server_analytics(server_id):
         online = len([m for m in cached_members if m.status != discord.Status.offline])
         bots = len([m for m in cached_members if m.bot])
 
-        # Try to get message stats from analytics cog
-        analytics_cog = bot_instance.get_cog('Analytics')
-        messages_today = 0
-        joins_today = 0
+        # Use live stats from bot (always available)
+        live = bot_instance._get_live_stats(str(server_id))
+        messages_today = live.get('messages', 0)
+        joins_today = live.get('joins', 0)
         top_channels = []
+        # Also try analytics cog for channel breakdown
+        analytics_cog = bot_instance.get_cog('Analytics')
         if analytics_cog and hasattr(analytics_cog, 'data'):
             gdata = analytics_cog.data.get(str(server_id), {})
-            messages_today = gdata.get('messages_today', 0)
-            joins_today = gdata.get('joins_today', 0)
+            if not messages_today:
+                messages_today = gdata.get('messages_today', 0)
+            if not joins_today:
+                joins_today = gdata.get('joins_today', 0)
             ch_data = gdata.get('channels', {})
             top_channels = sorted(
                 [{'id': k, 'name': guild.get_channel(int(k)).name if guild.get_channel(int(k)) else k, 'messages': v}
@@ -2374,10 +2416,14 @@ def automod_config_api(server_id):
             data.setdefault(str(server_id), {}).update(body)
             with open(data_path('automod.json'), 'w') as f:
                 _json.dump(data, f, indent=2)
-            # Reload in-memory config if cog is loaded
+            # Sync to in-memory cog settings
             if bot_instance:
                 cog = bot_instance.get_cog('AutoMod')
-                # Config is read fresh each time from file, no reload needed
+                if cog:
+                    sid = int(server_id)
+                    for k, v in body.items():
+                        if k in cog.settings[sid]:
+                            cog.settings[sid][k] = v
             return jsonify({'success': True})
         from cogs.automod import DEFAULT_CFG
         cfg = {**DEFAULT_CFG, **data.get(str(server_id), {})}

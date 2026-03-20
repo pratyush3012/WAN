@@ -9,6 +9,22 @@ from utils.permissions import is_admin
 
 logger = logging.getLogger('discord_bot.automod')
 
+# Default config — used by dashboard API
+DEFAULT_CFG = {
+    'spam_enabled': True,
+    'spam_threshold': 5,
+    'link_filter_enabled': False,
+    'invite_filter_enabled': False,
+    'bad_words_enabled': True,
+    'caps_filter_enabled': False,
+    'caps_threshold': 70,
+    'mention_spam_enabled': True,
+    'mention_threshold': 5,
+    'emoji_flood_enabled': False,
+    'slowmode_auto': False,
+    'log_channel': None,
+}
+
 class AutoMod(commands.Cog):
     """Auto-Moderation - Automated spam and content filtering"""
     

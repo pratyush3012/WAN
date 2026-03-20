@@ -886,10 +886,10 @@ select.form-control option{background:var(--surface2);}
     <div class="card">
       <div class="card-header"><h3 class="card-title">🏆 Activity Leaderboard</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-primary btn-sm" onclick="loadLeaderboard('score')">Score</button>
-          <button class="btn btn-ghost btn-sm" onclick="loadLeaderboard('messages')">Messages</button>
-          <button class="btn btn-ghost btn-sm" onclick="loadLeaderboard('voice')">Voice</button>
-          <button class="btn btn-ghost btn-sm" onclick="loadLeaderboard('reactions')">Reactions</button>
+          <button id="lb-cat-score" class="btn btn-primary btn-sm" onclick="loadLeaderboard('score')">Score</button>
+          <button id="lb-cat-messages" class="btn btn-ghost btn-sm" onclick="loadLeaderboard('messages')">Messages</button>
+          <button id="lb-cat-voice" class="btn btn-ghost btn-sm" onclick="loadLeaderboard('voice')">Voice</button>
+          <button id="lb-cat-reactions" class="btn btn-ghost btn-sm" onclick="loadLeaderboard('reactions')">Reactions</button>
         </div>
       </div>
       <div id="leaderboardContainer"><p style="color:var(--text-muted);">Select a server to load leaderboard.</p></div>
@@ -1577,6 +1577,8 @@ select.form-control option{background:var(--surface2);}
   </div>
 
   <div id="sec-botanalyzer" class="section">
+    <div class="card">
+      <div class="card-header">
         <h3 class="card-title"><i class="fas fa-microscope"></i> Bot Analyzer</h3>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-primary btn-sm" onclick="loadBotAnalyzer()"><i class="fas fa-sync"></i> Refresh</button>
@@ -1705,6 +1707,8 @@ function show(name,el){
   if(name==='commandcenter'&&currentServer)_populateCCSelects();
   if(name==='analytics2'&&currentServer){loadHeatmap();loadRolePie('rolePieChart2',_rolePieChart2).then(c=>{if(c)_rolePieChart2=c;});loadGrowthChart2(7,null);}
   if(name==='dangersettings'&&currentServer)loadBotPrefix();
+  if(name==='roblox'&&currentServer)loadRoblox();
+  if(name==='featuretoggles'&&currentServer)loadFeatureToggles();
 }
 
 // SERVER SELECT
@@ -1726,6 +1730,9 @@ async function selectServer(id){
   loadServerNotifications();
   prog.style.width='100%';
   setTimeout(()=>prog.classList.add('done'),350);
+  // Reload whichever section is currently visible
+  const activeSec=document.querySelector('.section.active');
+  if(activeSec){const secName=activeSec.id.replace('sec-','');if(secName!=='overview')show(secName);}
   // Update page title + server switcher highlight
   const selEl=document.getElementById('serverSelector');
   const serverName=selEl.options[selEl.selectedIndex]?.text||'';
@@ -2301,18 +2308,19 @@ async function addLvlRole(){
 // LEADERBOARD
 async function loadLeaderboard(cat){
   if(!currentServer)return;
-  document.querySelectorAll('#sec-leaderboard .btn').forEach(b=>b.className='btn btn-ghost btn-sm');
-  event&&event.target&&(event.target.className='btn btn-primary btn-sm');
+  document.querySelectorAll('#sec-leaderboard .btn').forEach(b=>{b.className='btn btn-ghost btn-sm';});
+  const activeBtn=document.getElementById('lb-cat-'+cat);
+  if(activeBtn)activeBtn.className='btn btn-primary btn-sm';
   try{
     const res=await apiFetch('/api/leaderboard/'+cat+'?server_id='+currentServer);
     const d=await res.json();
     const c=document.getElementById('leaderboardContainer');
     if(!d.leaderboard||!d.leaderboard.length){c.innerHTML='<p style="color:var(--text-muted);">No activity data yet.</p>';return;}
     const medals=['🥇','🥈','🥉'];
-    c.innerHTML=`<table class="table"><thead><tr><th>#</th><th>Member</th><th>Score</th><th>Messages</th><th>Voice</th><th>Reactions</th></tr></thead><tbody>${d.leaderboard.map((u,i)=>`
+    c.innerHTML=`<table class="table"><thead><tr><th>#</th><th>Member</th><th>Level</th><th>XP / Score</th><th>Messages</th></tr></thead><tbody>${d.leaderboard.map((u,i)=>`
       <tr><td>${medals[i]||i+1}</td>
       <td><div style="display:flex;align-items:center;gap:8px;">${u.avatar?`<img src="${u.avatar}" style="width:28px;height:28px;border-radius:50%;">`:'<div style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.1);"></div>'}${escHtml(u.name)}</div></td>
-      <td><strong>${u.score}</strong></td><td>${u.messages}</td><td>${Math.floor(u.voice_seconds/60)}m</td><td>${u.reactions}</td></tr>`).join('')}</tbody></table>`;
+      <td><span class="badge badge-info">Lv ${u.level||0}</span></td><td><strong>${u.score||u.xp||0}</strong></td><td>${u.messages||0}</td></tr>`).join('')}</tbody></table>`;
   }catch(e){document.getElementById('leaderboardContainer').innerHTML='<p style="color:var(--text-muted);">Failed to load.</p>';}
 }
 
@@ -4125,8 +4133,6 @@ async function triggerBotScan(){
       const lch=document.getElementById('lvlChannel');
       if(lch&&allTextChannels.length)lch.innerHTML='<option value="">Same channel as message</option>'+allTextChannels.map(c=>`<option value="${c.id}"># ${escHtml(c.name)}</option>`).join('');
     }
-    if(name==='roblox'&&currentServer)loadRoblox();
-    if(name==='featuretoggles'&&currentServer)loadFeatureToggles();
   };
 
 // ===== FEATURE TOGGLES =====
