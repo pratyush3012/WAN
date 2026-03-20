@@ -643,6 +643,8 @@ def get_bot_analyzer(server_id):
 
 
 
+@app.route('/api/server/<server_id>/audit')
+@require_auth
 def get_audit_log(server_id):
     """Get recent audit log events for a server"""
     audit_log = dashboard_cache.get('audit_log', {}).get(str(server_id), [])
