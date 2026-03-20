@@ -395,25 +395,24 @@ class GamingBot(commands.Bot):
         pass
 
 async def main():
-    port = int(os.getenv('PORT', os.getenv('DASHBOARD_PORT', 5000)))
+    port = int(os.getenv('PORT', os.getenv('DASHBOARD_PORT', 10000)))
     host = os.getenv('DASHBOARD_HOST', '0.0.0.0')
 
     bot = GamingBot()
 
     if os.getenv('ENABLE_DASHBOARD', 'true').lower() == 'true':
-        # Import here so eventlet.monkey_patch() runs before asyncio starts
         from web_dashboard_enhanced import start_web_dashboard
         ready = threading.Event()
 
-        def _start():
+        def _start_flask():
             start_web_dashboard(bot, host=host, port=port, ready_event=ready)
 
-        t = threading.Thread(target=_start, daemon=True)
+        t = threading.Thread(target=_start_flask, daemon=True)
         t.start()
 
-        # Wait up to 15s for Flask to actually bind — then proceed regardless
-        if not ready.wait(timeout=15):
-            logger.warning("⚠️ Dashboard did not signal ready in 15s — continuing anyway")
+        # Wait for Flask to actually bind the port before starting the bot
+        if not ready.wait(timeout=30):
+            logger.warning("⚠️ Dashboard did not bind in 30s — continuing anyway")
         else:
             logger.info("✅ Dashboard is up and serving")
 

@@ -25,4 +25,4 @@ RUN mkdir -p /app/data
 # Render injects PORT env var; expose it (actual value set at runtime)
 EXPOSE 10000
 
-CMD ["python3", "bot.py"]
+CMD ["gunicorn", "--worker-class", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker", "--workers", "1", "--bind", "0.0.0.0:10000", "--timeout", "120", "wsgi:app"]

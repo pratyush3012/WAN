@@ -1,15 +1,14 @@
 services:
   - type: web
     name: WAN
-    runtime: docker
-    dockerfilePath: ./Dockerfile
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
     healthCheckPath: /api/health
     envVars:
       - key: DISCORD_TOKEN
         sync: false
       - key: OWNER_ID
-        sync: false
-      - key: CLAN_URL
         sync: false
       - key: ENABLE_DASHBOARD
         value: "true"
@@ -21,3 +20,5 @@ services:
         sync: false
       - key: GUILD_ID
         value: "1462688504436752489"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
