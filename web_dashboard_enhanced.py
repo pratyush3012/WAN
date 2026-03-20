@@ -1360,7 +1360,7 @@ def get_text_channels(server_id):
 @require_auth
 def music_status(server_id):
     """Music status stub — returns not playing since music cog is not loaded."""
-    return jsonify({'playing': False, 'track': None, 'queue': [], 'volume': 100})
+    return jsonify({'playing': False, 'current': None, 'track': None, 'queue': [], 'queue_size': 0, 'volume': 100})
 
 # ===== MANAGEMENT API ENDPOINTS =====
 from web_dashboard_management import (
@@ -1860,35 +1860,40 @@ def get_member_profile(server_id, member_id):
             except Exception:
                 pass
 
-        # Warnings
-        modlog_cog = bot_instance.get_cog('ModLog')
-        if modlog_cog:
-            try:
-                g = modlog_cog._guild(int(server_id))
-                cases = g.get('cases', [])
+        # Warnings — read directly from modlog.json
+        try:
+            import json as _json
+            if os.path.exists(data_path('modlog.json')):
+                with open(data_path('modlog.json')) as _f:
+                    _ml = _json.load(_f)
+                cases = _ml.get('cases', {}).get(str(server_id), [])
                 profile['warnings'] = [
-                    {'reason': c.get('reason', ''), 'mod': c.get('mod_name', ''), 'timestamp': c.get('timestamp', '')}
-                    for c in cases if str(c.get('user_id')) == str(member_id) and c.get('action') == 'warn'
-                ][-5:]  # last 5
-            except Exception:
-                pass
+                    {'reason': c.get('reason', ''), 'mod': c.get('mod', ''), 'timestamp': c.get('timestamp', '')}
+                    for c in cases if str(c.get('target_id')) == str(member_id) and c.get('action') == 'warn'
+                ][-5:]
+        except Exception:
+            pass
 
-        # Badges
-        badges_cog = bot_instance.get_cog('Badges')
-        if badges_cog:
-            try:
-                profile['badges'] = badges_cog.get_member_badges(int(server_id), int(member_id))
-            except Exception:
-                pass
+        # Badges — read from badges.json
+        try:
+            import json as _json
+            if os.path.exists(data_path('badges.json')):
+                with open(data_path('badges.json')) as _f:
+                    _bd = _json.load(_f)
+                profile['badges'] = list(_bd.get(str(server_id), {}).get(str(member_id), {}).keys())
+        except Exception:
+            pass
 
-        # Voice XP
-        vxp_cog = bot_instance.get_cog('VoiceXP')
-        if vxp_cog:
-            try:
-                g = vxp_cog._guild(int(server_id))
-                profile['voice_seconds'] = g.get('users', {}).get(str(member_id), {}).get('seconds', 0)
-            except Exception:
-                pass
+        # Voice XP — read directly from voicexp.json
+        try:
+            import json as _json
+            if os.path.exists(data_path('voicexp.json')):
+                with open(data_path('voicexp.json')) as _f:
+                    _vxp = _json.load(_f)
+                u = _vxp.get(str(server_id), {}).get(str(member_id), {})
+                profile['voice_seconds'] = u.get('minutes', 0) * 60
+        except Exception:
+            pass
 
         return jsonify(profile)
     except Exception as e:
@@ -1898,12 +1903,11 @@ def get_member_profile(server_id, member_id):
 
 # ===== WELCOME / GOODBYE / PROMOTION / AUTOROLE API =====
 
-@app.route('/api/server/<server_id>/welcome', methods=['POST'])
+@app.route('/api/server/<server_id>/welcome', methods=['GET', 'POST'])
 @require_auth
 def save_welcome_config(server_id):
-    """Save welcome/goodbye/promo/autorole config"""
+    """GET: load welcome config. POST: save welcome/goodbye/promo/autorole config"""
     try:
-        data = request.json
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
         guild = bot_instance.get_guild(int(server_id))
@@ -1914,6 +1918,11 @@ def save_welcome_config(server_id):
         if not welcome_cog:
             return jsonify({'error': 'Welcome cog not loaded'}), 503
 
+        if request.method == 'GET':
+            cfg = welcome_cog._guild(int(server_id))
+            return jsonify(cfg)
+
+        data = request.json
         cfg = welcome_cog._guild(int(server_id))
         cfg.update({k: v for k, v in data.items() if v is not None and v != ''})
         welcome_cog._save()
@@ -3049,9 +3058,20 @@ def command_center(server_id):
             if action == 'warn':
                 member = guild.get_member(int(body['member_id']))
                 if not member: return {'error': 'Member not found'}
-                modlog = bot_instance.get_cog('ModLog')
-                if modlog:
-                    await modlog.add_case(guild, 'warn', member, guild.me, body.get('reason','No reason'))
+                # Write warn case directly to modlog.json (ModLog cog has no add_case method)
+                try:
+                    import json as _json
+                    _ml_path = data_path('modlog.json')
+                    _ml_data = {}
+                    if os.path.exists(_ml_path):
+                        with open(_ml_path) as _f: _ml_data = _json.load(_f)
+                    _cases = _ml_data.setdefault('cases', {}).setdefault(str(guild.id), [])
+                    _cases.append({'id': len(_cases)+1, 'action': 'warn', 'mod_id': str(guild.me.id),
+                                   'mod': str(guild.me), 'target_id': str(member.id), 'target': str(member),
+                                   'reason': body.get('reason','No reason'),
+                                   'timestamp': datetime.utcnow().isoformat()})
+                    with open(_ml_path, 'w') as _f: _json.dump(_ml_data, _f, indent=2)
+                except Exception: pass
                 try:
                     await member.send(f"⚠️ You have been warned in **{guild.name}**: {body.get('reason','No reason')}")
                 except: pass
@@ -3129,15 +3149,17 @@ def server_health(server_id):
         score += min(bpts, 20)
         factors.append({'name': 'Boost Level', 'pts': min(bpts,20), 'max': 20, 'ok': bl > 0, 'detail': f'Level {bl}'})
 
-        # Moderation activity (20pts) — has modlog cog with cases
-        modlog = bot_instance.get_cog('ModLog')
+        # Moderation activity (20pts) — read modlog.json directly
         mod_pts = 0
-        if modlog:
-            try:
-                g = modlog._guild(int(server_id))
-                cases = g.get('cases', [])
+        try:
+            modlog_path = data_path('modlog.json')
+            if os.path.exists(modlog_path):
+                with open(modlog_path) as _f:
+                    _ml = json.load(_f)
+                cases = _ml.get(str(server_id), {}).get('cases', [])
                 mod_pts = min(len(cases) * 2, 20)
-            except: pass
+        except Exception:
+            pass
         score += mod_pts
         factors.append({'name': 'Moderation Active', 'pts': mod_pts, 'max': 20, 'ok': mod_pts > 0})
 

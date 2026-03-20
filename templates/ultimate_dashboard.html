@@ -2122,6 +2122,17 @@ function populateWelcomeChannels(){
   const roleOpts='<option value="">None</option>'+allRoles.filter(r=>r.name!=='@everyone').map(r=>`<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
   ['wJoinChannel','wLeaveChannel','wPromoChannel'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=chOpts;});
   const ar=document.getElementById('wAutoRole');if(ar)ar.innerHTML=roleOpts;
+  // Load saved config from API
+  apiFetch('/api/server/'+currentServer+'/welcome').then(r=>r.json()).then(cfg=>{
+    if(cfg.error)return;
+    const set=(id,val)=>{const el=document.getElementById(id);if(el&&val!=null)el.value=val;};
+    set('wJoinChannel',cfg.welcome_channel);set('wJoinTitle',cfg.welcome_title);
+    set('wJoinMsg',cfg.welcome_message);set('wJoinColor',cfg.welcome_color);
+    set('wLeaveChannel',cfg.goodbye_channel);set('wLeaveTitle',cfg.goodbye_title);
+    set('wLeaveMsg',cfg.goodbye_message);
+    set('wPromoChannel',cfg.promo_channel);set('wPromoMsg',cfg.promo_message);
+    set('wPromoRoles',cfg.promo_roles);set('wAutoRole',cfg.autorole);
+  }).catch(()=>{});
 }
 
 function previewWelcome(type){
