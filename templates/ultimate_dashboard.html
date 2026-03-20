@@ -1459,11 +1459,11 @@ select.form-control option{background:var(--surface2);}
   <!-- ROBLOX INTEGRATION -->
   <div id="sec-roblox" class="section">
     <!-- Demo mode banner -->
-    <div id="robloxDemoBanner" style="display:none;background:linear-gradient(135deg,rgba(245,158,11,.12),rgba(239,68,68,.08));border:1px solid rgba(245,158,11,.3);border-radius:14px;padding:14px 18px;margin-bottom:18px;display:flex;align-items:center;gap:12px;">
+    <div id="robloxDemoBanner" style="display:none;background:linear-gradient(135deg,rgba(245,158,11,.12),rgba(239,68,68,.08));border:1px solid rgba(245,158,11,.3);border-radius:14px;padding:14px 18px;margin-bottom:18px;align-items:center;gap:12px;">
       <i class="fas fa-flask" style="color:#fbbf24;font-size:18px;flex-shrink:0;"></i>
       <div>
         <div style="font-weight:700;font-size:13px;color:#fbbf24;">Demo Mode — Simulated Data</div>
-        <div style="color:var(--text-muted);font-size:12px;margin-top:2px;">No <code>ROBLOX_API_KEY</code> is set. Stats shown are realistic mock data for demonstration. Set your Roblox Open Cloud API key in <code>.env</code> to connect a real game.</div>
+        <div style="color:var(--text-muted);font-size:12px;margin-top:2px;">No <code>ROBLOX_API_KEY</code> is set. Stats shown are realistic mock data for demonstration.</div>
       </div>
     </div>
     <!-- Stats strip -->
@@ -1478,36 +1478,42 @@ select.form-control option{background:var(--surface2);}
         <p style="color:var(--text-muted);grid-column:1/-1;">Select a server to load clan stats.</p>
       </div>
     </div>
-    <!-- Linked members table -->
+
+    <!-- Leaderboard card -->
     <div class="card" style="margin-bottom:18px;">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-link"></i> Linked Members</h3>
-        <span id="robloxMemberCount" class="badge badge-secondary">0 linked</span>
+        <h3 class="card-title"><i class="fas fa-crown"></i> Leaderboard</h3>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-sm" id="lb-btn-kills" onclick="sortLeaderboard('kills')" style="background:var(--accent);color:#fff;">⚔️ Kills</button>
+          <button class="btn btn-ghost btn-sm" id="lb-btn-kd" onclick="sortLeaderboard('kd')">📊 K/D</button>
+          <button class="btn btn-ghost btn-sm" id="lb-btn-coins" onclick="sortLeaderboard('coins')">💰 Coins</button>
+          <button class="btn btn-ghost btn-sm" id="lb-btn-level" onclick="sortLeaderboard('level')">⭐ Level</button>
+          <button class="btn btn-ghost btn-sm" id="lb-btn-playtime" onclick="sortLeaderboard('playtime')">⏱️ Playtime</button>
+        </div>
       </div>
-      <div style="overflow-x:auto;">
-        <table class="table">
-          <thead><tr>
-            <th>Member</th>
-            <th>Roblox</th>
-            <th>Level</th>
-            <th>K/D</th>
-            <th>Playtime</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr></thead>
-          <tbody id="robloxMembersBody">
-            <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">Select a server to load members.</td></tr>
-          </tbody>
-        </table>
+      <div id="robloxLeaderboard" style="overflow-x:auto;">
+        <p style="color:var(--text-muted);padding:16px;">Select a server to load leaderboard.</p>
       </div>
     </div>
+
+    <!-- Members by role group -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-users"></i> Members by Role</h3>
+        <span id="robloxMemberCount" class="badge badge-secondary">0 linked</span>
+      </div>
+      <div id="robloxMemberGroups">
+        <p style="color:var(--text-muted);padding:16px;">Select a server to load members.</p>
+      </div>
+    </div>
+
     <!-- Link member form -->
     <div class="card">
       <div class="card-header"><h3 class="card-title"><i class="fas fa-user-plus"></i> Link a Member</h3></div>
       <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;">
         <div class="form-group" style="margin:0;">
           <label class="form-label">Discord Member</label>
-          <select id="robloxLinkDiscord" class="form-control ch-select"><option value="">Select member...</option></select>
+          <select id="robloxLinkDiscord" class="form-control"><option value="">Select member...</option></select>
         </div>
         <div class="form-group" style="margin:0;">
           <label class="form-label">Roblox Username</label>
@@ -3656,6 +3662,9 @@ async function saveLogConfig(){
 }
 
 // ===== ROBLOX INTEGRATION =====
+let _robloxMembers = [];
+let _robloxSortKey = 'kills';
+
 async function loadRoblox(){
   if(!currentServer)return;
   try{
@@ -3704,53 +3713,173 @@ async function loadRoblox(){
       </div>
     `;
 
-    // Members table
-    const members = membersData.members || [];
-    document.getElementById('robloxMemberCount').textContent = `${members.length} linked`;
-    const tbody = document.getElementById('robloxMembersBody');
-    if(!members.length){
-      tbody.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">No linked members yet. Use the form below or <code>/roblox-link</code> in Discord.</td></tr>';
-      return;
+    _robloxMembers = membersData.members || [];
+    document.getElementById('robloxMemberCount').textContent = `${_robloxMembers.length} linked`;
+
+    if(!_robloxMembers.length){
+      document.getElementById('robloxLeaderboard').innerHTML='<p style="color:var(--text-muted);padding:16px;">No linked members yet. Use the form below or <code>/roblox-link</code> in Discord.</p>';
+      document.getElementById('robloxMemberGroups').innerHTML='<p style="color:var(--text-muted);padding:16px;">No linked members yet.</p>';
+    } else {
+      sortLeaderboard(_robloxSortKey);
+      renderRobloxGroups(_robloxMembers);
     }
-    tbody.innerHTML = members.map(m=>{
-      const stats = m.stats || {};
-      const kd = stats.kills && stats.deaths ? (stats.kills/Math.max(stats.deaths,1)).toFixed(2) : '—';
-      const hrs = stats.playtime ? Math.floor(stats.playtime/3600)+'h' : '—';
-      const statusBadge = m.currently_playing
-        ? '<span class="badge badge-success"><span class="pulse-dot"></span> Playing</span>'
-        : m.is_online
-          ? '<span class="badge badge-info">Online</span>'
-          : '<span class="badge badge-secondary">Offline</span>';
-      const avatar = m.discord_avatar
-        ? `<img src="${m.discord_avatar}" style="width:32px;height:32px;border-radius:50%;margin-right:8px;vertical-align:middle;">`
-        : '<span style="width:32px;height:32px;border-radius:50%;background:var(--surface3);display:inline-flex;align-items:center;justify-content:center;margin-right:8px;font-size:14px;">👤</span>';
-      const robloxAvatar = m.roblox_id
-        ? `<img src="https://www.roblox.com/headshot-thumbnail/image?userId=${m.roblox_id}&width=48&height=48&format=png" style="width:28px;height:28px;border-radius:50%;margin-right:6px;vertical-align:middle;" onerror="this.style.display='none'">`
-        : '';
-      const demoTag = (stats.is_demo) ? '<span class="badge badge-warning" style="font-size:9px;margin-left:4px;">demo</span>' : '';
-      return `<tr>
-        <td>${avatar}<span style="font-weight:600;">${escHtml(m.discord_name||'Unknown')}</span></td>
-        <td>${robloxAvatar}<a href="https://www.roblox.com/users/${m.roblox_id}/profile" target="_blank" style="color:var(--accent3);text-decoration:none;">${escHtml(m.roblox_username)}</a>${demoTag}</td>
-        <td>${stats.level||'—'}</td>
-        <td>${kd}</td>
-        <td>${hrs}</td>
-        <td>${statusBadge}</td>
-        <td style="display:flex;gap:6px;">
-          <button class="btn btn-ghost btn-sm" title="Refresh" onclick="refreshRobloxMember(${m.discord_id})"><i class="fas fa-sync"></i></button>
-          <button class="btn btn-danger btn-sm" title="Unlink" onclick="unlinkRobloxMember(${m.discord_id})"><i class="fas fa-unlink"></i></button>
-        </td>
-      </tr>`;
-    }).join('');
 
     // Populate link form member select
     const sel = document.getElementById('robloxLinkDiscord');
     if(sel && allMembers.length){
       sel.innerHTML = '<option value="">Select member...</option>' +
-        allMembers.map(m=>`<option value="${m.id}">${escHtml(m.display_name||m.username)}</option>`).join('');
+        allMembers.filter(m=>!m.bot).map(m=>`<option value="${m.id}">${escHtml(m.display_name||m.username)}</option>`).join('');
     }
   }catch(e){
-    document.getElementById('robloxMembersBody').innerHTML=`<tr><td colspan="7" style="color:var(--danger);text-align:center;padding:24px;">Error: ${e.message}</td></tr>`;
+    document.getElementById('robloxLeaderboard').innerHTML=`<p style="color:var(--danger);padding:16px;">Error: ${e.message}</p>`;
   }
+}
+
+function sortLeaderboard(key){
+  _robloxSortKey = key;
+  // Update button styles
+  ['kills','kd','coins','level','playtime'].forEach(k=>{
+    const btn = document.getElementById('lb-btn-'+k);
+    if(btn){ btn.className = k===key ? 'btn btn-sm' : 'btn btn-ghost btn-sm'; btn.style.background = k===key ? 'var(--accent)' : ''; btn.style.color = k===key ? '#fff' : ''; }
+  });
+  if(!_robloxMembers.length) return;
+  const sorted = [..._robloxMembers].sort((a,b)=>{
+    const sa=a.stats||{}, sb=b.stats||{};
+    if(key==='kills') return (sb.kills||0)-(sa.kills||0);
+    if(key==='kd') return ((sb.kills||0)/Math.max(sb.deaths||1,1))-((sa.kills||0)/Math.max(sa.deaths||1,1));
+    if(key==='coins') return (sb.coins_collected||0)-(sa.coins_collected||0);
+    if(key==='level') return (sb.level||0)-(sa.level||0);
+    if(key==='playtime') return (sb.playtime||0)-(sa.playtime||0);
+    return 0;
+  });
+  const medals = ['🥇','🥈','🥉'];
+  const rows = sorted.map((m,i)=>{
+    const s=m.stats||{};
+    const kd=((s.kills||0)/Math.max(s.deaths||1,1)).toFixed(2);
+    const hrs=s.playtime?Math.floor(s.playtime/3600)+'h '+(Math.floor((s.playtime%3600)/60))+'m':'—';
+    const avatar=m.discord_avatar?`<img src="${m.discord_avatar}" style="width:28px;height:28px;border-radius:50%;margin-right:8px;vertical-align:middle;">`:'<span style="width:28px;height:28px;border-radius:50%;background:var(--surface3);display:inline-flex;align-items:center;justify-content:center;margin-right:8px;font-size:12px;">👤</span>';
+    const rank=i<3?medals[i]:`<span style="color:var(--text-muted);font-weight:700;">#${i+1}</span>`;
+    const highlight=i===0?'background:linear-gradient(90deg,rgba(245,158,11,.08),transparent);':'';
+    return `<tr style="${highlight}cursor:pointer;" onclick="openRobloxProfile(${JSON.stringify(m).replace(/"/g,'&quot;')})">
+      <td style="font-weight:700;">${rank}</td>
+      <td>${avatar}<span style="font-weight:600;">${escHtml(m.discord_name||'Unknown')}</span></td>
+      <td>${escHtml(m.roblox_username||'—')}</td>
+      <td>${s.kills||0}</td>
+      <td>${kd}</td>
+      <td>${(s.coins_collected||0).toLocaleString()}</td>
+      <td>${s.level||'—'}</td>
+      <td>${hrs}</td>
+      <td style="display:flex;gap:6px;">
+        <button class="btn btn-ghost btn-sm" title="Refresh" onclick="event.stopPropagation();refreshRobloxMember(${m.discord_id})"><i class="fas fa-sync"></i></button>
+        <button class="btn btn-danger btn-sm" title="Unlink" onclick="event.stopPropagation();unlinkRobloxMember(${m.discord_id})"><i class="fas fa-unlink"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('robloxLeaderboard').innerHTML=`<table class="table"><thead><tr>
+    <th>#</th><th>Member</th><th>Roblox</th><th>⚔️ Kills</th><th>📊 K/D</th><th>💰 Coins</th><th>⭐ Level</th><th>⏱️ Playtime</th><th>Actions</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderRobloxGroups(members){
+  // Determine role tier for each member using allMembers data
+  const roleTiers = ['Owner','Admin','Mod','Member','Guest'];
+  const tierKeywords = {
+    'Owner': ['owner','founder'],
+    'Admin': ['admin','administrator'],
+    'Mod': ['mod','moderator'],
+    'Member': ['member'],
+    'Guest': []
+  };
+  function getTier(m){
+    const discordM = allMembers.find(dm=>String(dm.id)===String(m.discord_id));
+    if(!discordM) return 'Guest';
+    const roles = (discordM.roles||[]).map(r=>r.toLowerCase());
+    for(const tier of roleTiers.slice(0,-1)){
+      if(tierKeywords[tier].some(kw=>roles.some(r=>r.includes(kw)))) return tier;
+    }
+    return roles.length>0?'Member':'Guest';
+  }
+  const groups = {};
+  roleTiers.forEach(t=>groups[t]=[]);
+  members.forEach(m=>groups[getTier(m)].push(m));
+
+  const tierColors={'Owner':'#f59e0b','Admin':'#ef4444','Mod':'#3b82f6','Member':'#10b981','Guest':'#6b7280'};
+  const tierIcons={'Owner':'👑','Admin':'🛡️','Mod':'⚔️','Member':'👤','Guest':'👥'};
+
+  let html='';
+  roleTiers.forEach(tier=>{
+    const group=groups[tier];
+    if(!group.length) return;
+    html+=`<div style="margin-bottom:18px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--surface2);border-radius:10px;border-left:3px solid ${tierColors[tier]};">
+        <span style="font-size:16px;">${tierIcons[tier]}</span>
+        <span style="font-weight:700;color:${tierColors[tier]};">${tier}</span>
+        <span class="badge badge-secondary" style="margin-left:auto;">${group.length}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;">
+        ${group.map(m=>{
+          const s=m.stats||{};
+          const kd=((s.kills||0)/Math.max(s.deaths||1,1)).toFixed(2);
+          const statusColor=m.currently_playing?'#10b981':m.is_online?'#3b82f6':'#6b7280';
+          const statusText=m.currently_playing?'Playing':m.is_online?'Online':'Offline';
+          const avatar=m.discord_avatar?`<img src="${m.discord_avatar}" style="width:40px;height:40px;border-radius:50%;border:2px solid ${tierColors[tier]};">`:`<div style="width:40px;height:40px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:18px;border:2px solid ${tierColors[tier]};">👤</div>`;
+          return `<div style="background:var(--surface2);border-radius:12px;padding:12px;border:1px solid var(--border);cursor:pointer;transition:border-color .2s;" onmouseover="this.style.borderColor='${tierColors[tier]}'" onmouseout="this.style.borderColor='var(--border)'" onclick="openRobloxProfile(${JSON.stringify(m).replace(/"/g,'&quot;')})">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              ${avatar}
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(m.discord_name||'Unknown')}</div>
+                <div style="color:var(--text-muted);font-size:11px;">${escHtml(m.roblox_username||'Not linked')}</div>
+              </div>
+              <span style="width:8px;height:8px;border-radius:50%;background:${statusColor};flex-shrink:0;" title="${statusText}"></span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;">
+              <div style="color:var(--text-muted);">⚔️ ${s.kills||0} kills</div>
+              <div style="color:var(--text-muted);">📊 ${kd} K/D</div>
+              <div style="color:var(--text-muted);">⭐ Lv ${s.level||'—'}</div>
+              <div style="color:var(--text-muted);">💰 ${(s.coins_collected||0).toLocaleString()}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  });
+  document.getElementById('robloxMemberGroups').innerHTML = html || '<p style="color:var(--text-muted);padding:16px;">No members found.</p>';
+}
+
+function openRobloxProfile(m){
+  const s = m.stats || {};
+  const kd = ((s.kills||0)/Math.max(s.deaths||1,1)).toFixed(2);
+  const hrs = s.playtime ? Math.floor(s.playtime/3600)+'h '+(Math.floor((s.playtime%3600)/60))+'m' : '—';
+  const avatar = m.discord_avatar
+    ? `<img src="${m.discord_avatar}" style="width:72px;height:72px;border-radius:50%;border:3px solid var(--accent);">`
+    : `<div style="width:72px;height:72px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:32px;border:3px solid var(--accent);">👤</div>`;
+  const robloxAvatar = m.roblox_id
+    ? `<img src="https://www.roblox.com/headshot-thumbnail/image?userId=${m.roblox_id}&width=150&height=150&format=png" style="width:72px;height:72px;border-radius:50%;border:3px solid var(--accent3);" onerror="this.style.display='none'">`
+    : '';
+  const statusColor = m.currently_playing?'#10b981':m.is_online?'#3b82f6':'#6b7280';
+  const statusText = m.currently_playing?'🎮 Playing Now':m.is_online?'🟢 Online':'⚫ Offline';
+  showModal(`${escHtml(m.discord_name||'Member')} — Roblox Profile`, `
+    <div style="display:flex;gap:16px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
+      ${avatar}${robloxAvatar}
+      <div>
+        <div style="font-size:20px;font-weight:800;">${escHtml(m.discord_name||'Unknown')}</div>
+        <div style="color:var(--text-muted);font-size:13px;">Roblox: <a href="https://www.roblox.com/users/${m.roblox_id}/profile" target="_blank" style="color:var(--accent3);">${escHtml(m.roblox_username||'—')}</a></div>
+        <div style="margin-top:6px;font-size:12px;color:${statusColor};">${statusText}</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:24px;font-weight:900;">${s.kills||0}</div><div style="color:var(--text-muted);font-size:11px;">⚔️ Kills</div></div>
+      <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:24px;font-weight:900;">${kd}</div><div style="color:var(--text-muted);font-size:11px;">📊 K/D Ratio</div></div>
+      <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:24px;font-weight:900;">${(s.coins_collected||0).toLocaleString()}</div><div style="color:var(--text-muted);font-size:11px;">💰 Coins</div></div>
+      <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:24px;font-weight:900;">${s.level||'—'}</div><div style="color:var(--text-muted);font-size:11px;">⭐ Level</div></div>
+      <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:24px;font-weight:900;">${s.deaths||0}</div><div style="color:var(--text-muted);font-size:11px;">💀 Deaths</div></div>
+      <div style="background:var(--surface2);border-radius:10px;padding:14px;text-align:center;"><div style="font-size:24px;font-weight:900;">${hrs}</div><div style="color:var(--text-muted);font-size:11px;">⏱️ Playtime</div></div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="refreshRobloxMember(${m.discord_id});closeModal()"><i class="fas fa-sync"></i> Refresh Stats</button>
+      <button class="btn btn-danger btn-sm" onclick="unlinkRobloxMember(${m.discord_id});closeModal()"><i class="fas fa-unlink"></i> Unlink</button>
+    </div>
+  `);
 }
 
 async function linkRobloxMember(){

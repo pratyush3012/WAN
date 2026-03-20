@@ -44,6 +44,8 @@ class RobloxIntegration(commands.Cog):
         # Player data cache
         self.player_cache = {}
         self.clan_members = {}
+        self.links_file = os.path.join(os.path.dirname(__file__), '..', 'roblox_links.json')
+        self._load_links()
         
         # Start background tasks
         self.update_player_stats.start()
@@ -57,6 +59,25 @@ class RobloxIntegration(commands.Cog):
         self.update_player_stats.cancel()
         if self.session:
             await self.session.close()
+
+    def _save_links(self):
+        """Persist clan_members to disk"""
+        try:
+            with open(self.links_file, 'w') as f:
+                json.dump({str(k): v for k, v in self.clan_members.items()}, f)
+        except Exception as e:
+            print(f"⚠️  Could not save roblox links: {e}")
+
+    def _load_links(self):
+        """Load clan_members from disk"""
+        try:
+            if os.path.exists(self.links_file):
+                with open(self.links_file, 'r') as f:
+                    data = json.load(f)
+                self.clan_members = {int(k): v for k, v in data.items()}
+                print(f"✅ Loaded {len(self.clan_members)} Roblox links from disk")
+        except Exception as e:
+            print(f"⚠️  Could not load roblox links: {e}")
     
     # ===== Roblox API Methods =====
     
@@ -266,6 +287,7 @@ class RobloxIntegration(commands.Cog):
             'roblox_id': user_info['id'],
             'linked_at': datetime.utcnow().isoformat()
         }
+        self._save_links()
         
         embed = discord.Embed(
             title="✅ Account Linked!",
@@ -599,12 +621,99 @@ class RobloxIntegration(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="roblox-unlink", description="🔗 Unlink your Roblox account")
+    @app_commands.command(name="collect-ingame-names", description="📨 DM all members asking for their Roblox in-game username")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def collect_ingame_names(self, interaction: discord.Interaction):
+        """DM every non-bot member asking for their Roblox username, then store responses"""
+        await interaction.response.defer(ephemeral=True)
+
+        members = [m for m in interaction.guild.members if not m.bot]
+        sent = 0
+        failed = 0
+
+        embed_info = discord.Embed(
+            title="📨 Collecting In-Game Names",
+            description=f"Sending DMs to {len(members)} members...",
+            color=discord.Color.blue()
+        )
+        await interaction.followup.send(embed=embed_info, ephemeral=True)
+
+        for member in members:
+            try:
+                ask_embed = discord.Embed(
+                    title="🎮 What's your Roblox username?",
+                    description=(
+                        f"Hey **{member.display_name}**! The admins of **{interaction.guild.name}** "
+                        f"are collecting Roblox in-game names to track clan stats.\n\n"
+                        f"Please reply to this message with your **exact Roblox username** "
+                        f"(the one you use to log in to Roblox).\n\n"
+                        f"Example: `Builderman`\n\n"
+                        f"*Reply within 5 minutes or use `/roblox-link` in the server anytime.*"
+                    ),
+                    color=discord.Color.from_rgb(102, 126, 234)
+                )
+                ask_embed.set_footer(text=f"{interaction.guild.name} • Wizard West Clan")
+                dm = await member.create_dm()
+                await dm.send(embed=ask_embed)
+                sent += 1
+                await asyncio.sleep(0.5)  # rate limit
+            except Exception:
+                failed += 1
+
+        # Listen for replies via on_message for 5 minutes
+        self.bot.dispatch('roblox_collection_started', interaction.guild, interaction.user)
+
+        result_embed = discord.Embed(
+            title="✅ DMs Sent",
+            color=discord.Color.green()
+        )
+        result_embed.add_field(name="✅ Sent", value=str(sent), inline=True)
+        result_embed.add_field(name="❌ Failed (DMs closed)", value=str(failed), inline=True)
+        result_embed.set_footer(text="Members have 5 minutes to reply. They can also use /roblox-link anytime.")
+        await interaction.edit_original_response(embed=result_embed)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Listen for DM replies to the ingame name collection"""
+        # Only handle DMs from non-bots
+        if message.guild is not None or message.author.bot:
+            return
+        # Check if this user is awaiting a response (simple: just try to link them)
+        username = message.content.strip()
+        if not username or len(username) > 50 or ' ' in username:
+            return
+        # Try to look up the Roblox user
+        user_info = await self.get_user_by_username(username)
+        if user_info:
+            self.clan_members[message.author.id] = {
+                'discord_id': message.author.id,
+                'roblox_username': user_info['name'],
+                'roblox_id': user_info['id'],
+                'linked_at': datetime.utcnow().isoformat(),
+                'source': 'dm_collection'
+            }
+            self._save_links()
+            confirm = discord.Embed(
+                title="✅ Linked!",
+                description=f"Your Roblox account **{user_info['name']}** has been linked. Your stats will appear on the clan dashboard.",
+                color=discord.Color.green()
+            )
+            await message.channel.send(embed=confirm)
+        else:
+            err = discord.Embed(
+                title="❌ Username Not Found",
+                description=f"Couldn't find a Roblox user named `{username}`. Please check the spelling and try again, or use `/roblox-link` in the server.",
+                color=discord.Color.red()
+            )
+            await message.channel.send(embed=err)
+
+
     async def unlink_roblox(self, interaction: discord.Interaction):
         """Unlink Roblox account"""
         if interaction.user.id in self.clan_members:
             username = self.clan_members[interaction.user.id]['roblox_username']
             del self.clan_members[interaction.user.id]
+            self._save_links()
             
             embed = discord.Embed(
                 title="✅ Account Unlinked",
