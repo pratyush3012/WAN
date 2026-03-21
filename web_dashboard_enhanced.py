@@ -1700,7 +1700,7 @@ def roblox_dm_by_role(server_id):
         future = asyncio.run_coroutine_threadsafe(
             _dm_role_members(guild, role, roblox_cog), loop
         )
-        result = future.result(timeout=30)
+        result = future.result(timeout=120)
         return jsonify({'success': True, **result})
     except Exception as e:
         logger.error(f"DM by role error: {e}")
@@ -1924,7 +1924,21 @@ def save_welcome_config(server_id):
 
         data = request.json
         cfg = welcome_cog._guild(int(server_id))
-        cfg.update({k: v for k, v in data.items() if v is not None and v != ''})
+        # Normalize incoming values
+        for k, v in data.items():
+            if v is None or v == '':
+                continue
+            # Store channel/role IDs as strings
+            if k.endswith('_channel') or k == 'autorole':
+                cfg[k] = str(v)
+            # Normalize color: always store as #rrggbb so color picker can read it back
+            elif k.endswith('_color'):
+                s = str(v).strip().lstrip('#')
+                if s.startswith('0x') or s.startswith('0X'):
+                    s = s[2:]
+                cfg[k] = '#' + s.lower()
+            else:
+                cfg[k] = v
         welcome_cog._save()
         return jsonify({'success': True})
     except Exception as e:

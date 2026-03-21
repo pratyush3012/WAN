@@ -59,7 +59,18 @@ class Welcome(commands.Cog):
             return
         title = _fill(cfg.get(f'{event}_title', ''), member)
         desc = _fill(cfg.get(f'{event}_message', ''), member)
-        color = int(cfg.get(f'{event}_color', '0x57f287' if event == 'welcome' else '0xef4444'), 16)
+        # Support both '#rrggbb' (dashboard color picker) and '0xrrggbb' (slash command)
+        raw_color = cfg.get(f'{event}_color', '#57f287' if event == 'welcome' else '#ef4444')
+        try:
+            s = str(raw_color).strip()
+            if s.startswith('#'):
+                color = int(s[1:], 16)
+            elif s.startswith('0x') or s.startswith('0X'):
+                color = int(s, 16)
+            else:
+                color = int(s, 16)
+        except Exception:
+            color = 0x57f287 if event == 'welcome' else 0xef4444
         embed = discord.Embed(title=title or None, description=desc, color=color)
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text=f"{member.guild.name} • {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
@@ -71,6 +82,7 @@ class Welcome(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         cfg = self._guild(member.guild.id)
+        logger.info(f"Member join: {member} in {member.guild.name} — welcome_channel={cfg.get('welcome_channel')}")
         await self._send_embed(member, cfg, 'welcome')
         # Auto-role on join
         role_id = cfg.get('autorole')
@@ -79,8 +91,8 @@ class Welcome(commands.Cog):
             if role:
                 try:
                     await member.add_roles(role, reason="Auto-role on join")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Auto-role error: {e}")
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member):
