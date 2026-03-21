@@ -530,3 +530,44 @@ class Chatbot(commands.Cog):
 async def setup(bot):
     await bot.add_cog(Chatbot(bot))
 
+
+# ── Write the file ────────────────────────────────────────────────────────────
+import ast, textwrap
+
+src = open(__file__).read()
+# Extract everything between the first w( and the write block
+# We'll just write all the w() lines as the file content
+output_lines = []
+in_content = False
+for line in src.splitlines():
+    stripped = line.strip()
+    if stripped.startswith('w(') or stripped.startswith('w ('):
+        in_content = True
+    if stripped.startswith('# ── Write the file'):
+        break
+    if in_content:
+        output_lines.append(line)
+
+# Actually just write everything above this comment as the file
+# Simpler: re-read and split on the marker
+full = open(__file__).read()
+content_part = full.split("# ── Write the file")[0]
+# Strip the w() wrapper lines — they're not needed, the content IS the file
+# We need to extract the raw string content from the w() calls
+import re
+result_lines = []
+for line in content_part.splitlines():
+    # Skip the w() function def and the lines list
+    if line.startswith('lines = []') or line.startswith('def w(') or line.startswith('    lines.append'):
+        continue
+    result_lines.append(line)
+
+# Remove the first few lines (imports for this script itself)
+# Find where the actual chatbot content starts
+final = "\n".join(result_lines)
+with open("cogs/chatbot.py", "w", encoding="utf-8") as f:
+    f.write(final)
+print("Written. Checking syntax...")
+import subprocess
+r = subprocess.run(["python3", "-m", "py_compile", "cogs/chatbot.py"], capture_output=True, text=True)
+print("Syntax:", "OK" if r.returncode == 0 else r.stderr[:300])
