@@ -240,6 +240,13 @@ class Welcome(commands.Cog):
         )
         return await _gemini(prompt, max_tokens=80)
 
+    async def _send_embed(self, member, cfg, event: str):
+        """Compatibility shim called by the dashboard test button."""
+        if event == "goodbye":
+            await self._send_goodbye(member)
+        else:
+            await self._send_welcome(member)
+
     async def _send_welcome(self, member):
         cfg = self._guild(member.guild.id)
         gender = _detect_gender(member)
@@ -335,16 +342,33 @@ class Welcome(commands.Cog):
         if cfg.get("goodbye_message"):
             desc = _fill(cfg["goodbye_message"], member)
         else:
-            ai_msg = await self._ai_goodbye(member)
-            if ai_msg:
-                desc = ai_msg.replace("{username}", member.display_name)
+            # Try AI Coder generated goodbye messages first
+            ai_coder_msg = None
+            try:
+                ai_coder = self.bot.cogs.get("AICoder")
+                if ai_coder:
+                    msgs = ai_coder.get_generated("goodbye_messages")
+                    if msgs:
+                        ai_coder_msg = (random.choice(msgs)
+                            .replace("{username}", member.display_name)
+                            .replace("{server}", member.guild.name)
+                            .replace("{count}", str(member.guild.member_count)))
+            except Exception:
+                pass
+
+            if ai_coder_msg:
+                desc = ai_coder_msg
             else:
-                template = random.choice(GOODBYE_MSGS)
-                desc = (template
-                    .replace("{username}", member.display_name)
-                    .replace("{server}", member.guild.name)
-                    .replace("{count}", str(member.guild.member_count))
-                )
+                ai_msg = await self._ai_goodbye(member)
+                if ai_msg:
+                    desc = ai_msg.replace("{username}", member.display_name)
+                else:
+                    template = random.choice(GOODBYE_MSGS)
+                    desc = (template
+                        .replace("{username}", member.display_name)
+                        .replace("{server}", member.guild.name)
+                        .replace("{count}", str(member.guild.member_count))
+                    )
 
         color = _parse_color(cfg.get("goodbye_color", "ef4444"), 0xef4444)
         embed = discord.Embed(description=desc, color=color)

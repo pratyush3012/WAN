@@ -134,11 +134,15 @@ class AICoder(commands.Cog):
         try:
             await self._improve_welcome_messages()
             await asyncio.sleep(8)
+            await self._improve_goodbye_messages()
+            await asyncio.sleep(8)
             await self._improve_levelup_messages()
             await asyncio.sleep(8)
             await self._improve_chatbot_fallbacks()
             await asyncio.sleep(8)
             await self._improve_ticket_responses()
+            await asyncio.sleep(8)
+            await self._improve_moderation_messages()
             await asyncio.sleep(8)
             await self._generate_feature_suggestions()
         except Exception as e:
@@ -173,6 +177,82 @@ class AICoder(commands.Cog):
             return
         try:
             import re
+            match = re.search(r'\[.*\]', result, re.DOTALL)
+            if match:
+                new_msgs = json.loads(match.group())
+                if isinstance(new_msgs, list) and len(new_msgs) >= 3:
+                    self.log.setdefault("generated", {})["welcome_messages"] = {
+                        "messages": new_msgs,
+                        "updated": datetime.now(timezone.utc).isoformat()
+                    }
+                    _save_log(self.log)
+                    self._record("welcome", "new_messages",
+                                 f"Generated {len(new_msgs)} new welcome messages")
+                    logger.info(f"AI Coder: generated {len(new_msgs)} new welcome messages")
+        except Exception as e:
+            logger.warning(f"AI Coder welcome parse error: {e}")
+
+    async def _improve_goodbye_messages(self):
+        """Generate new goodbye messages."""
+        prompt = (
+            "Generate 5 unique Discord goodbye messages for when members leave a server.\n"
+            "Rules:\n"
+            "- Each message 1-2 sentences\n"
+            "- Use emojis\n"
+            "- Use {username} for their name, {server} for server name, {count} for remaining members\n"
+            "- Mix styles: sad, funny, warm, dramatic, wholesome\n"
+            "- Make each one completely different\n\n"
+            "Return as JSON array: [\"msg1\", \"msg2\", \"msg3\", \"msg4\", \"msg5\"]"
+        )
+        result = await _gemini(prompt, max_tokens=400)
+        if not result:
+            return
+        try:
+            import re
+            match = re.search(r'\[.*\]', result, re.DOTALL)
+            if match:
+                new_msgs = json.loads(match.group())
+                if isinstance(new_msgs, list) and len(new_msgs) >= 3:
+                    self.log.setdefault("generated", {})["goodbye_messages"] = {
+                        "messages": new_msgs,
+                        "updated": datetime.now(timezone.utc).isoformat()
+                    }
+                    _save_log(self.log)
+                    self._record("welcome", "goodbye_messages",
+                                 f"Generated {len(new_msgs)} new goodbye messages")
+        except Exception as e:
+            logger.warning(f"AI Coder goodbye parse error: {e}")
+
+    async def _improve_moderation_messages(self):
+        """Generate better moderation warning/action messages."""
+        prompt = (
+            "Generate 5 unique Discord moderation warning messages a bot sends when it warns a user.\n"
+            "Rules:\n"
+            "- Each message 1-2 sentences\n"
+            "- Use emojis\n"
+            "- Use {user} for mention, {reason} for the reason\n"
+            "- Be firm but not rude — professional bot tone\n"
+            "- Mix styles: formal, casual, stern, friendly-warning\n\n"
+            "Return as JSON array: [\"msg1\", \"msg2\", \"msg3\", \"msg4\", \"msg5\"]"
+        )
+        result = await _gemini(prompt, max_tokens=400)
+        if not result:
+            return
+        try:
+            import re
+            match = re.search(r'\[.*\]', result, re.DOTALL)
+            if match:
+                new_msgs = json.loads(match.group())
+                if isinstance(new_msgs, list) and len(new_msgs) >= 3:
+                    self.log.setdefault("generated", {})["mod_warnings"] = {
+                        "messages": new_msgs,
+                        "updated": datetime.now(timezone.utc).isoformat()
+                    }
+                    _save_log(self.log)
+                    self._record("moderation", "warning_messages",
+                                 f"Generated {len(new_msgs)} new mod warning messages")
+        except Exception as e:
+            logger.warning(f"AI Coder mod parse error: {e}")
             match = re.search(r'\[.*\]', result, re.DOTALL)
             if match:
                 new_msgs = json.loads(match.group())
@@ -365,11 +445,15 @@ class AICoder(commands.Cog):
         try:
             await self._improve_welcome_messages()
             await asyncio.sleep(5)
+            await self._improve_goodbye_messages()
+            await asyncio.sleep(5)
             await self._improve_levelup_messages()
             await asyncio.sleep(5)
             await self._improve_chatbot_fallbacks()
             await asyncio.sleep(5)
             await self._improve_ticket_responses()
+            await asyncio.sleep(5)
+            await self._improve_moderation_messages()
             await asyncio.sleep(5)
             await self._generate_feature_suggestions()
         except Exception as e:
