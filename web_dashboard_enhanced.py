@@ -1491,6 +1491,72 @@ def update_server_settings(server_id):
     """Update server settings"""
     return update_server_settings_action(server_id, request.json)
 
+# ===== CHATBOT API =====
+_CHATBOT_FILE = data_path('chatbot_data.json')
+
+def _load_chatbot():
+    try:
+        if os.path.exists(_CHATBOT_FILE):
+            with open(_CHATBOT_FILE) as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_chatbot(data):
+    try:
+        with open(_CHATBOT_FILE, 'w') as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"Chatbot save error: {e}")
+
+@app.route('/api/server/<server_id>/chatbot', methods=['GET'])
+@require_auth
+def get_chatbot_config(server_id):
+    data = _load_chatbot()
+    channels = data.get(str(server_id), [])
+    # Resolve channel names
+    result = []
+    if bot_instance and bot_instance.is_ready():
+        guild = bot_instance.get_guild(int(server_id))
+        if guild:
+            for ch_id in channels:
+                ch = guild.get_channel(int(ch_id))
+                result.append({'id': ch_id, 'name': ch.name if ch else ch_id})
+    return jsonify({'channels': result})
+
+@app.route('/api/server/<server_id>/chatbot', methods=['POST'])
+@require_auth
+def save_chatbot_config(server_id):
+    body = request.get_json(silent=True) or {}
+    action = body.get('action')  # 'add' or 'remove'
+    channel_id = str(body.get('channel_id', ''))
+    if not channel_id:
+        return jsonify({'error': 'channel_id required'}), 400
+    data = _load_chatbot()
+    channels = data.setdefault(str(server_id), [])
+    if action == 'add':
+        if channel_id not in channels:
+            channels.append(channel_id)
+        # Also update the live cog if loaded
+        if bot_instance:
+            cog = bot_instance.get_cog('Chatbot')
+            if cog:
+                cog.data.setdefault(str(server_id), [])
+                if channel_id not in cog.data[str(server_id)]:
+                    cog.data[str(server_id)].append(channel_id)
+    elif action == 'remove':
+        channels[:] = [c for c in channels if c != channel_id]
+        if bot_instance:
+            cog = bot_instance.get_cog('Chatbot')
+            if cog:
+                cog.data.get(str(server_id), []).clear()
+                cog.data[str(server_id)] = channels[:]
+    else:
+        return jsonify({'error': 'action must be add or remove'}), 400
+    _save_chatbot(data)
+    return jsonify({'success': True, 'channels': channels})
+
 # ===== FEATURE TOGGLES =====
 # Stored per-guild in a JSON file: {guild_id: {feature: bool}}
 _FEATURES_FILE = data_path('feature_toggles.json')

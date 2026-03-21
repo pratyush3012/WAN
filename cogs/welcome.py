@@ -1,6 +1,6 @@
 """
 WAN Bot - Welcome/Goodbye System
-Randomized welcome messages (cool + flirty mix) so it never feels repetitive.
+Gender-aware randomized welcome messages — flirty for girls, cool/hype for guys.
 """
 import discord
 from discord import app_commands
@@ -11,9 +11,141 @@ from datetime import datetime, timezone
 logger = logging.getLogger('discord_bot.welcome')
 DATA_FILE = 'welcome_data.json'
 
-# ── Randomized welcome messages ───────────────────────────────────────────────
-# Mix of cool, hype, and flirty — picked randomly each join so it never repeats
-WELCOME_TITLES = [
+# ── Gender detection via Discord username heuristics ─────────────────────────
+# We check the display name for common feminine/masculine name patterns.
+# This is a best-effort heuristic — not perfect, but fun.
+
+FEMININE_NAMES = {
+    'emma','olivia','ava','isabella','sophia','mia','charlotte','amelia','harper',
+    'evelyn','abigail','emily','elizabeth','mila','ella','avery','sofia','camila',
+    'aria','scarlett','victoria','madison','luna','grace','chloe','penelope',
+    'layla','riley','zoey','nora','lily','eleanor','hannah','lillian','addison',
+    'aubrey','ellie','stella','natalie','zoe','leah','hazel','violet','aurora',
+    'savannah','audrey','brooklyn','bella','claire','skylar','lucy','paisley',
+    'everly','anna','caroline','nova','genesis','emilia','kennedy','samantha',
+    'maya','willow','kinsley','naomi','aaliyah','elena','sarah','ariana','allison',
+    'gabriella','alice','madelyn','cora','ruby','eva','serenity','autumn','adeline',
+    'hailey','gianna','valentina','isla','eliana','quinn','nevaeh','ivy','sadie',
+    'piper','lydia','alexa','josephine','emery','julia','delilah','arianna',
+    'vivian','kaylee','sophie','brielle','madeline','peyton','rylee','clara',
+    'hadley','melanie','mackenzie','reagan','adalynn','liliana','aubree','jade',
+    'katherine','isabelle','natalia','raelynn','jasmine','faith','alexandra',
+    'morgan','khloe','london','destiny','ximena','ashley','brianna','ariel',
+    'alyssa','andrea','vanessa','jessica','taylor','amber','brittany','tiffany',
+    'priya','ananya','divya','pooja','neha','shreya','riya','aisha','fatima',
+    'zara','sara','nadia','lena','nina','diana','vera','kate','amy','lisa',
+    'mary','anna','rose','grace','hope','joy','faith','dawn','eve','iris',
+    'jade','ruby','pearl','opal','crystal','amber','sandy','cindy','wendy',
+    'mandy','candy','brandy','mindy','lindy','sindy','randi','candi','sandi',
+}
+
+MASCULINE_NAMES = {
+    'liam','noah','william','james','oliver','benjamin','elijah','lucas','mason',
+    'ethan','alexander','henry','jacob','michael','daniel','logan','jackson',
+    'sebastian','jack','aiden','owen','samuel','ryan','nathan','luke','gabriel',
+    'anthony','isaac','grayson','dylan','leo','jaxon','julian','levi','matthew',
+    'wyatt','andrew','joshua','lincoln','christopher','joseph','theodore','caleb',
+    'hunter','christian','eli','jonathan','connor','landon','adrian','asher',
+    'cameron','colton','easton','gael','evan','kayden','angel','roman','eli',
+    'dominic','austin','ian','adam','nolan','brayden','thomas','charles','jace',
+    'miles','brody','xavier','bentley','tyler','declan','carter','jason','cooper',
+    'ryder','ayden','kevin','zachary','parker','blake','jose','chase','cole',
+    'weston','hudson','jordan','greyson','bryson','zion','sawyer','emmett',
+    'silas','micah','rowan','beau','tristan','ivan','alex','max','jake','sam',
+    'ben','tom','tim','jim','bob','rob','joe','dan','ken','ron','don','ray',
+    'jay','kay','lee','rex','rex','ace','ash','kai','zak','zac','zach',
+    'arjun','rahul','rohan','vikram','aditya','karan','nikhil','siddharth',
+    'pratik','pratyush','raj','amit','ankit','aman','akash','ayush','harsh',
+    'yash','varun','tarun','arun','pavan','ravi','suresh','mahesh','ganesh',
+    'ramesh','dinesh','naresh','mukesh','rakesh','lokesh','yogesh','umesh',
+    'omar','ali','hassan','ahmed','khalid','tariq','bilal','hamza','usman',
+    'mike','john','david','chris','mark','paul','steve','brian','kevin','eric',
+    'jeff','scott','gary','larry','jerry','terry','barry','harry','larry',
+}
+
+def _detect_gender(member: discord.Member) -> str:
+    """Returns 'female', 'male', or 'unknown' based on display name heuristics."""
+    name = member.display_name.lower().strip()
+    # Check first word of name
+    first = name.split()[0] if name.split() else name
+    # Remove common suffixes/numbers
+    first_clean = ''.join(c for c in first if c.isalpha())
+    if first_clean in FEMININE_NAMES:
+        return 'female'
+    if first_clean in MASCULINE_NAMES:
+        return 'male'
+    # Check if name ends in common feminine suffixes
+    if any(first_clean.endswith(s) for s in ('ette','elle','ine','ina','ia','ya','ie','ee','i')):
+        return 'female'
+    return 'unknown'
+
+
+# ── Welcome messages by gender ────────────────────────────────────────────────
+
+WELCOME_TITLES_FEMALE = [
+    "💕 A queen has entered the chat!",
+    "✨ She arrived and the vibe shifted!",
+    "👑 Royalty just walked in!",
+    "🌸 A new star has joined us!",
+    "💫 The server just got prettier!",
+    "🔥 She's here and we're not ready!",
+    "🌟 The legend herself has arrived!",
+    "😍 Oh wow, look who just showed up!",
+    "💅 She walked in like she owns the place!",
+    "🎀 A new member and she's already iconic!",
+]
+
+WELCOME_MESSAGES_FEMALE = [
+    "Hey {user} 💕 We've been waiting for you~ Make yourself at home in **{server}**!",
+    "Oh look who decided to grace us with her presence 😏 Welcome, {user}! You're member **#{count}** — iconic.",
+    "{user} just walked in and honestly? The whole vibe just improved 10x. Welcome to **{server}**! 🌸",
+    "Careful everyone, {user} just arrived and she looks dangerous 😈 Welcome to the crew!",
+    "The server was missing something... turns out it was you, {user}! Welcome to **{server}** 💫",
+    "{user} has entered the chat. Everyone act cool 😎 Welcome to **{server}**!",
+    "Plot twist: {user} just joined and now **{server}** is officially better 🎉",
+    "We don't know you yet, {user}, but we already like you 😌 Welcome, queen!",
+    "{user} just dropped in! You're our **#{count}** member — make it count 👑",
+    "Roses are red, the server is lit, {user} just joined and we love it 💕",
+    "New member alert 🚨 {user} has arrived! Say hi before she thinks we're boring 😂",
+    "{user} walked in like she owns the place. Honestly? Respect. Welcome to **{server}**! 💪",
+    "Hey {user}! Fair warning — we're a little chaotic here. You'll fit right in 😏",
+    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not ✨",
+    "{user} just joined! Quick everyone, look busy 😅 Welcome to the crew, queen!",
+]
+
+WELCOME_TITLES_MALE = [
+    "🔥 A new legend has arrived!",
+    "💥 Someone just walked in!",
+    "👊 The squad just got stronger!",
+    "🚀 New member incoming!",
+    "💪 The server just leveled up!",
+    "😎 Look who decided to show up!",
+    "⚡ A new challenger has appeared!",
+    "🎮 Player 2 has entered the game!",
+    "🏆 A new legend joins the ranks!",
+    "🔱 The crew just got bigger!",
+]
+
+WELCOME_MESSAGES_MALE = [
+    "Hey {user}! We've been waiting for you 👀 Make yourself at home in **{server}**!",
+    "Oh look who decided to show up 😏 Welcome, {user}! You're member **#{count}** — not bad.",
+    "{user} just walked in and honestly? The vibe just improved. Welcome to **{server}**! 🔥",
+    "Careful everyone, {user} just arrived and he looks dangerous 😈 Welcome!",
+    "The server was missing something... turns out it was you, {user}! Welcome to **{server}** 💫",
+    "{user} has entered the chat. Everyone act cool 😎 Welcome to **{server}**!",
+    "Plot twist: {user} just joined and now **{server}** is officially better 🎉",
+    "We don't know who you are yet, {user}, but we already like you 😌 Welcome!",
+    "{user} just dropped in! You're our **#{count}** member — make it count 👑",
+    "New member alert 🚨 {user} has arrived! Say hi before he thinks we're boring 😂",
+    "{user} walked in like he owns the place. Honestly? Respect. Welcome to **{server}**! 💪",
+    "Hey {user}! Fair warning — we're a little chaotic here. You'll fit right in 😏",
+    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not ✨",
+    "{user} just joined! Quick everyone, look busy 😅 Welcome to the crew!",
+    "Player {user} has entered the game. **{server}** just got more interesting 🎮",
+]
+
+# Fallback (gender unknown)
+WELCOME_TITLES_NEUTRAL = [
     "✨ A new legend has arrived!",
     "🔥 Someone just walked in!",
     "💫 Look who just showed up!",
@@ -26,7 +158,7 @@ WELCOME_TITLES = [
     "🎊 Welcome to the family!",
 ]
 
-WELCOME_MESSAGES = [
+WELCOME_MESSAGES_NEUTRAL = [
     "Hey {user}! We've been waiting for you 👀 Make yourself at home in **{server}**!",
     "Oh look who decided to show up 😏 Welcome, {user}! You're member **#{count}** — not bad.",
     "{user} just walked in and honestly? The vibe just improved. Welcome to **{server}**! 🔥",
@@ -111,10 +243,24 @@ class Welcome(commands.Cog):
         if not ch:
             return
 
-        # Use custom message if set, otherwise pick a random one
+        # Use custom message if set, otherwise pick gender-aware random one
         if event == 'welcome':
-            raw_title = cfg.get('welcome_title') or random.choice(WELCOME_TITLES)
-            raw_desc  = cfg.get('welcome_message') or random.choice(WELCOME_MESSAGES)
+            if cfg.get('welcome_title') or cfg.get('welcome_message'):
+                # Custom message set — use it
+                raw_title = cfg.get('welcome_title') or random.choice(WELCOME_TITLES_NEUTRAL)
+                raw_desc  = cfg.get('welcome_message') or random.choice(WELCOME_MESSAGES_NEUTRAL)
+            else:
+                # Auto gender detection
+                gender = _detect_gender(member)
+                if gender == 'female':
+                    raw_title = random.choice(WELCOME_TITLES_FEMALE)
+                    raw_desc  = random.choice(WELCOME_MESSAGES_FEMALE)
+                elif gender == 'male':
+                    raw_title = random.choice(WELCOME_TITLES_MALE)
+                    raw_desc  = random.choice(WELCOME_MESSAGES_MALE)
+                else:
+                    raw_title = random.choice(WELCOME_TITLES_NEUTRAL)
+                    raw_desc  = random.choice(WELCOME_MESSAGES_NEUTRAL)
             default_color = 0x57f287
         else:
             raw_title = cfg.get('goodbye_title') or '👋 See you around!'

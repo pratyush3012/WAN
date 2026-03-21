@@ -386,6 +386,7 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('verification',this)"><i class="fas fa-user-check"></i><span>Verification</span></button>
     <button class="menu-item" onclick="show('reactionroles',this)"><i class="fas fa-hand-pointer"></i><span>Reaction Roles</span></button>
     <button class="menu-item" onclick="show('autoresponder',this)"><i class="fas fa-robot"></i><span>Auto Responder</span></button>
+    <button class="menu-item" onclick="show('chatbot',this)"><i class="fas fa-comment-dots"></i><span>Chatbot</span></button>
     <button class="menu-item" onclick="show('leveling',this)"><i class="fas fa-star"></i><span>Leveling</span></button>
     <button class="menu-item" onclick="show('translation',this)"><i class="fas fa-language"></i><span>Translation</span></button>
     <button class="menu-item" onclick="show('giveaways',this)"><i class="fas fa-gift"></i><span>Giveaways</span></button>
@@ -817,6 +818,36 @@ select.form-control option{background:var(--surface2);}
       <div class="card-header"><h3 class="card-title"><i class="fas fa-robot"></i> Auto Responder</h3><button class="btn btn-primary" onclick="openAddAR()"><i class="fas fa-plus"></i> Add Trigger</button></div>
       <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">Bot automatically replies when a message contains a trigger word or phrase.</p>
       <div id="arList"><p style="color:var(--text-muted);">Select a server to load auto-responses.</p></div>
+    </div>
+  </div>
+
+  <!-- CHATBOT -->
+  <div id="sec-chatbot" class="section">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-comment-dots"></i> Chatbot Channels</h3>
+      </div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">
+        The bot will reply to <strong>every message</strong> in these channels with fun, flirty, witty responses. 
+        Great for a #chat or #general channel to keep things lively 😏
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-end;">
+        <div style="flex:1;min-width:180px;">
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Select Channel</label>
+          <select id="chatbotChannelSelect" class="form-control" style="width:100%;"></select>
+        </div>
+        <button class="btn btn-primary" onclick="addChatbotChannel()"><i class="fas fa-plus"></i> Add Channel</button>
+      </div>
+      <div id="chatbotChannelList"><p style="color:var(--text-muted);font-size:13px;">Select a server to load chatbot channels.</p></div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-info-circle"></i> How It Works</h3></div>
+      <ul style="color:var(--text-muted);font-size:13px;line-height:2;padding-left:18px;">
+        <li>Add any text channel — the bot will reply to every message there</li>
+        <li>Replies are smart: greetings, compliments, gaming, food, mood — all detected</li>
+        <li>Gender-aware: flirty replies for girls, cool/hype replies for guys</li>
+        <li>You can also use <code>/chatbot-setchannel</code> in Discord directly</li>
+      </ul>
     </div>
   </div>
 
@@ -1709,6 +1740,7 @@ function show(name,el){
   if(name==='dangersettings'&&currentServer)loadBotPrefix();
   if(name==='roblox'&&currentServer)loadRoblox();
   if(name==='featuretoggles'&&currentServer)loadFeatureToggles();
+  if(name==='chatbot'&&currentServer)loadChatbotConfig();
 }
 
 // SERVER SELECT
@@ -2227,6 +2259,52 @@ async function addRR(){
     const res=await apiFetch('/api/server/'+currentServer+'/rr/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message_id,emoji,role_id})});
     const d=await res.json();
     if(d.success)notify('Reaction role added!','success'); else notify(d.error||'Failed','danger');
+  }catch(e){notify('Error','danger');}
+}
+
+// CHATBOT
+async function loadChatbotConfig(){
+  if(!currentServer)return;
+  const sel=document.getElementById('chatbotChannelSelect');
+  const list=document.getElementById('chatbotChannelList');
+  // Populate channel dropdown
+  try{
+    const sd=await fetch(`/api/server/${currentServer}`).then(r=>r.json());
+    if(sel&&sd.channels&&sd.channels.text){
+      sel.innerHTML=sd.channels.text.map(c=>`<option value="${c.id}">#${c.name}</option>`).join('');
+    }
+  }catch(e){}
+  // Load current chatbot channels
+  try{
+    const d=await fetch(`/api/server/${currentServer}/chatbot`).then(r=>r.json());
+    if(!d.channels||d.channels.length===0){
+      list.innerHTML='<p style="color:var(--text-muted);font-size:13px;">No chatbot channels set yet. Add one above!</p>';
+      return;
+    }
+    list.innerHTML=d.channels.map(c=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-card2);border-radius:8px;margin-bottom:8px;">
+        <span style="font-size:13px;"><i class="fas fa-hashtag" style="color:var(--accent);margin-right:6px;"></i>${c.name||c.id}</span>
+        <button class="btn btn-sm" style="background:#ef4444;color:#fff;padding:4px 10px;font-size:11px;" onclick="removeChatbotChannel('${c.id}')"><i class="fas fa-trash"></i> Remove</button>
+      </div>`).join('');
+  }catch(e){list.innerHTML='<p style="color:#ef4444;font-size:13px;">Failed to load chatbot config.</p>';}
+}
+async function addChatbotChannel(){
+  if(!currentServer){notify('Select a server first','warning');return;}
+  const sel=document.getElementById('chatbotChannelSelect');
+  const ch_id=sel?.value;
+  if(!ch_id){notify('Select a channel','warning');return;}
+  try{
+    const d=await fetch(`/api/server/${currentServer}/chatbot`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',channel_id:ch_id})}).then(r=>r.json());
+    if(d.success){notify('Chatbot channel added! 😏','success');loadChatbotConfig();}
+    else notify(d.error||'Failed','danger');
+  }catch(e){notify('Error adding channel','danger');}
+}
+async function removeChatbotChannel(ch_id){
+  if(!currentServer)return;
+  try{
+    const d=await fetch(`/api/server/${currentServer}/chatbot`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'remove',channel_id:ch_id})}).then(r=>r.json());
+    if(d.success){notify('Channel removed','success');loadChatbotConfig();}
+    else notify(d.error||'Failed','danger');
   }catch(e){notify('Error','danger');}
 }
 
