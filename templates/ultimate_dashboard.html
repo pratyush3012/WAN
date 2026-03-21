@@ -410,6 +410,7 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('settings',this)"><i class="fas fa-cog"></i><span>Settings</span></button>
     <button class="menu-item" onclick="show('featuretoggles',this)"><i class="fas fa-toggle-on"></i><span>Feature Toggles</span></button>
     <div class="menu-section">Intelligence</div>
+    <button class="menu-item" onclick="show('aibrain',this)"><i class="fas fa-brain"></i><span>AI Brain</span></button>
     <button class="menu-item" onclick="show('botanalyzer',this)"><i class="fas fa-microscope"></i><span>Bot Analyzer</span></button>
     <button class="menu-item" onclick="show('commandcenter',this)"><i class="fas fa-terminal"></i><span>Command Center</span></button>
     <button class="menu-item" onclick="show('analytics2',this)"><i class="fas fa-chart-line"></i><span>Analytics</span></button>
@@ -1364,7 +1365,82 @@ select.form-control option{background:var(--surface2);}
         <span style="color:var(--text-muted);font-size:12px;">Enable or disable features per server</span>
       </div>
       <p style="color:var(--text-muted);font-size:13px;margin-bottom:20px;">Toggle features on or off for this server. Disabled features won't respond to commands or events.</p>
-      <div id="featureToggleList"><p style="color:var(--text-muted);">Select a server to manage features.</p></div>
+      <div id="featureToggleList"><p style="color:var(--text-muted);">Loading features...</p></div>
+    </div>
+  </div>
+
+  <!-- AI BRAIN -->
+  <div id="sec-aibrain" class="section">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-brain"></i> AI Brain</h3>
+        <span id="aiBrainStatusBadge" style="font-size:12px;padding:4px 10px;border-radius:20px;background:rgba(124,58,237,.15);color:#a78bfa;">● Loading</span>
+      </div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">Gemini AI powers your entire bot — moderation, welcome, chatbot, self-improvement. Everything automated.</p>
+      <div class="grid2" style="margin-bottom:16px;">
+        <div class="feat-toggle">
+          <div class="feat-toggle-label"><i class="fas fa-shield-alt"></i> AI Auto-Moderation</div>
+          <label class="toggle-switch"><input type="checkbox" id="aiModToggle" onchange="toggleAIFeature('mod',this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="feat-toggle">
+          <div class="feat-toggle-label"><i class="fas fa-hand-wave"></i> AI Welcome Messages</div>
+          <label class="toggle-switch"><input type="checkbox" id="aiWelcomeToggle" onchange="toggleAIFeature('welcome',this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="feat-toggle">
+          <div class="feat-toggle-label"><i class="fas fa-comment-dots"></i> AI Chatbot</div>
+          <label class="toggle-switch"><input type="checkbox" id="aiChatbotToggle" onchange="toggleAIFeature('chatbot',this.checked)"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="feat-toggle">
+          <div class="feat-toggle-label"><i class="fas fa-lightbulb"></i> Self-Improvement</div>
+          <label class="toggle-switch"><input type="checkbox" id="aiSelfImproveToggle" checked disabled><span class="toggle-slider"></span></label>
+        </div>
+      </div>
+      <div id="aiWelcomeChannelRow" style="display:none;margin-bottom:16px;">
+        <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">AI Welcome Channel</label>
+        <div style="display:flex;gap:8px;">
+          <select id="aiWelcomeChannelSel" class="form-control" style="flex:1;"></select>
+          <button class="btn btn-primary btn-sm" onclick="saveAIWelcomeChannel()"><i class="fas fa-save"></i> Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-chart-line"></i> AI Improvement Log</h3>
+        <button class="btn btn-ghost btn-sm" onclick="loadAIBrain()"><i class="fas fa-sync"></i> Refresh</button>
+      </div>
+      <div id="aiImprovementLog"><p style="color:var(--text-muted);font-size:13px;">Loading AI activity...</p></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-clipboard-list"></i> Server Report</h3>
+        <button class="btn btn-primary btn-sm" onclick="generateAIReport()"><i class="fas fa-magic"></i> Generate Report</button>
+      </div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px;">AI analyzes your server and tells you what's working, what's improved, and what to do next.</p>
+      <div id="aiServerReport"><p style="color:var(--text-muted);font-size:13px;">Click "Generate Report" to get an AI analysis of your server.</p></div>
+    </div>
+
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-list-check"></i> What WAN Bot Can Do</h3></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;font-size:13px;">
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-shield-alt" style="color:#a78bfa;margin-right:6px;"></i>AI Auto-Moderation</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-comment-dots" style="color:#a78bfa;margin-right:6px;"></i>AI Chatbot (Gemini)</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-hand-wave" style="color:#a78bfa;margin-right:6px;"></i>AI Welcome Messages</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-star" style="color:#f59e0b;margin-right:6px;"></i>XP & Leveling System</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-ticket-alt" style="color:#34d399;margin-right:6px;"></i>Support Tickets</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-gamepad" style="color:#60a5fa;margin-right:6px;"></i>Roblox Integration</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-language" style="color:#34d399;margin-right:6px;"></i>Auto Translation</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-gavel" style="color:#f87171;margin-right:6px;"></i>Auto Moderation</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-robot" style="color:#a78bfa;margin-right:6px;"></i>Auto Responder</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-hand-pointer" style="color:#60a5fa;margin-right:6px;"></i>Reaction Roles</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-microphone" style="color:#34d399;margin-right:6px;"></i>Temp Voice Channels</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-star" style="color:#f59e0b;margin-right:6px;"></i>Starboard</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-birthday-cake" style="color:#f87171;margin-right:6px;"></i>Birthday Tracker</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-chart-bar" style="color:#a78bfa;margin-right:6px;"></i>Server Analytics</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-poll" style="color:#60a5fa;margin-right:6px;"></i>Polls & Giveaways</div>
+        <div style="background:var(--surface2);border-radius:8px;padding:10px;"><i class="fas fa-lightbulb" style="color:#f59e0b;margin-right:6px;"></i>Self-Improving AI</div>
+      </div>
     </div>
   </div>
 
@@ -1751,6 +1827,7 @@ function show(name,el){
   if(name==='dangersettings'&&currentServer)loadBotPrefix();
   if(name==='roblox'&&currentServer)loadRoblox();
   if(name==='featuretoggles'&&currentServer)loadFeatureToggles();
+  if(name==='aibrain'&&currentServer)loadAIBrain();
   if(name==='chatbot'&&currentServer)loadChatbotConfig();
 }
 
@@ -2336,6 +2413,128 @@ async function removeChatbotChannel(ch_id){
     if(d.success){notify('Channel removed','success');loadChatbotConfig();}
     else notify(d.error||'Failed','danger');
   }catch(e){notify('Error','danger');}
+}
+
+// FEATURE TOGGLES
+const FEATURE_LABELS = {
+  leveling:'⭐ Leveling & XP', automod:'🛡️ Auto Moderation', antiraid:'🚨 Anti-Raid',
+  smartmod:'🧠 Smart Mod', welcome:'👋 Welcome/Goodbye', translation:'🌐 Translation',
+  economy:'💰 Economy', tickets:'🎫 Tickets', starboard:'⭐ Starboard',
+  roblox:'🎮 Roblox', giveaways:'🎉 Giveaways', polls:'📊 Polls',
+  badges:'🏅 Badges', voicexp:'🎙️ Voice XP', modlog:'📋 Mod Log',
+};
+async function loadFeatureToggles(){
+  if(!currentServer)return;
+  const list=document.getElementById('featureToggleList');
+  list.innerHTML='<p style="color:var(--text-muted);font-size:13px;">Loading...</p>';
+  try{
+    const d=await fetch(`/api/server/${currentServer}/features`).then(r=>r.json());
+    if(!d.features){list.innerHTML='<p style="color:#ef4444;">Failed to load features.</p>';return;}
+    list.innerHTML=Object.entries(d.features).map(([k,v])=>`
+      <div class="feat-toggle">
+        <div class="feat-toggle-label"><span>${FEATURE_LABELS[k]||k}</span></div>
+        <label class="toggle-switch">
+          <input type="checkbox" ${v?'checked':''} onchange="saveFeatureToggle('${k}',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>`).join('');
+  }catch(e){list.innerHTML='<p style="color:#ef4444;">Error loading features.</p>';}
+}
+async function saveFeatureToggle(feature, enabled){
+  if(!currentServer)return;
+  try{
+    const d=await fetch(`/api/server/${currentServer}/features`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feature,enabled})}).then(r=>r.json());
+    if(d.success)notify(`${feature} ${enabled?'enabled':'disabled'}`,'success');
+    else notify(d.error||'Failed','danger');
+  }catch(e){notify('Error saving feature','danger');}
+}
+
+// AI BRAIN
+async function loadAIBrain(){
+  if(!currentServer)return;
+  try{
+    const d=await fetch(`/api/server/${currentServer}/ai-brain`).then(r=>r.json());
+    const badge=document.getElementById('aiBrainStatusBadge');
+    if(badge){
+      badge.textContent=d.gemini_active?'● Gemini Active':'● No API Key';
+      badge.style.color=d.gemini_active?'#a78bfa':'#f87171';
+    }
+    // Set toggles
+    const modT=document.getElementById('aiModToggle');
+    const welT=document.getElementById('aiWelcomeToggle');
+    const chatT=document.getElementById('aiChatbotToggle');
+    if(modT)modT.checked=d.ai_mod_enabled||false;
+    if(welT)welT.checked=d.ai_welcome_enabled||false;
+    if(chatT)chatT.checked=d.chatbot_enabled||false;
+    // Show welcome channel row if enabled
+    const welRow=document.getElementById('aiWelcomeChannelRow');
+    if(welRow)welRow.style.display=d.ai_welcome_enabled?'block':'none';
+    // Populate welcome channel select
+    const welSel=document.getElementById('aiWelcomeChannelSel');
+    if(welSel&&d.channels){
+      welSel.innerHTML=d.channels.map(c=>`<option value="${c.id}" ${d.ai_welcome_channel==c.id?'selected':''}>#${c.name}</option>`).join('');
+    }
+    // Render improvement log
+    const log=document.getElementById('aiImprovementLog');
+    if(log){
+      if(!d.actions||!d.actions.length){
+        log.innerHTML='<p style="color:var(--text-muted);font-size:13px;">No AI actions yet. AI will log moderation, welcomes, and suggestions here.</p>';
+      } else {
+        log.innerHTML=d.actions.map(a=>{
+          const icons={'moderation':'🛡️','welcome':'👋','suggestion':'💡','chatbot':'💬'};
+          const icon=icons[a.type]||'🤖';
+          const ts=a.timestamp?a.timestamp.slice(0,16).replace('T',' '):'';
+          return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);align-items:flex-start;">
+            <span style="font-size:18px;flex-shrink:0;">${icon}</span>
+            <div style="flex:1;">
+              <div style="font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;">${a.type}</div>
+              <div style="font-size:13px;color:var(--text);margin-top:2px;">${escHtml(a.detail||'')}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${ts}</div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+  }catch(e){console.error('AI Brain load error',e);}
+}
+async function toggleAIFeature(feature, enabled){
+  if(!currentServer){notify('Select a server first','warning');return;}
+  try{
+    const d=await fetch(`/api/server/${currentServer}/ai-brain`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feature,enabled})}).then(r=>r.json());
+    if(d.success){
+      notify(`AI ${feature} ${enabled?'enabled ✅':'disabled ❌'}`,enabled?'success':'warning');
+      // Show/hide welcome channel row
+      if(feature==='welcome'){
+        const row=document.getElementById('aiWelcomeChannelRow');
+        if(row)row.style.display=enabled?'block':'none';
+      }
+    } else notify(d.error||'Failed','danger');
+  }catch(e){notify('Error','danger');}
+}
+async function saveAIWelcomeChannel(){
+  if(!currentServer)return;
+  const sel=document.getElementById('aiWelcomeChannelSel');
+  const ch_id=sel?.value;
+  if(!ch_id){notify('Select a channel','warning');return;}
+  try{
+    const d=await fetch(`/api/server/${currentServer}/ai-brain`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({feature:'welcome_channel',channel_id:ch_id})}).then(r=>r.json());
+    if(d.success)notify('AI welcome channel saved ✅','success');
+    else notify(d.error||'Failed','danger');
+  }catch(e){notify('Error','danger');}
+}
+async function generateAIReport(){
+  if(!currentServer){notify('Select a server first','warning');return;}
+  const box=document.getElementById('aiServerReport');
+  box.innerHTML='<p style="color:var(--text-muted);font-size:13px;"><i class="fas fa-spinner fa-spin"></i> Generating AI report...</p>';
+  try{
+    const d=await fetch(`/api/server/${currentServer}/ai-report`).then(r=>r.json());
+    if(d.report){
+      box.innerHTML=`<div style="background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.2);border-radius:10px;padding:16px;font-size:13px;line-height:1.8;white-space:pre-wrap;">${escHtml(d.report)}</div>
+        <p style="color:var(--text-muted);font-size:11px;margin-top:8px;">Generated by Gemini AI • ${new Date().toLocaleString()}</p>`;
+    } else {
+      box.innerHTML=`<p style="color:#ef4444;font-size:13px;">${d.error||'Failed to generate report.'}</p>`;
+    }
+  }catch(e){box.innerHTML='<p style="color:#ef4444;font-size:13px;">Error generating report.</p>';}
 }
 
 // AUTO RESPONDER

@@ -1636,6 +1636,198 @@ def set_features(server_id):
     _save_feature_toggles(data)
     return jsonify({'success': True, 'feature': feature, 'enabled': bool(enabled)})
 
+# ===== AI BRAIN API =====
+
+@app.route('/api/server/<server_id>/ai-brain', methods=['GET'])
+@require_auth
+def get_ai_brain(server_id):
+    """Get AI Brain status and recent actions for a server."""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        ai_cog = bot_instance.get_cog('AIBrain')
+        chatbot_cog = bot_instance.get_cog('Chatbot')
+
+        guild_id = str(server_id)
+        ai_mod_enabled = guild_id in ai_cog._mod_enabled if ai_cog else False
+
+        # AI welcome settings
+        ai_welcome_enabled = False
+        ai_welcome_channel = None
+        if ai_cog:
+            settings = ai_cog.data.get('settings', {})
+            ai_welcome_enabled = guild_id in set(settings.get('ai_welcome_guilds', []))
+            ai_welcome_channel = settings.get('ai_welcome_channels', {}).get(guild_id)
+
+        # Chatbot enabled
+        chatbot_enabled = False
+        if chatbot_cog:
+            chatbot_enabled = chatbot_cog._guild_data(guild_id).get('enabled', True)
+
+        # Recent AI actions for this guild
+        actions = []
+        if ai_cog:
+            actions = [a for a in ai_cog.actions_log if a.get('guild') == guild.name][:20]
+
+        # Channel list for welcome channel selector
+        channels = [{'id': str(c.id), 'name': c.name} for c in guild.text_channels]
+
+        import os as _os
+        gemini_active = bool(_os.getenv('GEMINI_API_KEY', ''))
+
+        return jsonify({
+            'gemini_active': gemini_active,
+            'ai_mod_enabled': ai_mod_enabled,
+            'ai_welcome_enabled': ai_welcome_enabled,
+            'ai_welcome_channel': ai_welcome_channel,
+            'chatbot_enabled': chatbot_enabled,
+            'actions': actions,
+            'channels': channels,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"AI Brain GET error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<server_id>/ai-brain', methods=['POST'])
+@require_auth
+def set_ai_brain(server_id):
+    """Toggle AI Brain features for a server."""
+    try:
+        body = request.get_json(silent=True) or {}
+        feature = body.get('feature')
+        enabled = body.get('enabled')
+        guild_id = str(server_id)
+
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        ai_cog = bot_instance.get_cog('AIBrain')
+        chatbot_cog = bot_instance.get_cog('Chatbot')
+
+        if feature == 'mod':
+            if not ai_cog:
+                return jsonify({'error': 'AI Brain cog not loaded'}), 503
+            if enabled:
+                ai_cog._mod_enabled.add(guild_id)
+            else:
+                ai_cog._mod_enabled.discard(guild_id)
+            ai_cog._save_settings()
+            return jsonify({'success': True, 'feature': 'mod', 'enabled': enabled})
+
+        elif feature == 'welcome':
+            if not ai_cog:
+                return jsonify({'error': 'AI Brain cog not loaded'}), 503
+            if 'settings' not in ai_cog.data:
+                ai_cog.data['settings'] = {}
+            settings = ai_cog.data['settings']
+            welcome_guilds = set(settings.get('ai_welcome_guilds', []))
+            if enabled:
+                welcome_guilds.add(guild_id)
+            else:
+                welcome_guilds.discard(guild_id)
+            settings['ai_welcome_guilds'] = list(welcome_guilds)
+            from cogs.ai_brain import _save as _ai_save
+            _ai_save(ai_cog.data)
+            return jsonify({'success': True, 'feature': 'welcome', 'enabled': enabled})
+
+        elif feature == 'welcome_channel':
+            if not ai_cog:
+                return jsonify({'error': 'AI Brain cog not loaded'}), 503
+            channel_id = str(body.get('channel_id', ''))
+            if not channel_id:
+                return jsonify({'error': 'channel_id required'}), 400
+            if 'settings' not in ai_cog.data:
+                ai_cog.data['settings'] = {}
+            settings = ai_cog.data['settings']
+            if 'ai_welcome_channels' not in settings:
+                settings['ai_welcome_channels'] = {}
+            settings['ai_welcome_channels'][guild_id] = channel_id
+            from cogs.ai_brain import _save as _ai_save
+            _ai_save(ai_cog.data)
+            return jsonify({'success': True, 'feature': 'welcome_channel', 'channel_id': channel_id})
+
+        elif feature == 'chatbot':
+            if not chatbot_cog:
+                return jsonify({'error': 'Chatbot cog not loaded'}), 503
+            chatbot_cog._guild_data(guild_id)['enabled'] = bool(enabled)
+            from cogs.chatbot import _save as _cb_save
+            _cb_save(chatbot_cog.data)
+            return jsonify({'success': True, 'feature': 'chatbot', 'enabled': enabled})
+
+        return jsonify({'error': 'Unknown feature'}), 400
+    except Exception as e:
+        logger.error(f"AI Brain POST error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/server/<server_id>/ai-report')
+@require_auth
+def get_ai_report(server_id):
+    """Generate an AI report for the server using Gemini."""
+    try:
+        import os as _os
+        gemini_key = _os.getenv('GEMINI_API_KEY', '')
+        if not gemini_key:
+            return jsonify({'error': 'GEMINI_API_KEY not set. Add it to your Render environment variables.'}), 400
+
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'error': 'Server not found'}), 404
+
+        stats = {}
+        if hasattr(bot_instance, '_get_live_stats'):
+            stats = bot_instance._get_live_stats(str(server_id))
+
+        ai_cog = bot_instance.get_cog('AIBrain')
+        actions = []
+        if ai_cog:
+            actions = [a for a in ai_cog.actions_log if a.get('guild') == guild.name][:10]
+
+        cogs_loaded = list(bot_instance.cogs.keys())
+        cog_errors = getattr(bot_instance, 'cog_errors', {})
+
+        prompt = (
+            f"You are an expert Discord bot analyst. Generate a comprehensive server report.\n\n"
+            f"SERVER: {guild.name}\n"
+            f"Members: {guild.member_count} | Channels: {len(guild.text_channels)} | Roles: {len(guild.roles)}\n"
+            f"Messages today: {stats.get('messages', 0)} | Joins: {stats.get('joins', 0)} | Leaves: {stats.get('leaves', 0)}\n"
+            f"Bot features loaded: {len(cogs_loaded)} cogs\n"
+            f"Failed cogs: {list(cog_errors.keys()) if cog_errors else 'None'}\n"
+            f"Recent AI actions: {len(actions)} (mod/welcome/suggestions)\n\n"
+            f"Write a report with these sections:\n"
+            f"1. 📊 Server Health (overall status)\n"
+            f"2. ✅ What's Working Well\n"
+            f"3. 🔧 What Needs Attention\n"
+            f"4. 💡 Top 3 Improvement Suggestions\n"
+            f"5. 🤖 AI Automation Status\n\n"
+            f"Be specific, actionable, and encouraging. Keep it concise."
+        )
+
+        import urllib.request as _urlreq
+        import json as _json
+        payload = _json.dumps({
+            'contents': [{'parts': [{'text': prompt}]}],
+            'generationConfig': {'maxOutputTokens': 500, 'temperature': 0.7}
+        }).encode()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+        req = _urlreq.Request(url, data=payload, headers={'Content-Type': 'application/json'})
+        with _urlreq.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read())
+        report = data['candidates'][0]['content']['parts'][0]['text'].strip()
+        return jsonify({'report': report, 'timestamp': datetime.utcnow().isoformat()})
+
+    except Exception as e:
+        logger.error(f"AI report error: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to generate report: {str(e)}'}), 500
+
 # ===== REGISTER / OTP AUTH =====
 _USERS_FILE = data_path('dashboard_users.json')
 _OTP_STORE = {}  # email -> {otp, expires, pending_user}
