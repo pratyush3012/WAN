@@ -110,6 +110,7 @@ class GamingBot(commands.Bot):
             'cogs.dashboard',
             'cogs.botanalyzer',
             'cogs.ai_brain',
+            'cogs.ai_coder',
         ]
 
         self.cog_errors = {}

@@ -411,6 +411,7 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('featuretoggles',this)"><i class="fas fa-toggle-on"></i><span>Feature Toggles</span></button>
     <div class="menu-section">Intelligence</div>
     <button class="menu-item" onclick="show('aibrain',this)"><i class="fas fa-brain"></i><span>AI Brain</span></button>
+    <button class="menu-item" onclick="show('aicoder',this)"><i class="fas fa-code"></i><span>AI Coder</span></button>
     <button class="menu-item" onclick="show('botanalyzer',this)"><i class="fas fa-microscope"></i><span>Bot Analyzer</span></button>
     <button class="menu-item" onclick="show('commandcenter',this)"><i class="fas fa-terminal"></i><span>Command Center</span></button>
     <button class="menu-item" onclick="show('analytics2',this)"><i class="fas fa-chart-line"></i><span>Analytics</span></button>
@@ -1444,6 +1445,46 @@ select.form-control option{background:var(--surface2);}
     </div>
   </div>
 
+  <!-- AI CODER -->
+  <div id="sec-aicoder" class="section">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-code"></i> AI Coder</h3>
+        <span id="aiCoderStatusBadge" style="font-size:12px;padding:4px 10px;border-radius:20px;background:rgba(124,58,237,.15);color:#a78bfa;">● Loading</span>
+      </div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">Gemini AI analyzes and improves every bot feature daily — welcome messages, level-up announcements, chatbot replies, ticket responses, and more.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+        <button class="btn btn-primary" onclick="runAICoder()"><i class="fas fa-play"></i> Run Improvement Cycle Now</button>
+        <button class="btn btn-ghost btn-sm" onclick="loadAICoder()"><i class="fas fa-sync"></i> Refresh</button>
+      </div>
+      <div id="aiCoderStats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px;"></div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-history"></i> Improvement Log</h3></div>
+      <div id="aiCoderLog"><p style="color:var(--text-muted);font-size:13px;">Loading...</p></div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-lightbulb"></i> AI Feature Suggestions</h3>
+        <button class="btn btn-ghost btn-sm" onclick="loadAICoderSuggestions()"><i class="fas fa-sync"></i> Refresh</button>
+      </div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px;">Gemini analyzes your bot and suggests what to improve next.</p>
+      <div id="aiCoderSuggestions"><p style="color:var(--text-muted);font-size:13px;">Run an improvement cycle to generate suggestions.</p></div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-magic"></i> Generated Content Preview</h3></div>
+      <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px;">AI-generated messages currently in use across features.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="btn btn-ghost btn-sm" onclick="previewGenerated('welcome_messages')">Welcome Messages</button>
+        <button class="btn btn-ghost btn-sm" onclick="previewGenerated('levelup_messages')">Level-Up Messages</button>
+        <button class="btn btn-ghost btn-sm" onclick="previewGenerated('ticket_responses')">Ticket Responses</button>
+        <button class="btn btn-ghost btn-sm" onclick="previewGenerated('chatbot_fallbacks_female')">Chatbot (Female)</button>
+        <button class="btn btn-ghost btn-sm" onclick="previewGenerated('chatbot_fallbacks_male')">Chatbot (Male)</button>
+      </div>
+      <div id="aiCoderPreview"><p style="color:var(--text-muted);font-size:13px;">Click a button above to preview generated content.</p></div>
+    </div>
+  </div>
+
   <!-- SETTINGS -->
   <div id="sec-settings" class="section">
     <div class="card">
@@ -1828,6 +1869,7 @@ function show(name,el){
   if(name==='roblox'&&currentServer)loadRoblox();
   if(name==='featuretoggles'&&currentServer)loadFeatureToggles();
   if(name==='aibrain'&&currentServer)loadAIBrain();
+  if(name==='aicoder'&&currentServer)loadAICoder();
   if(name==='chatbot'&&currentServer)loadChatbotConfig();
 }
 
@@ -2535,6 +2577,110 @@ async function generateAIReport(){
       box.innerHTML=`<p style="color:#ef4444;font-size:13px;">${d.error||'Failed to generate report.'}</p>`;
     }
   }catch(e){box.innerHTML='<p style="color:#ef4444;font-size:13px;">Error generating report.</p>';}
+}
+
+// AI CODER
+async function loadAICoder(){
+  if(!currentServer)return;
+  try{
+    const d=await fetch('/api/ai-coder/status').then(r=>r.json());
+    const badge=document.getElementById('aiCoderStatusBadge');
+    if(badge){
+      if(d.running){badge.textContent='● Running';badge.style.color='#fbbf24';}
+      else if(d.active){badge.textContent='● Active';badge.style.color='#34d399';}
+      else{badge.textContent='● No API Key';badge.style.color='#f87171';}
+    }
+    // Stats grid
+    const stats=document.getElementById('aiCoderStats');
+    if(stats){
+      const items=[
+        {label:'Total Improvements',value:d.total_improvements||0,icon:'fas fa-chart-line'},
+        {label:'Features Monitored',value:5,icon:'fas fa-cogs'},
+        {label:'Generated Content',value:(d.generated_features||[]).length,icon:'fas fa-magic'},
+        {label:'Last Run',value:d.last_run?d.last_run.slice(0,16).replace('T',' '):'Never',icon:'fas fa-clock'},
+      ];
+      stats.innerHTML=items.map(i=>`<div style="background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.15);border-radius:10px;padding:14px;text-align:center;">
+        <i class="${i.icon}" style="color:#a78bfa;font-size:20px;margin-bottom:6px;display:block;"></i>
+        <div style="font-size:20px;font-weight:700;color:var(--text);">${i.value}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${i.label}</div>
+      </div>`).join('');
+    }
+    // Improvement log
+    const log=document.getElementById('aiCoderLog');
+    if(log){
+      const items=d.recent_improvements||[];
+      if(!items.length){
+        log.innerHTML='<p style="color:var(--text-muted);font-size:13px;">No improvements yet. Click "Run Improvement Cycle Now" to start.</p>';
+      } else {
+        const featureIcons={welcome:'👋',leveling:'⭐',chatbot:'💬',tickets:'🎫',moderation:'🛡️',system:'🤖'};
+        log.innerHTML=items.map(i=>{
+          const icon=featureIcons[i.feature]||'🤖';
+          const ts=i.timestamp?i.timestamp.slice(0,16).replace('T',' '):'';
+          return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);align-items:flex-start;">
+            <span style="font-size:18px;flex-shrink:0;">${icon}</span>
+            <div style="flex:1;">
+              <div style="font-size:12px;font-weight:700;color:#a78bfa;text-transform:uppercase;">${i.feature} — ${i.type}</div>
+              <div style="font-size:13px;color:var(--text);margin-top:2px;">${escHtml(i.content||'')}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${ts}</div>
+            </div>
+          </div>`;
+        }).join('');
+      }
+    }
+    // Suggestions
+    loadAICoderSuggestions(d.suggestions||[]);
+  }catch(e){console.error('AI Coder load error',e);}
+}
+async function runAICoder(){
+  if(!currentServer){notify('Select a server first','warning');return;}
+  const badge=document.getElementById('aiCoderStatusBadge');
+  if(badge){badge.textContent='● Starting...';badge.style.color='#fbbf24';}
+  try{
+    const d=await fetch('/api/ai-coder/run',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json());
+    if(d.status==='started'||d.status==='Started'){
+      notify('AI Coder improvement cycle started! Check back in a minute 🤖','success');
+      setTimeout(loadAICoder,3000);
+    } else {
+      notify(d.error||d.status||'Failed to start','warning');
+      if(badge){badge.textContent='● Active';badge.style.color='#34d399';}
+    }
+  }catch(e){notify('Error starting AI Coder','danger');console.error(e);}
+}
+function loadAICoderSuggestions(suggestions){
+  const el=document.getElementById('aiCoderSuggestions');
+  if(!el)return;
+  if(!suggestions||!suggestions.length){
+    el.innerHTML='<p style="color:var(--text-muted);font-size:13px;">No suggestions yet. Run an improvement cycle to generate AI suggestions.</p>';
+    return;
+  }
+  const priorityColors={high:'#ef4444',medium:'#f59e0b',low:'#34d399'};
+  const priorityEmoji={high:'🔴',medium:'🟡',low:'🟢'};
+  el.innerHTML=suggestions.map(s=>`<div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.15);border-radius:10px;padding:14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span>${priorityEmoji[s.priority]||'⚪'}</span>
+      <span style="font-weight:700;color:var(--text);font-size:14px;">${escHtml(s.feature||'')}</span>
+      <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(0,0,0,.2);color:${priorityColors[s.priority]||'#9ca3af'};">${s.priority||'medium'}</span>
+    </div>
+    <p style="font-size:13px;color:var(--text-muted);margin:0;">${escHtml(s.suggestion||'')}</p>
+  </div>`).join('');
+}
+async function previewGenerated(key){
+  const el=document.getElementById('aiCoderPreview');
+  if(!el)return;
+  el.innerHTML='<p style="color:var(--text-muted);font-size:13px;"><i class="fas fa-spinner fa-spin"></i> Loading...</p>';
+  try{
+    const d=await fetch(`/api/ai-coder/generated/${key}`).then(r=>r.json());
+    const items=d.items||[];
+    if(!items.length){
+      el.innerHTML='<p style="color:var(--text-muted);font-size:13px;">No generated content yet for this feature. Run an improvement cycle first.</p>';
+      return;
+    }
+    el.innerHTML=`<div style="font-size:12px;color:#a78bfa;font-weight:700;margin-bottom:10px;text-transform:uppercase;">${key.replace(/_/g,' ')}</div>`+
+      items.map((item,i)=>`<div style="background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.12);border-radius:8px;padding:12px;margin-bottom:8px;">
+        <span style="font-size:11px;color:var(--text-muted);">#${i+1}</span>
+        <p style="font-size:13px;color:var(--text);margin:4px 0 0;">${escHtml(item)}</p>
+      </div>`).join('');
+  }catch(e){el.innerHTML='<p style="color:#ef4444;font-size:13px;">Error loading preview.</p>';}
 }
 
 // AUTO RESPONDER

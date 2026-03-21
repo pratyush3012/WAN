@@ -1828,6 +1828,58 @@ def get_ai_report(server_id):
         logger.error(f"AI report error: {e}", exc_info=True)
         return jsonify({'error': f'Failed to generate report: {str(e)}'}), 500
 
+
+@app.route('/api/ai-coder/status')
+@require_auth
+def get_ai_coder_status():
+    """Get AI Coder status and improvement history."""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        cog = bot_instance.get_cog('AICoder')
+        if not cog:
+            return jsonify({'error': 'AI Coder not loaded'}), 503
+        return jsonify(cog.get_status())
+    except Exception as e:
+        logger.error(f"AI Coder status error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai-coder/run', methods=['POST'])
+@require_auth
+def run_ai_coder():
+    """Trigger an immediate AI improvement cycle."""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        cog = bot_instance.get_cog('AICoder')
+        if not cog:
+            return jsonify({'error': 'AI Coder not loaded'}), 503
+        # Schedule the async task
+        import asyncio
+        future = asyncio.run_coroutine_threadsafe(cog.run_cycle_now(), bot_instance.loop)
+        result = future.result(timeout=5)
+        return jsonify({'status': result, 'timestamp': datetime.utcnow().isoformat()})
+    except Exception as e:
+        logger.error(f"AI Coder run error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/ai-coder/generated/<key>')
+@require_auth
+def get_ai_coder_generated(key):
+    """Get AI-generated content for a specific feature."""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        cog = bot_instance.get_cog('AICoder')
+        if not cog:
+            return jsonify({'error': 'AI Coder not loaded'}), 503
+        items = cog.get_generated(key)
+        return jsonify({'key': key, 'items': items, 'count': len(items)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ===== REGISTER / OTP AUTH =====
 _USERS_FILE = data_path('dashboard_users.json')
 _OTP_STORE = {}  # email -> {otp, expires, pending_user}

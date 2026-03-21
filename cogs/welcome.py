@@ -1,169 +1,160 @@
-"""Write welcome.py with Gemini AI messages + auto-channel detection"""
-lines = []
-def w(*a): lines.append("".join(str(x) for x in a))
+"""
+WAN Bot - Welcome / Goodbye / Promotion System
+- Auto-detects welcome channel if none configured
+- Gemini AI generates unique welcome/goodbye messages
+- Gender-aware fallback pool (20+ messages each)
+- Promotion announcements on role gain
+"""
+import discord
+from discord import app_commands
+from discord.ext import commands
+import json, os, logging, random, asyncio
+import urllib.request
 
-w('"""')
-w('WAN Bot - Welcome / Goodbye / Promotion System')
-w('- Auto-detects welcome channel if none configured')
-w('- Gemini AI generates unique welcome/goodbye messages')
-w('- Gender-aware fallback pool (30+ messages each)')
-w('- Promotion announcements on role gain')
-w('- DM new members with server info')
-w('"""')
-w('import discord')
-w('from discord import app_commands')
-w('from discord.ext import commands')
-w('import json, os, logging, random, asyncio')
-w('import urllib.request')
-w('from datetime import datetime, timezone')
-w('')
-w('logger = logging.getLogger("discord_bot.welcome")')
-w('DATA_FILE = "welcome_data.json"')
-w('GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")')
-w('GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"')
-w('')
-w('')
-w('async def _gemini(prompt: str, max_tokens: int = 120) -> str | None:')
-w('    if not GEMINI_API_KEY:')
-w('        return None')
-w('    try:')
-w('        payload = json.dumps({')
-w('            "contents": [{"parts": [{"text": prompt}]}],')
-w('            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.95}')
-w('        }).encode()')
-w('        url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"')
-w('        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})')
-w('        loop = asyncio.get_event_loop()')
-w('        def _call():')
-w('            with urllib.request.urlopen(req, timeout=8) as resp:')
-w('                return json.loads(resp.read())')
-w('        data = await loop.run_in_executor(None, _call)')
-w('        return data["candidates"][0]["content"]["parts"][0]["text"].strip()')
-w('    except Exception as e:')
-w('        logger.warning(f"Gemini error in welcome: {e}")')
-w('        return None')
-w('')
-w('')
-w('FEMININE_NAMES = {')
-w('    "emma","olivia","ava","isabella","sophia","mia","charlotte","amelia","harper","evelyn",')
-w('    "abigail","emily","elizabeth","mila","ella","avery","sofia","camila","aria","scarlett",')
-w('    "victoria","madison","luna","grace","chloe","penelope","layla","riley","zoey","nora",')
-w('    "lily","eleanor","hannah","lillian","addison","aubrey","ellie","stella","natalie","zoe",')
-w('    "leah","hazel","violet","aurora","savannah","audrey","brooklyn","bella","claire","skylar",')
-w('    "lucy","paisley","everly","anna","caroline","nova","genesis","emilia","kennedy","samantha",')
-w('    "maya","willow","kinsley","naomi","aaliyah","elena","sarah","ariana","allison","gabriella",')
-w('    "alice","madelyn","cora","ruby","eva","serenity","autumn","adeline","hailey","gianna",')
-w('    "valentina","isla","eliana","quinn","nevaeh","ivy","sadie","piper","lydia","alexa",')
-w('    "priya","ananya","divya","pooja","neha","shreya","riya","aisha","fatima","zara",')
-w('    "sara","nadia","lena","nina","diana","vera","kate","amy","lisa","mary","rose",')
-w('    "hope","joy","dawn","eve","iris","pearl","opal","crystal","sandy","cindy","wendy",')
-w('    "mandy","candy","brandy","mindy","randi","candi","jade","jasmine","faith","morgan",')
-w('    "khloe","london","destiny","ximena","ashley","brianna","ariel","alyssa","andrea","vanessa"')
-w('}')
-w('MASCULINE_NAMES = {')
-w('    "liam","noah","william","james","oliver","benjamin","elijah","lucas","mason","ethan",')
-w('    "alexander","henry","jacob","michael","daniel","logan","jackson","sebastian","jack","aiden",')
-w('    "owen","samuel","ryan","nathan","luke","gabriel","anthony","isaac","grayson","dylan",')
-w('    "leo","jaxon","julian","levi","matthew","wyatt","andrew","joshua","lincoln","christopher",')
-w('    "joseph","theodore","caleb","hunter","christian","eli","jonathan","connor","landon","adrian",')
-w('    "asher","cameron","colton","easton","evan","kayden","roman","dominic","austin","ian",')
-w('    "adam","nolan","thomas","charles","jace","miles","brody","xavier","tyler","declan",')
-w('    "carter","jason","cooper","ryder","kevin","zachary","parker","blake","chase","cole",')
-w('    "alex","max","jake","sam","ben","tom","tim","jim","bob","rob","joe","dan","ken",')
-w('    "ron","don","ray","jay","lee","rex","ace","ash","kai","zak","zac","zach",')
-w('    "arjun","rahul","rohan","vikram","aditya","karan","nikhil","siddharth","pratik","pratyush",')
-w('    "raj","amit","ankit","aman","akash","ayush","harsh","yash","varun","tarun","arun",')
-w('    "pavan","ravi","suresh","mahesh","ganesh","ramesh","dinesh","naresh","mukesh","rakesh",')
-w('    "omar","ali","hassan","ahmed","khalid","tariq","bilal","hamza","usman",')
-w('    "mike","john","david","chris","mark","paul","steve","brian","eric","jeff","scott","gary"')
-w('}')
-w('')
-w('')
-w('def _detect_gender(member: discord.Member) -> str:')
-w('    name = member.display_name.lower().strip()')
-w('    first = name.split()[0] if name.split() else name')
-w('    fc = "".join(c for c in first if c.isalpha())')
-w('    if fc in FEMININE_NAMES: return "female"')
-w('    if fc in MASCULINE_NAMES: return "male"')
-w('    if any(fc.endswith(s) for s in ("ette","elle","ine","ina","ia","ya","ie","ee")): return "female"')
-w('    return "unknown"')
-w('')
-w('')
-w('# ── Fallback message pools ────────────────────────────────────────────────')
-w('WELCOME_F = [')
-w('    "💕 A queen has entered the chat! Welcome {user} — you\'re member **#{count}** and we\'re already obsessed!",')
-w('    "✨ {user} just walked in and honestly? The whole vibe shifted. Welcome to **{server}**! 👑",')
-w('    "She arrived 🌸 {user} is here! **{server}** just got 10x better, welcome queen!",')
-w('    "Careful everyone, {user} just joined and she looks dangerous 😈 Welcome to **{server}**!",')
-w('    "The server was missing something... turns out it was you, {user}! Welcome 💫",')
-w('    "{user} has entered the chat. Everyone act cool 😎 Welcome to **{server}**!",')
-w('    "New member alert 🚨 {user} arrived! Say hi before she thinks we\'re boring 😂",')
-w('    "{user} walked in like she owns the place. Honestly? Respect. Welcome! 💪",')
-w('    "Hey {user}! Fair warning — we\'re a little chaotic here. You\'ll fit right in 😏",')
-w('    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not ✨",')
-w('    "Roses are red, the server is lit, {user} just joined and we love it 💕",')
-w('    "Plot twist: {user} just joined and now **{server}** is officially better 🎉",')
-w('    "We don\'t know you yet {user}, but we already like you 😌 Welcome, queen!",')
-w('    "{user} just dropped in! You\'re our **#{count}** member — make it count 👑",')
-w('    "Tere aane se roshan hua ye server 🌙 Welcome {user}! We\'re so glad you\'re here 💕",')
-w('    "The legend {user} has arrived! **{server}** will never be the same 🌟",')
-w('    "Oh wow {user} is here 😍 Welcome to **{server}** — you\'re already our favorite!",')
-w('    "Someone told me a queen was joining today 👑 Welcome {user}! They were right!",')
-w('    "{user} just joined and I\'m already writing a shayari about it 😭 Welcome!",')
-w('    "Welcome {user}! You\'re member **#{count}** and honestly we peaked today 💕",')
-w(']')
-w('WELCOME_M = [')
-w('    "🔥 {user} just walked in! Welcome to **{server}** — you\'re member **#{count}**, legend!",')
-w('    "Bhai {user} aa gaya! 😎 Welcome to **{server}** — scene ban gaya!",')
-w('    "New player unlocked 🎮 {user} has joined **{server}**! Welcome to the squad!",')
-w('    "Careful everyone, {user} just arrived and he looks dangerous 😈 Welcome!",')
-w('    "The server was missing something... turns out it was you, {user}! Welcome 💫",')
-w('    "{user} has entered the chat. Everyone act cool 😎 Welcome to **{server}**!",')
-w('    "New member alert 🚨 {user} arrived! Say hi before he thinks we\'re boring 😂",')
-w('    "{user} walked in like he owns the place. Honestly? Respect. Welcome! 💪",')
-w('    "Hey {user}! Fair warning — we\'re a little chaotic here. You\'ll fit right in 😏",')
-w('    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not ✨",')
-w('    "Plot twist: {user} just joined and now **{server}** is officially better 🎉",')
-w('    "We don\'t know you yet {user}, but we already like you 😌 Welcome!",')
-w('    "{user} just dropped in! You\'re our **#{count}** member — make it count 👑",')
-w('    "Bhai {user} teri entry se macha shor hai 🔥 Welcome to **{server}**!",')
-w('    "Player {user} has entered the game. **{server}** just got more interesting 🎮",')
-w('    "The legend {user} has arrived! **{server}** will never be the same 🌟",')
-w('    "Bro {user} is here 💪 Welcome to **{server}** — you\'re already one of us!",')
-w('    "Someone told me a legend was joining today 👑 Welcome {user}! They were right!",')
-w('    "{user} just joined and I\'m already hyped 🔥 Welcome to the crew!",')
-w('    "Welcome {user}! You\'re member **#{count}** and honestly we peaked today 💪",')
-w(']')
-w('WELCOME_N = [')
-w('    "✨ {user} just joined **{server}**! Welcome — you\'re member **#{count}**!",')
-w('    "New member alert 🚨 {user} has arrived! Welcome to **{server}**!",')
-w('    "{user} has entered the chat. Everyone act cool 😎 Welcome!",')
-w('    "The server was missing something... turns out it was you, {user}! Welcome 💫",')
-w('    "Plot twist: {user} just joined and now **{server}** is officially better 🎉",')
-w('    "We don\'t know you yet {user}, but we already like you 😌 Welcome!",')
-w('    "{user} just dropped in! You\'re our **#{count}** member — make it count 👑",')
-w('    "Hey {user}! Fair warning — we\'re a little chaotic here. You\'ll fit right in 😏",')
-w('    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not ✨",')
-w('    "Roses are red, the server is lit, {user} just joined and we love it 💕",')
-w('    "Welcome {user}! You\'re member **#{count}** and we\'re glad you\'re here 🎉",')
-w('    "The legend {user} has arrived! **{server}** will never be the same 🌟",')
-w('    "Oh wow {user} is here! Welcome to **{server}** — you\'re already our favorite!",')
-w('    "Someone told me a new member was joining today 👑 Welcome {user}!",')
-w('    "{user} just joined and we\'re already excited 🔥 Welcome to the crew!",')
-w(']')
-w('GOODBYE_MSGS = [')
-w('    "**{username}** has left the building 👋 We\'ll miss you (a little). **{server}** now has {count} members.",')
-w('    "**{username}** dipped 💨 Take care out there! **{server}** has {count} members now.",')
-w('    "And just like that, **{username}** was gone 😔 Until next time!",')
-w('    "**{username}** left the server. The vibe took a small hit ngl 😔 ({count} members remain)",')
-w('    "**{username}** has logged off from **{server}**. Until next time! 👋",')
-w('    "Goodbye **{username}** 👋 You will be missed! ({count} members left)",')
-w('    "**{username}** left 😢 Hope to see you back soon! **{server}** misses you already.",')
-w('    "**{username}** has departed. Safe travels! 🌟 ({count} members remain)",')
-w(']')
+logger = logging.getLogger("discord_bot.welcome")
+DATA_FILE = "welcome_data.json"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 
-def _fill(template: str, member: discord.Member) -> str:
+async def _gemini(prompt: str, max_tokens: int = 120):
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        payload = json.dumps({
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.95}
+        }).encode()
+        url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        loop = asyncio.get_event_loop()
+        def _call():
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                return json.loads(resp.read())
+        data = await loop.run_in_executor(None, _call)
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception as e:
+        logger.warning(f"Gemini error in welcome: {e}")
+        return None
+
+
+FEMININE_NAMES = {
+    "emma","olivia","ava","isabella","sophia","mia","charlotte","amelia","harper","evelyn",
+    "abigail","emily","elizabeth","mila","ella","avery","sofia","camila","aria","scarlett",
+    "victoria","madison","luna","grace","chloe","penelope","layla","riley","zoey","nora",
+    "lily","eleanor","hannah","lillian","addison","aubrey","ellie","stella","natalie","zoe",
+    "leah","hazel","violet","aurora","savannah","audrey","brooklyn","bella","claire","skylar",
+    "lucy","paisley","everly","anna","caroline","nova","genesis","emilia","kennedy","samantha",
+    "maya","willow","kinsley","naomi","aaliyah","elena","sarah","ariana","allison","gabriella",
+    "alice","madelyn","cora","ruby","eva","serenity","autumn","adeline","hailey","gianna",
+    "valentina","isla","eliana","quinn","nevaeh","ivy","sadie","piper","lydia","alexa",
+    "priya","ananya","divya","pooja","neha","shreya","riya","aisha","fatima","zara",
+    "sara","nadia","lena","nina","diana","vera","kate","amy","lisa","mary","rose",
+    "hope","joy","dawn","eve","iris","pearl","opal","crystal","sandy","cindy","wendy",
+    "mandy","candy","brandy","mindy","randi","candi","jade","jasmine","faith","morgan",
+    "khloe","london","destiny","ximena","ashley","brianna","ariel","alyssa","andrea","vanessa"
+}
+MASCULINE_NAMES = {
+    "liam","noah","william","james","oliver","benjamin","elijah","lucas","mason","ethan",
+    "alexander","henry","jacob","michael","daniel","logan","jackson","sebastian","jack","aiden",
+    "owen","samuel","ryan","nathan","luke","gabriel","anthony","isaac","grayson","dylan",
+    "leo","jaxon","julian","levi","matthew","wyatt","andrew","joshua","lincoln","christopher",
+    "joseph","theodore","caleb","hunter","christian","eli","jonathan","connor","landon","adrian",
+    "asher","cameron","colton","easton","evan","kayden","roman","dominic","austin","ian",
+    "adam","nolan","thomas","charles","jace","miles","brody","xavier","tyler","declan",
+    "carter","jason","cooper","ryder","kevin","zachary","parker","blake","chase","cole",
+    "alex","max","jake","sam","ben","tom","tim","jim","bob","rob","joe","dan","ken",
+    "ron","don","ray","jay","lee","rex","ace","ash","kai","zak","zac","zach",
+    "arjun","rahul","rohan","vikram","aditya","karan","nikhil","siddharth","pratik","pratyush",
+    "raj","amit","ankit","aman","akash","ayush","harsh","yash","varun","tarun","arun",
+    "pavan","ravi","suresh","mahesh","ganesh","ramesh","dinesh","naresh","mukesh","rakesh",
+    "omar","ali","hassan","ahmed","khalid","tariq","bilal","hamza","usman",
+    "mike","john","david","chris","mark","paul","steve","brian","eric","jeff","scott","gary"
+}
+
+
+def _detect_gender(member):
+    name = member.display_name.lower().strip()
+    first = name.split()[0] if name.split() else name
+    fc = "".join(c for c in first if c.isalpha())
+    if fc in FEMININE_NAMES: return "female"
+    if fc in MASCULINE_NAMES: return "male"
+    if any(fc.endswith(s) for s in ("ette","elle","ine","ina","ia","ya","ie","ee")): return "female"
+    return "unknown"
+
+
+WELCOME_F = [
+    "\U0001f495 A queen has entered the chat! Welcome {user} \u2014 you're member **#{count}** and we're already obsessed!",
+    "\u2728 {user} just walked in and honestly? The whole vibe shifted. Welcome to **{server}**! \U0001f451",
+    "She arrived \U0001f338 {user} is here! **{server}** just got 10x better, welcome queen!",
+    "Careful everyone, {user} just joined and she looks dangerous \U0001f608 Welcome to **{server}**!",
+    "The server was missing something... turns out it was you, {user}! Welcome \U0001f4ab",
+    "{user} has entered the chat. Everyone act cool \U0001f60e Welcome to **{server}**!",
+    "New member alert \U0001f6a8 {user} arrived! Say hi before she thinks we're boring \U0001f602",
+    "{user} walked in like she owns the place. Honestly? Respect. Welcome! \U0001f4aa",
+    "Hey {user}! Fair warning \u2014 we're a little chaotic here. You'll fit right in \U0001f60f",
+    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not \u2728",
+    "Roses are red, the server is lit, {user} just joined and we love it \U0001f495",
+    "Plot twist: {user} just joined and now **{server}** is officially better \U0001f389",
+    "We don't know you yet {user}, but we already like you \U0001f60c Welcome, queen!",
+    "{user} just dropped in! You're our **#{count}** member \u2014 make it count \U0001f451",
+    "Tere aane se roshan hua ye server \U0001f319 Welcome {user}! We're so glad you're here \U0001f495",
+    "The legend {user} has arrived! **{server}** will never be the same \U0001f31f",
+    "Oh wow {user} is here \U0001f60d Welcome to **{server}** \u2014 you're already our favorite!",
+    "Someone told me a queen was joining today \U0001f451 Welcome {user}! They were right!",
+    "{user} just joined and I'm already writing a shayari about it \U0001f62d Welcome!",
+    "Welcome {user}! You're member **#{count}** and honestly we peaked today \U0001f495",
+]
+WELCOME_M = [
+    "\U0001f525 {user} just walked in! Welcome to **{server}** \u2014 you're member **#{count}**, legend!",
+    "Bhai {user} aa gaya! \U0001f60e Welcome to **{server}** \u2014 scene ban gaya!",
+    "New player unlocked \U0001f3ae {user} has joined **{server}**! Welcome to the squad!",
+    "Careful everyone, {user} just arrived and he looks dangerous \U0001f608 Welcome!",
+    "The server was missing something... turns out it was you, {user}! Welcome \U0001f4ab",
+    "{user} has entered the chat. Everyone act cool \U0001f60e Welcome to **{server}**!",
+    "New member alert \U0001f6a8 {user} arrived! Say hi before he thinks we're boring \U0001f602",
+    "{user} walked in like he owns the place. Honestly? Respect. Welcome! \U0001f4aa",
+    "Hey {user}! Fair warning \u2014 we're a little chaotic here. You'll fit right in \U0001f60f",
+    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not \u2728",
+    "Plot twist: {user} just joined and now **{server}** is officially better \U0001f389",
+    "We don't know you yet {user}, but we already like you \U0001f60c Welcome!",
+    "{user} just dropped in! You're our **#{count}** member \u2014 make it count \U0001f451",
+    "Bhai {user} teri entry se macha shor hai \U0001f525 Welcome to **{server}**!",
+    "Player {user} has entered the game. **{server}** just got more interesting \U0001f3ae",
+    "The legend {user} has arrived! **{server}** will never be the same \U0001f31f",
+    "Bro {user} is here \U0001f4aa Welcome to **{server}** \u2014 you're already one of us!",
+    "Someone told me a legend was joining today \U0001f451 Welcome {user}! They were right!",
+    "{user} just joined and I'm already hyped \U0001f525 Welcome to the crew!",
+    "Welcome {user}! You're member **#{count}** and honestly we peaked today \U0001f4aa",
+]
+WELCOME_N = [
+    "\u2728 {user} just joined **{server}**! Welcome \u2014 you're member **#{count}**!",
+    "New member alert \U0001f6a8 {user} has arrived! Welcome to **{server}**!",
+    "{user} has entered the chat. Everyone act cool \U0001f60e Welcome!",
+    "The server was missing something... turns out it was you, {user}! Welcome \U0001f4ab",
+    "Plot twist: {user} just joined and now **{server}** is officially better \U0001f389",
+    "We don't know you yet {user}, but we already like you \U0001f60c Welcome!",
+    "{user} just dropped in! You're our **#{count}** member \u2014 make it count \U0001f451",
+    "Hey {user}! Fair warning \u2014 we're a little chaotic here. You'll fit right in \U0001f60f",
+    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not \u2728",
+    "Welcome {user}! You're member **#{count}** and we're glad you're here \U0001f389",
+    "The legend {user} has arrived! **{server}** will never be the same \U0001f31f",
+    "Oh wow {user} is here! Welcome to **{server}** \u2014 you're already our favorite!",
+    "{user} just joined and we're already excited \U0001f525 Welcome to the crew!",
+]
+GOODBYE_MSGS = [
+    "**{username}** has left the building \U0001f44b We'll miss you (a little). **{server}** now has {count} members.",
+    "**{username}** dipped \U0001f4a8 Take care out there! **{server}** has {count} members now.",
+    "And just like that, **{username}** was gone \U0001f614 Until next time!",
+    "**{username}** left the server. The vibe took a small hit ngl \U0001f614 ({count} members remain)",
+    "**{username}** has logged off from **{server}**. Until next time! \U0001f44b",
+    "Goodbye **{username}** \U0001f44b You will be missed! ({count} members left)",
+    "**{username}** left \U0001f622 Hope to see you back soon! **{server}** misses you already.",
+    "**{username}** has departed. Safe travels! \U0001f31f ({count} members remain)",
+]
+
+
+def _fill(template, member):
     return (template
         .replace("{user}", member.mention)
         .replace("{username}", member.display_name)
@@ -172,22 +163,20 @@ def _fill(template: str, member: discord.Member) -> str:
         .replace("{id}", str(member.id))
     )
 
-def _parse_color(raw, default: int = 0x57f287) -> int:
+def _parse_color(raw, default=0x57f287):
     try:
         s = str(raw).strip().lstrip("#")
         return int(s, 16)
     except Exception:
         return default
 
-def _auto_channel(guild: discord.Guild, keywords=("welcome","general","lobby","chat","main","arrival")) -> discord.TextChannel | None:
-    """Find a suitable channel automatically if none configured."""
+def _auto_channel(guild, keywords=("welcome","general","lobby","chat","main","arrival")):
     for kw in keywords:
         for ch in guild.text_channels:
             if kw in ch.name.lower():
                 perms = ch.permissions_for(guild.me)
                 if perms.send_messages and perms.embed_links:
                     return ch
-    # fallback: first channel bot can write to
     for ch in guild.text_channels:
         perms = ch.permissions_for(guild.me)
         if perms.send_messages and perms.embed_links:
@@ -198,9 +187,9 @@ def _auto_channel(guild: discord.Guild, keywords=("welcome","general","lobby","c
 class Welcome(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.data: dict = self._load()
+        self.data = self._load()
 
-    def _load(self) -> dict:
+    def _load(self):
         try:
             if os.path.exists(DATA_FILE):
                 with open(DATA_FILE) as f:
@@ -216,14 +205,13 @@ class Welcome(commands.Cog):
         except Exception as e:
             logger.error(f"Welcome save error: {e}")
 
-    def _guild(self, gid) -> dict:
+    def _guild(self, gid):
         key = str(gid)
         if key not in self.data:
             self.data[key] = {}
         return self.data[key]
 
-    async def _ai_welcome(self, member: discord.Member, gender: str) -> str | None:
-        """Generate a unique Gemini welcome message."""
+    async def _ai_welcome(self, member, gender):
         gender_ctx = {
             "female": "She is a girl. Be warm, flirty, welcoming. Call her queen/gorgeous.",
             "male": "He is a guy. Be hype, bro energy, welcoming. Call him legend/bro.",
@@ -241,8 +229,7 @@ class Welcome(commands.Cog):
         )
         return await _gemini(prompt, max_tokens=100)
 
-    async def _ai_goodbye(self, member: discord.Member) -> str | None:
-        """Generate a unique Gemini goodbye message."""
+    async def _ai_goodbye(self, member):
         prompt = (
             f"Write a short Discord goodbye message for a member who just left.\n"
             f"Member name: {member.display_name}\n"
@@ -253,18 +240,16 @@ class Welcome(commands.Cog):
         )
         return await _gemini(prompt, max_tokens=80)
 
-    async def _send_welcome(self, member: discord.Member):
+    async def _send_welcome(self, member):
         cfg = self._guild(member.guild.id)
         gender = _detect_gender(member)
 
-        # Find channel — configured or auto-detected
         ch_id = cfg.get("welcome_channel")
         if ch_id:
             ch = member.guild.get_channel(int(ch_id))
         else:
             ch = _auto_channel(member.guild)
             if ch:
-                # Auto-save so we don't re-detect every time
                 cfg["welcome_channel"] = str(ch.id)
                 self._save()
                 logger.info(f"Auto-detected welcome channel: #{ch.name} in {member.guild.name}")
@@ -273,36 +258,45 @@ class Welcome(commands.Cog):
             logger.warning(f"No welcome channel found for {member.guild.name}")
             return
 
-        # Generate message — AI first, fallback to pool
         if cfg.get("welcome_message"):
-            # Custom message set by admin
             desc = _fill(cfg["welcome_message"], member)
             title = _fill(cfg.get("welcome_title", ""), member) or None
         else:
-            # Try Gemini AI
-            ai_msg = await self._ai_welcome(member, gender)
-            if ai_msg:
-                desc = ai_msg.replace("{user}", member.mention).replace("{username}", member.display_name)
+            ai_coder_msg = None
+            try:
+                ai_coder = self.bot.cogs.get("AICoder")
+                if ai_coder:
+                    msgs = ai_coder.get_generated("welcome_messages")
+                    if msgs:
+                        ai_coder_msg = _fill(random.choice(msgs), member)
+            except Exception:
+                pass
+
+            if ai_coder_msg:
+                desc = ai_coder_msg
                 title = None
             else:
-                # Fallback pool
-                pool = WELCOME_F if gender == "female" else WELCOME_M if gender == "male" else WELCOME_N
-                desc = _fill(random.choice(pool), member)
-                title = None
+                ai_msg = await self._ai_welcome(member, gender)
+                if ai_msg:
+                    desc = ai_msg.replace("{user}", member.mention).replace("{username}", member.display_name)
+                    title = None
+                else:
+                    pool = WELCOME_F if gender == "female" else WELCOME_M if gender == "male" else WELCOME_N
+                    desc = _fill(random.choice(pool), member)
+                    title = None
 
         color = _parse_color(cfg.get("welcome_color", "57f287"), 0x57f287)
         embed = discord.Embed(description=desc, color=color)
         if title:
             embed.title = title
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_footer(text=f"Welcome to {member.guild.name} • Member #{member.guild.member_count}")
+        embed.set_footer(text=f"Welcome to {member.guild.name} \u2022 Member #{member.guild.member_count}")
         try:
             await ch.send(embed=embed)
             logger.info(f"Welcome sent for {member.display_name} in {member.guild.name}")
         except Exception as e:
             logger.warning(f"Welcome send error: {e}")
 
-        # Auto-role
         role_id = cfg.get("autorole")
         if role_id:
             role = member.guild.get_role(int(role_id))
@@ -312,19 +306,21 @@ class Welcome(commands.Cog):
                 except Exception as e:
                     logger.warning(f"Auto-role error: {e}")
 
-        # DM new member
         if cfg.get("dm_enabled") and cfg.get("dm_message"):
             try:
                 dm_embed = discord.Embed(
                     description=_fill(cfg["dm_message"], member),
                     color=0x7c3aed
                 )
-                dm_embed.set_author(name=f"Welcome to {member.guild.name}!", icon_url=member.guild.icon.url if member.guild.icon else None)
+                dm_embed.set_author(
+                    name=f"Welcome to {member.guild.name}!",
+                    icon_url=member.guild.icon.url if member.guild.icon else None
+                )
                 await member.send(embed=dm_embed)
             except Exception:
-                pass  # DMs can be closed
+                pass
 
-    async def _send_goodbye(self, member: discord.Member):
+    async def _send_goodbye(self, member):
         cfg = self._guild(member.guild.id)
 
         ch_id = cfg.get("goodbye_channel") or cfg.get("welcome_channel")
@@ -353,25 +349,24 @@ class Welcome(commands.Cog):
         color = _parse_color(cfg.get("goodbye_color", "ef4444"), 0xef4444)
         embed = discord.Embed(description=desc, color=color)
         embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_footer(text=f"{member.guild.name} • Goodbye")
+        embed.set_footer(text=f"{member.guild.name} \u2022 Goodbye")
         try:
             await ch.send(embed=embed)
         except Exception as e:
             logger.warning(f"Goodbye send error: {e}")
 
     @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
+    async def on_member_join(self, member):
         logger.info(f"on_member_join fired: {member.display_name} in {member.guild.name}")
         await self._send_welcome(member)
 
     @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member):
+    async def on_member_remove(self, member):
         logger.info(f"on_member_remove fired: {member.display_name} in {member.guild.name}")
         await self._send_goodbye(member)
 
     @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member):
-        """Promotion announcements when a watched role is gained."""
+    async def on_member_update(self, before, after):
         cfg = self._guild(after.guild.id)
         promo_ch_id = cfg.get("promo_channel")
         watched_raw = cfg.get("promo_roles", "")
@@ -384,7 +379,6 @@ class Welcome(commands.Cog):
                 ch = after.guild.get_channel(int(promo_ch_id))
                 if not ch:
                     return
-                # Try AI promo message
                 promo_template = cfg.get("promo_message", "")
                 if not promo_template:
                     ai_msg = await _gemini(
@@ -393,7 +387,7 @@ class Welcome(commands.Cog):
                         f"1-2 sentences, use emojis, be hype and congratulatory.",
                         max_tokens=80
                     )
-                    msg = ai_msg or f"🎉 Congratulations {after.mention}! You've been promoted to **{role.name}**! Well deserved! 🎊"
+                    msg = ai_msg or f"\U0001f389 Congratulations {after.mention}! You've been promoted to **{role.name}**! Well deserved! \U0001f38a"
                 else:
                     msg = (promo_template
                         .replace("{user}", after.mention)
@@ -403,102 +397,85 @@ class Welcome(commands.Cog):
                     )
                 embed = discord.Embed(description=msg, color=0xf59e0b)
                 embed.set_thumbnail(url=after.display_avatar.url)
-                embed.set_footer(text=f"{after.guild.name} • Promotion")
+                embed.set_footer(text=f"{after.guild.name} \u2022 Promotion")
                 try:
                     await ch.send(embed=embed)
                 except Exception as e:
                     logger.warning(f"Promo send error: {e}")
                 break
 
-    # ── Slash commands ─────────────────────────────────────────────────────────
-
     @app_commands.command(name="welcome-set", description="Set welcome channel and optional custom message")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def welcome_set(self, interaction: discord.Interaction,
-                          channel: discord.TextChannel,
-                          message: str = "",
-                          title: str = "",
-                          color: str = "57f287"):
+    async def welcome_set(self, interaction, channel: discord.TextChannel,
+                          message: str = "", title: str = "", color: str = "57f287"):
         cfg = self._guild(interaction.guild.id)
-        cfg.update({
-            "welcome_channel": str(channel.id),
-            "welcome_message": message,
-            "welcome_title": title,
-            "welcome_color": color,
-        })
+        cfg.update({"welcome_channel": str(channel.id), "welcome_message": message,
+                    "welcome_title": title, "welcome_color": color})
         self._save()
-        note = "AI-generated messages enabled (no custom message)." if not message else "Custom message saved."
+        note = "AI-generated messages enabled." if not message else "Custom message saved."
         await interaction.response.send_message(
-            f"✅ Welcome → {channel.mention}\n{note}\n"
-            f"Variables: `{{user}}` `{{username}}` `{{server}}` `{{count}}`",
-            ephemeral=True)
+            f"\u2705 Welcome \u2192 {channel.mention}\n{note}\n"
+            f"Variables: `{{user}}` `{{username}}` `{{server}}` `{{count}}`", ephemeral=True)
 
     @app_commands.command(name="goodbye-set", description="Set goodbye channel and optional custom message")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def goodbye_set(self, interaction: discord.Interaction,
-                          channel: discord.TextChannel,
-                          message: str = "",
-                          title: str = ""):
+    async def goodbye_set(self, interaction, channel: discord.TextChannel,
+                          message: str = "", title: str = ""):
         cfg = self._guild(interaction.guild.id)
         cfg.update({"goodbye_channel": str(channel.id), "goodbye_message": message, "goodbye_title": title})
         self._save()
-        await interaction.response.send_message(f"✅ Goodbye → {channel.mention}", ephemeral=True)
+        await interaction.response.send_message(f"\u2705 Goodbye \u2192 {channel.mention}", ephemeral=True)
 
     @app_commands.command(name="welcome-dm", description="Set a DM message sent to new members on join")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def welcome_dm(self, interaction: discord.Interaction,
-                         message: str,
-                         enabled: bool = True):
+    async def welcome_dm(self, interaction, message: str, enabled: bool = True):
         cfg = self._guild(interaction.guild.id)
         cfg["dm_enabled"] = enabled
         cfg["dm_message"] = message
         self._save()
+        status = "enabled" if enabled else "disabled"
         await interaction.response.send_message(
-            f"✅ Join DM {'enabled' if enabled else 'disabled'}.\nMessage: {message[:100]}",
-            ephemeral=True)
+            f"\u2705 Join DM {status}.\nMessage: {message[:100]}", ephemeral=True)
 
     @app_commands.command(name="promo-set", description="Set promotion announcements channel and watched roles")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def promo_set(self, interaction: discord.Interaction,
-                        channel: discord.TextChannel,
-                        roles: str,
-                        message: str = ""):
+    async def promo_set(self, interaction, channel: discord.TextChannel,
+                        roles: str, message: str = ""):
         cfg = self._guild(interaction.guild.id)
         cfg.update({"promo_channel": str(channel.id), "promo_roles": roles, "promo_message": message})
         self._save()
         await interaction.response.send_message(
-            f"✅ Promo announcements → {channel.mention}\nWatched roles: `{roles}`",
-            ephemeral=True)
+            f"\u2705 Promo announcements \u2192 {channel.mention}\nWatched roles: `{roles}`", ephemeral=True)
 
     @app_commands.command(name="autorole", description="Set a role to auto-assign when members join")
     @app_commands.checks.has_permissions(manage_roles=True)
-    async def autorole(self, interaction: discord.Interaction, role: discord.Role = None):
+    async def autorole(self, interaction, role: discord.Role = None):
         cfg = self._guild(interaction.guild.id)
         if role:
             cfg["autorole"] = str(role.id)
             self._save()
-            await interaction.response.send_message(f"✅ New members will get **{role.name}** on join.", ephemeral=True)
+            await interaction.response.send_message(f"\u2705 New members will get **{role.name}** on join.", ephemeral=True)
         else:
             cfg.pop("autorole", None)
             self._save()
-            await interaction.response.send_message("✅ Auto-role disabled.", ephemeral=True)
+            await interaction.response.send_message("\u2705 Auto-role disabled.", ephemeral=True)
 
     @app_commands.command(name="welcome-test", description="Test your welcome message right now")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def welcome_test(self, interaction: discord.Interaction):
+    async def welcome_test(self, interaction):
         await interaction.response.defer(ephemeral=True)
         await self._send_welcome(interaction.user)
-        await interaction.followup.send("✅ Test welcome sent!", ephemeral=True)
+        await interaction.followup.send("\u2705 Test welcome sent!", ephemeral=True)
 
     @app_commands.command(name="goodbye-test", description="Test your goodbye message right now")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def goodbye_test(self, interaction: discord.Interaction):
+    async def goodbye_test(self, interaction):
         await interaction.response.defer(ephemeral=True)
         await self._send_goodbye(interaction.user)
-        await interaction.followup.send("✅ Test goodbye sent!", ephemeral=True)
+        await interaction.followup.send("\u2705 Test goodbye sent!", ephemeral=True)
 
     @app_commands.command(name="welcome-status", description="View current welcome/goodbye configuration")
-    async def welcome_status(self, interaction: discord.Interaction):
+    async def welcome_status(self, interaction):
         cfg = self._guild(interaction.guild.id)
         embed = discord.Embed(title="Welcome System Status", color=0x57f287)
         wch = interaction.guild.get_channel(int(cfg["welcome_channel"])) if cfg.get("welcome_channel") else None
@@ -509,12 +486,11 @@ class Welcome(commands.Cog):
         embed.add_field(name="Promo Channel", value=pch.mention if pch else "Not set", inline=True)
         embed.add_field(name="Welcome Message", value=cfg.get("welcome_message") or "AI-generated", inline=False)
         embed.add_field(name="Goodbye Message", value=cfg.get("goodbye_message") or "AI-generated", inline=False)
-        embed.add_field(name="Join DM", value="✅ Enabled" if cfg.get("dm_enabled") else "❌ Disabled", inline=True)
+        embed.add_field(name="Join DM", value="\u2705 Enabled" if cfg.get("dm_enabled") else "\u274c Disabled", inline=True)
         embed.add_field(name="Auto-Role", value=f"<@&{cfg['autorole']}>" if cfg.get("autorole") else "None", inline=True)
-        embed.add_field(name="AI Messages", value="✅ Gemini" if GEMINI_API_KEY else "❌ No API key (using fallback)", inline=True)
+        embed.add_field(name="AI Messages", value="\u2705 Gemini" if GEMINI_API_KEY else "\u274c No API key (using fallback)", inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot):
     await bot.add_cog(Welcome(bot))
-

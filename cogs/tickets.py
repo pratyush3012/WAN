@@ -193,6 +193,17 @@ async def _open_ticket(interaction: discord.Interaction, bot, category: dict = N
         color=0x5865f2,
         timestamp=datetime.now(timezone.utc)
     )
+    # Try AI Coder generated ticket responses
+    try:
+        ai_coder = interaction.client.cogs.get("AICoder")
+        if ai_coder:
+            responses = ai_coder.get_generated("ticket_responses")
+            if responses:
+                import random as _r
+                ai_msg = _r.choice(responses).replace("{user}", interaction.user.mention)
+                embed.description = ai_msg
+    except Exception:
+        pass
     embed.set_footer(text=f'Ticket #{counter}')
     view = TicketView(bot)
     await channel.send(interaction.user.mention, embed=embed, view=view)

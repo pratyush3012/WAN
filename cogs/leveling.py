@@ -112,11 +112,23 @@ class Leveling(commands.Cog):
         if not cfg.get('announce', True):
             return
 
-        embed = discord.Embed(
-            title="⬆️ Level Up!",
-            description=f"**{message.author.mention}** reached **Level {level}**! 🎉",
-            color=0xf59e0b
-        )
+        # Try AI Coder generated level-up messages first
+        desc = None
+        try:
+            ai_coder = message.guild._state._get_client().cogs.get("AICoder")
+            if ai_coder:
+                msgs = ai_coder.get_generated("levelup_messages")
+                if msgs:
+                    import random as _r
+                    template = _r.choice(msgs)
+                    desc = template.replace("{user}", message.author.mention).replace("{level}", str(level))
+        except Exception:
+            pass
+
+        if not desc:
+            desc = f"**{message.author.mention}** reached **Level {level}**! 🎉"
+
+        embed = discord.Embed(title="⬆️ Level Up!", description=desc, color=0xf59e0b)
         embed.set_thumbnail(url=message.author.display_avatar.url)
 
         ch_id = cfg.get('announce_channel')

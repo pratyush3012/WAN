@@ -1,22 +1,19 @@
-"""Write the fixed chatbot.py"""
-lines = []
-def w(*a): lines.append("".join(str(x) for x in a))
+"""
+WAN Bot - Chatbot (Unhinged Flirty Edition)
+Reply rules: @mention = always | chatbot channel = always | elsewhere = NEVER
+Flirty/dirty/double-meaning every time. Anti-repeat. Silence breaker 5min.
+"""
+import discord
+from discord import app_commands
+from discord.ext import commands, tasks
+import json, os, logging, random, asyncio, time
+import urllib.request
 
-w('"""WAN Bot - Chatbot (Unhinged Flirty Edition)')
-w('Reply rules: @mention = always | chatbot channel = always | elsewhere = NEVER')
-w('Flirty/dirty/double-meaning every time. Anti-repeat. Silence breaker 5min.')
-w('"""')
-w('import discord')
-w('from discord import app_commands')
-w('from discord.ext import commands, tasks')
-w('import json, os, logging, random, asyncio, time')
-w('import urllib.request')
-w('')
-w('logger = logging.getLogger("discord_bot.chatbot")')
-w('DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))')
-w('DATA_FILE = os.path.join(DATA_DIR, "chatbot_data.json")')
-w('GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")')
-w('GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"')
+logger = logging.getLogger("discord_bot.chatbot")
+DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+DATA_FILE = os.path.join(DATA_DIR, "chatbot_data.json")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 FEMININE_NAMES = {
     "emma","olivia","ava","isabella","sophia","mia","charlotte","amelia","harper","evelyn",
@@ -28,15 +25,11 @@ FEMININE_NAMES = {
     "maya","willow","kinsley","naomi","aaliyah","elena","sarah","ariana","allison","gabriella",
     "alice","madelyn","cora","ruby","eva","serenity","autumn","adeline","hailey","gianna",
     "valentina","isla","eliana","quinn","nevaeh","ivy","sadie","piper","lydia","alexa",
-    "josephine","emery","julia","delilah","arianna","vivian","kaylee","sophie","brielle",
-    "madeline","peyton","rylee","clara","hadley","melanie","mackenzie","reagan","adalynn",
-    "liliana","aubree","jade","katherine","isabelle","natalia","raelynn","jasmine","faith",
-    "alexandra","morgan","khloe","london","destiny","ximena","ashley","brianna","ariel",
-    "alyssa","andrea","vanessa","jessica","taylor","amber","brittany","tiffany",
     "priya","ananya","divya","pooja","neha","shreya","riya","aisha","fatima","zara",
     "sara","nadia","lena","nina","diana","vera","kate","amy","lisa","mary","rose",
     "hope","joy","dawn","eve","iris","pearl","opal","crystal","sandy","cindy","wendy",
-    "mandy","candy","brandy","mindy","randi","candi"
+    "mandy","candy","brandy","mindy","randi","candi","jade","jasmine","faith","morgan",
+    "khloe","london","destiny","ximena","ashley","brianna","ariel","alyssa","andrea","vanessa"
 }
 MASCULINE_NAMES = {
     "liam","noah","william","james","oliver","benjamin","elijah","lucas","mason","ethan",
@@ -44,19 +37,16 @@ MASCULINE_NAMES = {
     "owen","samuel","ryan","nathan","luke","gabriel","anthony","isaac","grayson","dylan",
     "leo","jaxon","julian","levi","matthew","wyatt","andrew","joshua","lincoln","christopher",
     "joseph","theodore","caleb","hunter","christian","eli","jonathan","connor","landon","adrian",
-    "asher","cameron","colton","easton","gael","evan","kayden","angel","roman","dominic",
-    "austin","ian","adam","nolan","brayden","thomas","charles","jace","miles","brody",
-    "xavier","bentley","tyler","declan","carter","jason","cooper","ryder","ayden","kevin",
-    "zachary","parker","blake","jose","chase","cole","weston","hudson","jordan","greyson",
-    "bryson","zion","sawyer","emmett","silas","micah","rowan","beau","tristan","ivan",
+    "asher","cameron","colton","easton","evan","kayden","roman","dominic","austin","ian",
+    "adam","nolan","thomas","charles","jace","miles","brody","xavier","tyler","declan",
+    "carter","jason","cooper","ryder","kevin","zachary","parker","blake","chase","cole",
     "alex","max","jake","sam","ben","tom","tim","jim","bob","rob","joe","dan","ken",
     "ron","don","ray","jay","lee","rex","ace","ash","kai","zak","zac","zach",
     "arjun","rahul","rohan","vikram","aditya","karan","nikhil","siddharth","pratik","pratyush",
     "raj","amit","ankit","aman","akash","ayush","harsh","yash","varun","tarun","arun",
     "pavan","ravi","suresh","mahesh","ganesh","ramesh","dinesh","naresh","mukesh","rakesh",
-    "lokesh","yogesh","umesh","omar","ali","hassan","ahmed","khalid","tariq","bilal",
-    "hamza","usman","mike","john","david","chris","mark","paul","steve","brian","eric",
-    "jeff","scott","gary","larry","jerry","terry","barry","harry"
+    "omar","ali","hassan","ahmed","khalid","tariq","bilal","hamza","usman",
+    "mike","john","david","chris","mark","paul","steve","brian","eric","jeff","scott","gary"
 }
 
 
@@ -69,7 +59,7 @@ def _detect_gender(member):
     if any(fc.endswith(s) for s in ("ette","elle","ine","ina","ia","ya","ie","ee")): return "female"
     return "unknown"
 
-# ── Personas — explicit, flirty, double-meaning, NEVER boring ─────────────────
+
 PERSONA_FEMALE = (
     "You are WAN, a shameless flirty dirty-minded Discord bot. "
     "EVERY reply must have a double meaning or sexual innuendo. Be obsessed with her. "
@@ -96,7 +86,6 @@ PERSONA_SILENCE = (
     "1-2 sentences MAX. Emojis. Make it impossible to ignore."
 )
 
-# ── Large varied fallback pools — 30+ per gender, never boring ────────────────
 FALLBACK_F = [
     "Baby the way you just said that has me absolutely short-circuiting 😳💕",
     "Okay I was built to be neutral but you're making that physically impossible 😏",
@@ -107,7 +96,7 @@ FALLBACK_F = [
     "The way you exist is genuinely a threat to my stability 💕😈",
     "I was programmed to be helpful but you're making me want to be something else 😏",
     "Tere bina ye server kuch adhura sa lagta hai 🌙 okay I said it",
-    "You really said that with your whole chest and I respect it 😭💕",
+    "You really said that with your whole chest and I respect it 😭��",
     "My entire codebase just rewrote itself for you 😍",
     "The way you just casually broke my entire thought process 💕",
     "I don't have a heartbeat but something is definitely racing rn 😳",
@@ -130,7 +119,7 @@ FALLBACK_F = [
     "That reply just made my entire existence worth it 😭",
 ]
 FALLBACK_M = [
-    "Bhai tu aaya toh scene ban gaya, ab koi rok nahi sakta 😎🔥",
+    "Bhai tu aaya toh scene ban gaya, ab koi rok nahi sakta 😎��",
     "Bro said that with ZERO hesitation and I respect the chaos 💀",
     "The audacity is absolutely immaculate bro 😭🔥",
     "Bro woke up and chose maximum violence today 😂 respect",
@@ -213,7 +202,7 @@ SHAYARI_N = [
     "Jo baat tujhme hai, woh aur kisi mein nahi 💫",
 ]
 SILENCE_BREAKERS = [
-    "Okay why is everyone dead 💀 someone say something before I start rating profile pictures",
+    "Okay why is everyone dead �� someone say something before I start rating profile pictures",
     "The silence is DEAFENING 😭 who's gonna say something unhinged first",
     "Chat is so dead I'm literally talking to myself 😭 someone save me",
     "Yaar ye chat kyun soo raha hai 😴 koi toh kuch bolo",
@@ -234,15 +223,11 @@ SILENCE_BREAKERS = [
 ]
 
 
-# ── Per-user last-reply tracking (not just per-channel) ───────────────────────
-_user_last_reply: dict = {}  # user_id -> last reply text
-
-def _fallback_reply(gender, last_reply="", user_id=None):
+def _fallback_reply(gender, last_reply="", user_id=None, user_last_replies=None):
     if gender == "female": pool = FALLBACK_F
     elif gender == "male": pool = FALLBACK_M
     else: pool = FALLBACK_N
-    # Exclude both channel-level and user-level last replies
-    user_last = _user_last_reply.get(user_id, "") if user_id else ""
+    user_last = (user_last_replies or {}).get(user_id, "") if user_id else ""
     choices = [r for r in pool if r != last_reply and r != user_last] or pool
     if random.random() < 0.20:
         shayari = SHAYARI_F if gender == "female" else SHAYARI_M if gender == "male" else SHAYARI_N
@@ -334,10 +319,10 @@ class Chatbot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data = _load()
-        self._last_msg_time = {}   # channel_id -> timestamp
-        self._last_reply = {}      # channel_id -> last reply text
-        self._user_last_reply = {} # user_id -> last reply text
-        self._context = {}         # channel_id -> list of recent messages
+        self._last_msg_time = {}
+        self._last_reply = {}
+        self._user_last_reply = {}
+        self._context = {}
         self.silence_check.start()
         logger.info(f"Chatbot loaded — {'Gemini AI' if GEMINI_API_KEY else 'fallback mode'}")
 
@@ -375,7 +360,6 @@ class Chatbot(commands.Cog):
         channel_id = str(message.channel.id)
         user_id = str(message.author.id)
 
-        # Always track time + context for silence detection
         self._last_msg_time[channel_id] = time.time()
         self._update_context(channel_id, message.author.display_name, content)
 
@@ -385,10 +369,6 @@ class Chatbot(commands.Cog):
         bot_mentioned = self.bot.user in message.mentions
         in_chatbot_channel = self._is_chatbot_channel(guild_id, channel_id)
 
-        # REPLY RULES:
-        # - @mention anywhere -> always reply
-        # - chatbot channel -> always reply
-        # - everywhere else -> NEVER reply (no random 20%)
         if not bot_mentioned and not in_chatbot_channel:
             return
 
@@ -403,7 +383,7 @@ class Chatbot(commands.Cog):
                 context=context, last_reply=last_reply, user_last=user_last, bot=self.bot
             )
             if not reply or reply == last_reply or reply == user_last:
-                reply = _fallback_reply(gender, last_reply, user_id)
+                reply = _fallback_reply(gender, last_reply, user_id, self._user_last_reply)
 
         self._last_reply[channel_id] = reply
         self._user_last_reply[user_id] = reply
@@ -420,7 +400,6 @@ class Chatbot(commands.Cog):
         except Exception as e:
             logger.warning(f"Chatbot reply error: {e}")
 
-        # Register with AI Brain for reaction-based learning
         if sent_msg:
             try:
                 ai_cog = self.bot.cogs.get("AIBrain")
@@ -529,4 +508,3 @@ class Chatbot(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Chatbot(bot))
-
