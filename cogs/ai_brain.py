@@ -24,6 +24,11 @@ DATA_FILE = os.path.join(DATA_DIR, "ai_brain_data.json")
 
 
 async def _gemini(prompt: str, max_tokens: int = 150, temperature: float = 0.7) -> str | None:
+    try:
+        from utils.gemini import gemini_call
+        return await gemini_call(prompt, max_tokens=max_tokens, temperature=temperature)
+    except ImportError:
+        pass
     if not GEMINI_API_KEY:
         return None
     try:

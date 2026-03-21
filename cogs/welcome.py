@@ -18,6 +18,11 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0
 
 
 async def _gemini(prompt: str, max_tokens: int = 120):
+    try:
+        from utils.gemini import gemini_call
+        return await gemini_call(prompt, max_tokens=max_tokens, temperature=0.95)
+    except ImportError:
+        pass
     if not GEMINI_API_KEY:
         return None
     try:

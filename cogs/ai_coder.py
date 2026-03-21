@@ -57,6 +57,11 @@ FEATURE_SPECS = {
 
 
 async def _gemini(prompt: str, max_tokens: int = 300, temperature: float = 0.8) -> str | None:
+    try:
+        from utils.gemini import gemini_call
+        return await gemini_call(prompt, max_tokens=max_tokens, temperature=temperature)
+    except ImportError:
+        pass
     if not GEMINI_API_KEY:
         return None
     try:
@@ -253,20 +258,6 @@ class AICoder(commands.Cog):
                                  f"Generated {len(new_msgs)} new mod warning messages")
         except Exception as e:
             logger.warning(f"AI Coder mod parse error: {e}")
-            match = re.search(r'\[.*\]', result, re.DOTALL)
-            if match:
-                new_msgs = json.loads(match.group())
-                if isinstance(new_msgs, list) and len(new_msgs) >= 3:
-                    self.log.setdefault("generated", {})["welcome_messages"] = {
-                        "messages": new_msgs,
-                        "updated": datetime.now(timezone.utc).isoformat()
-                    }
-                    _save_log(self.log)
-                    self._record("welcome", "new_messages",
-                                 f"Generated {len(new_msgs)} new welcome messages")
-                    logger.info(f"AI Coder: generated {len(new_msgs)} new welcome messages")
-        except Exception as e:
-            logger.warning(f"AI Coder welcome parse error: {e}")
 
     async def _improve_levelup_messages(self):
         """Generate better level-up announcement messages."""
