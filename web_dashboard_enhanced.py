@@ -1697,35 +1697,34 @@ def roblox_dm_by_role(server_id):
         loop = bot_instance.loop
         if not (loop and loop.is_running()):
             return jsonify({'error': 'Bot loop not available'}), 503
-        future = asyncio.run_coroutine_threadsafe(
-            _dm_role_members(guild, role, roblox_cog), loop
-        )
-        result = future.result(timeout=120)
-        return jsonify({'success': True, **result})
+        unlinked = [m for m in role.members if not m.bot and m.id not in roblox_cog.clan_members]
+        already_linked = len(role.members) - len(unlinked) - sum(1 for m in role.members if m.bot)
+
+        async def _dm_role():
+            sent = failed = 0
+            for member in unlinked:
+                try:
+                    await roblox_cog._send_roblox_dm(member, guild)
+                    sent += 1
+                    await asyncio.sleep(0.5)
+                except Exception:
+                    failed += 1
+            logger.info(f"DM-by-role complete for {role.name}: {sent} sent, {failed} failed")
+
+        # Fire and forget
+        asyncio.run_coroutine_threadsafe(_dm_role(), loop)
+        return jsonify({'success': True, 'sent': len(unlinked), 'failed': 0,
+                        'already_linked': already_linked, 'role': role.name,
+                        'note': f'Sending DMs to {len(unlinked)} members in background'})
     except Exception as e:
         logger.error(f"DM by role error: {e}")
         return jsonify({'error': str(e)}), 500
 
-async def _dm_role_members(guild, role, roblox_cog):
-    sent, failed, already_linked = 0, 0, 0
-    for member in role.members:
-        if member.bot:
-            continue
-        if member.id in roblox_cog.clan_members:
-            already_linked += 1
-            continue
-        try:
-            await roblox_cog._send_roblox_dm(member, guild)
-            sent += 1
-            await asyncio.sleep(0.5)
-        except Exception:
-            failed += 1
-    return {'sent': sent, 'failed': failed, 'already_linked': already_linked, 'role': role.name}
 
 @app.route('/api/server/<int:server_id>/roblox/dm-all', methods=['POST'])
 @require_auth
 def roblox_dm_all(server_id):
-    """DM ALL unlinked members asking for their Roblox username"""
+    """DM ALL unlinked members — fires async in background, returns immediately"""
     try:
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
@@ -1739,24 +1738,29 @@ def roblox_dm_all(server_id):
         if not (loop and loop.is_running()):
             return jsonify({'error': 'Bot loop not available'}), 503
 
+        unlinked = [m for m in guild.members if not m.bot and m.id not in roblox_cog.clan_members]
+        total = len(unlinked)
+
         async def _dm_all():
-            sent = failed = already_linked = 0
-            for member in guild.members:
-                if member.bot:
-                    continue
-                if member.id in roblox_cog.clan_members:
-                    already_linked += 1
-                    continue
+            sent = failed = 0
+            for member in unlinked:
                 try:
                     await roblox_cog._send_roblox_dm(member, guild)
                     sent += 1
                     await asyncio.sleep(0.6)
                 except Exception:
                     failed += 1
-            return {'sent': sent, 'failed': failed, 'already_linked': already_linked}
+            logger.info(f"DM-all complete: {sent} sent, {failed} failed")
 
-        result = asyncio.run_coroutine_threadsafe(_dm_all(), loop).result(timeout=120)
-        return jsonify({'success': True, **result})
+        # Fire and forget — don't block the HTTP request
+        asyncio.run_coroutine_threadsafe(_dm_all(), loop)
+        return jsonify({
+            'success': True,
+            'sent': total,
+            'already_linked': len(roblox_cog.clan_members),
+            'failed': 0,
+            'note': f'Sending DMs to {total} members in background'
+        })
     except Exception as e:
         logger.error(f"DM all error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -1951,9 +1955,10 @@ def save_welcome_config(server_id):
 def test_welcome_message(server_id):
     """Send a test welcome/goodbye message"""
     try:
-        msg_type = request.json.get('type', 'join')
+        body = request.get_json(silent=True) or {}
+        msg_type = body.get('type', 'join')
         if not bot_instance or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot not ready'}), 503
+            return jsonify({'error': 'Bot not ready — wait a moment and try again'}), 503
         guild = bot_instance.get_guild(int(server_id))
         if not guild:
             return jsonify({'error': 'Server not found'}), 404
@@ -1964,16 +1969,27 @@ def test_welcome_message(server_id):
 
         event_map = {'join': 'welcome', 'leave': 'goodbye'}
         event = event_map.get(msg_type, 'welcome')
+
+        cfg = welcome_cog._guild(int(server_id))
+        ch_id = cfg.get(f'{event}_channel')
+        if not ch_id:
+            return jsonify({'error': f'No {event} channel set — save your config first'}), 400
+
+        # Use the bot member as a stand-in, or first real human member
         member = guild.me
+        for m in guild.members:
+            if not m.bot:
+                member = m
+                break
 
         async def _test():
-            await welcome_cog._send_embed(member, welcome_cog._guild(int(server_id)), event)
+            await welcome_cog._send_embed(member, cfg, event)
 
         future = asyncio.run_coroutine_threadsafe(_test(), bot_instance.loop)
         future.result(timeout=10)
         return jsonify({'success': True})
     except Exception as e:
-        logger.error(f"Welcome test error: {e}")
+        logger.error(f"Welcome test error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 

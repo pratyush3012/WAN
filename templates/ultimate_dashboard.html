@@ -2162,8 +2162,9 @@ async function testWelcome(type){
   try{
     const res=await apiFetch('/api/server/'+currentServer+'/welcome/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type})});
     const d=await res.json();
-    if(d.success)notify('Test sent!','success'); else notify(d.error||'Failed','danger');
-  }catch(e){notify('Error','danger');}
+    if(d.success)notify('✅ Test message sent to your welcome channel!','success');
+    else notify('❌ '+( d.error||'Failed'),'danger');
+  }catch(e){notify('Error: '+e.message,'danger');}
 }
 
 // VERIFICATION
