@@ -825,28 +825,39 @@ select.form-control option{background:var(--surface2);}
   <div id="sec-chatbot" class="section">
     <div class="card">
       <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-comment-dots"></i> Chatbot Channels</h3>
+        <h3 class="card-title"><i class="fas fa-comment-dots"></i> AI Chatbot</h3>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <span id="chatbotStatusBadge" style="font-size:12px;padding:4px 10px;border-radius:20px;background:rgba(16,185,129,.15);color:#34d399;">● Enabled</span>
+          <button id="chatbotToggleBtn" class="btn btn-sm" style="background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3);" onclick="toggleChatbot()">
+            <i class="fas fa-power-off"></i> Toggle
+          </button>
+        </div>
       </div>
       <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">
-        The bot will reply to <strong>every message</strong> in these channels with fun, flirty, witty responses. 
-        Great for a #chat or #general channel to keep things lively 😏
+        Powered by <strong>Gemini AI</strong> 🤖 — replies when <strong>@WAN is mentioned</strong> or <strong>randomly (20% chance)</strong> in any channel.
+        Add channels below for <strong>always-on</strong> mode (replies to every message).
       </p>
+      <div style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:var(--text-muted);">
+        <strong style="color:#a78bfa;">How replies work:</strong>
+        <span style="margin-left:8px;">@mention → always reply &nbsp;|&nbsp; chatbot channel → always reply &nbsp;|&nbsp; anywhere else → 20% random chance</span>
+        <br><span style="margin-top:4px;display:block;">Gender-aware 💕 flirty for girls, cool/hype for boys &nbsp;|&nbsp; Shayari mixed in 🌙</span>
+      </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-end;">
         <div style="flex:1;min-width:180px;">
-          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Select Channel</label>
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Always-On Channel</label>
           <select id="chatbotChannelSelect" class="form-control" style="width:100%;"></select>
         </div>
         <button class="btn btn-primary" onclick="addChatbotChannel()"><i class="fas fa-plus"></i> Add Channel</button>
       </div>
-      <div id="chatbotChannelList"><p style="color:var(--text-muted);font-size:13px;">Select a server to load chatbot channels.</p></div>
+      <div id="chatbotChannelList"><p style="color:var(--text-muted);font-size:13px;">Select a server to load chatbot config.</p></div>
     </div>
     <div class="card" style="margin-top:14px;">
-      <div class="card-header"><h3 class="card-title"><i class="fas fa-info-circle"></i> How It Works</h3></div>
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-info-circle"></i> Commands</h3></div>
       <ul style="color:var(--text-muted);font-size:13px;line-height:2;padding-left:18px;">
-        <li>Add any text channel — the bot will reply to every message there</li>
-        <li>Replies are smart: greetings, compliments, gaming, food, mood — all detected</li>
-        <li>Gender-aware: flirty replies for girls, cool/hype replies for guys</li>
-        <li>You can also use <code>/chatbot-setchannel</code> in Discord directly</li>
+        <li><code>/chatbot-toggle</code> — enable/disable chatbot for this server</li>
+        <li><code>/chatbot-setchannel #channel</code> — always-on mode in a channel</li>
+        <li><code>/chatbot-removechannel #channel</code> — remove always-on channel</li>
+        <li><code>/chatbot-list</code> — view current status and channels</li>
       </ul>
     </div>
   </div>
@@ -2267,6 +2278,7 @@ async function loadChatbotConfig(){
   if(!currentServer)return;
   const sel=document.getElementById('chatbotChannelSelect');
   const list=document.getElementById('chatbotChannelList');
+  const badge=document.getElementById('chatbotStatusBadge');
   // Populate channel dropdown
   try{
     const sd=await fetch(`/api/server/${currentServer}`).then(r=>r.json());
@@ -2274,19 +2286,37 @@ async function loadChatbotConfig(){
       sel.innerHTML=sd.channels.text.map(c=>`<option value="${c.id}">#${c.name}</option>`).join('');
     }
   }catch(e){}
-  // Load current chatbot channels
+  // Load current chatbot config
   try{
     const d=await fetch(`/api/server/${currentServer}/chatbot`).then(r=>r.json());
+    // Update toggle badge
+    if(badge){
+      badge.textContent=d.enabled?'● Enabled':'● Disabled';
+      badge.style.background=d.enabled?'rgba(16,185,129,.15)':'rgba(239,68,68,.15)';
+      badge.style.color=d.enabled?'#34d399':'#f87171';
+    }
     if(!d.channels||d.channels.length===0){
-      list.innerHTML='<p style="color:var(--text-muted);font-size:13px;">No chatbot channels set yet. Add one above!</p>';
+      list.innerHTML='<p style="color:var(--text-muted);font-size:13px;">No always-on channels set. Bot still replies on @mention and 20% random chance everywhere.</p>';
       return;
     }
     list.innerHTML=d.channels.map(c=>`
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-card2);border-radius:8px;margin-bottom:8px;">
-        <span style="font-size:13px;"><i class="fas fa-hashtag" style="color:var(--accent);margin-right:6px;"></i>${c.name||c.id}</span>
+        <span style="font-size:13px;"><i class="fas fa-hashtag" style="color:var(--accent);margin-right:6px;"></i>${c.name||c.id}
+          <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">always-on</span>
+        </span>
         <button class="btn btn-sm" style="background:#ef4444;color:#fff;padding:4px 10px;font-size:11px;" onclick="removeChatbotChannel('${c.id}')"><i class="fas fa-trash"></i> Remove</button>
       </div>`).join('');
   }catch(e){list.innerHTML='<p style="color:#ef4444;font-size:13px;">Failed to load chatbot config.</p>';}
+}
+async function toggleChatbot(){
+  if(!currentServer){notify('Select a server first','warning');return;}
+  try{
+    const d=await fetch(`/api/server/${currentServer}/chatbot`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'toggle'})}).then(r=>r.json());
+    if(d.success){
+      notify(d.enabled?'Chatbot enabled ✅':'Chatbot disabled ❌', d.enabled?'success':'warning');
+      loadChatbotConfig();
+    } else notify(d.error||'Failed','danger');
+  }catch(e){notify('Error toggling chatbot','danger');}
 }
 async function addChatbotChannel(){
   if(!currentServer){notify('Select a server first','warning');return;}
@@ -2295,7 +2325,7 @@ async function addChatbotChannel(){
   if(!ch_id){notify('Select a channel','warning');return;}
   try{
     const d=await fetch(`/api/server/${currentServer}/chatbot`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',channel_id:ch_id})}).then(r=>r.json());
-    if(d.success){notify('Chatbot channel added! 😏','success');loadChatbotConfig();}
+    if(d.success){notify('Always-on channel added! 😏','success');loadChatbotConfig();}
     else notify(d.error||'Failed','danger');
   }catch(e){notify('Error adding channel','danger');}
 }

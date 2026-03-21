@@ -1498,7 +1498,15 @@ def _load_chatbot():
     try:
         if os.path.exists(_CHATBOT_FILE):
             with open(_CHATBOT_FILE) as f:
-                return json.load(f)
+                raw = json.load(f)
+            # Migrate legacy format (list → dict)
+            migrated = {}
+            for k, v in raw.items():
+                if isinstance(v, list):
+                    migrated[k] = {'enabled': True, 'channels': v}
+                else:
+                    migrated[k] = v
+            return migrated
     except Exception:
         pass
     return {}
@@ -1510,12 +1518,22 @@ def _save_chatbot(data):
     except Exception as e:
         logger.error(f"Chatbot save error: {e}")
 
+def _chatbot_guild(data, server_id):
+    """Get or create guild entry in chatbot data."""
+    sid = str(server_id)
+    if sid not in data:
+        data[sid] = {'enabled': True, 'channels': []}
+    elif isinstance(data[sid], list):
+        data[sid] = {'enabled': True, 'channels': data[sid]}
+    return data[sid]
+
 @app.route('/api/server/<server_id>/chatbot', methods=['GET'])
 @require_auth
 def get_chatbot_config(server_id):
     data = _load_chatbot()
-    channels = data.get(str(server_id), [])
-    # Resolve channel names
+    gd = _chatbot_guild(data, server_id)
+    channels = gd.get('channels', [])
+    enabled = gd.get('enabled', True)
     result = []
     if bot_instance and bot_instance.is_ready():
         guild = bot_instance.get_guild(int(server_id))
@@ -1523,39 +1541,52 @@ def get_chatbot_config(server_id):
             for ch_id in channels:
                 ch = guild.get_channel(int(ch_id))
                 result.append({'id': ch_id, 'name': ch.name if ch else ch_id})
-    return jsonify({'channels': result})
+    return jsonify({'channels': result, 'enabled': enabled})
 
 @app.route('/api/server/<server_id>/chatbot', methods=['POST'])
 @require_auth
 def save_chatbot_config(server_id):
     body = request.get_json(silent=True) or {}
-    action = body.get('action')  # 'add' or 'remove'
+    action = body.get('action')  # 'add', 'remove', or 'toggle'
+    data = _load_chatbot()
+    gd = _chatbot_guild(data, server_id)
+
+    if action == 'toggle':
+        gd['enabled'] = not gd.get('enabled', True)
+        # Sync to live cog
+        if bot_instance:
+            cog = bot_instance.get_cog('Chatbot')
+            if cog:
+                cog._guild_data(str(server_id))['enabled'] = gd['enabled']
+        _save_chatbot(data)
+        return jsonify({'success': True, 'enabled': gd['enabled']})
+
     channel_id = str(body.get('channel_id', ''))
     if not channel_id:
         return jsonify({'error': 'channel_id required'}), 400
-    data = _load_chatbot()
-    channels = data.setdefault(str(server_id), [])
+
+    channels = gd.setdefault('channels', [])
     if action == 'add':
         if channel_id not in channels:
             channels.append(channel_id)
-        # Also update the live cog if loaded
         if bot_instance:
             cog = bot_instance.get_cog('Chatbot')
             if cog:
-                cog.data.setdefault(str(server_id), [])
-                if channel_id not in cog.data[str(server_id)]:
-                    cog.data[str(server_id)].append(channel_id)
+                cog_gd = cog._guild_data(str(server_id))
+                if channel_id not in cog_gd['channels']:
+                    cog_gd['channels'].append(channel_id)
     elif action == 'remove':
-        channels[:] = [c for c in channels if c != channel_id]
+        gd['channels'] = [c for c in channels if c != channel_id]
         if bot_instance:
             cog = bot_instance.get_cog('Chatbot')
             if cog:
-                cog.data.get(str(server_id), []).clear()
-                cog.data[str(server_id)] = channels[:]
+                cog_gd = cog._guild_data(str(server_id))
+                cog_gd['channels'] = [c for c in cog_gd['channels'] if c != channel_id]
     else:
-        return jsonify({'error': 'action must be add or remove'}), 400
+        return jsonify({'error': 'action must be add, remove, or toggle'}), 400
+
     _save_chatbot(data)
-    return jsonify({'success': True, 'channels': channels})
+    return jsonify({'success': True, 'channels': gd['channels'], 'enabled': gd['enabled']})
 
 # ===== FEATURE TOGGLES =====
 # Stored per-guild in a JSON file: {guild_id: {feature: bool}}
