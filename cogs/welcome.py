@@ -1,16 +1,56 @@
 """
-WAN Bot - Welcome/Goodbye System (replaces MEE6/Carl-bot)
-Custom welcome & goodbye embeds with variables.
-/welcome-set, /goodbye-set, /welcome-test
+WAN Bot - Welcome/Goodbye System
+Randomized welcome messages (cool + flirty mix) so it never feels repetitive.
 """
 import discord
 from discord import app_commands
 from discord.ext import commands
-import json, os, logging
+import json, os, logging, random
 from datetime import datetime, timezone
 
 logger = logging.getLogger('discord_bot.welcome')
 DATA_FILE = 'welcome_data.json'
+
+# ── Randomized welcome messages ───────────────────────────────────────────────
+# Mix of cool, hype, and flirty — picked randomly each join so it never repeats
+WELCOME_TITLES = [
+    "✨ A new legend has arrived!",
+    "🔥 Someone just walked in!",
+    "💫 Look who just showed up!",
+    "👑 Royalty has entered the chat!",
+    "🎉 The squad just got bigger!",
+    "😏 Well well well...",
+    "🚀 New member incoming!",
+    "💥 The server just leveled up!",
+    "🌟 A star has joined us!",
+    "🎊 Welcome to the family!",
+]
+
+WELCOME_MESSAGES = [
+    "Hey {user}! We've been waiting for you 👀 Make yourself at home in **{server}**!",
+    "Oh look who decided to show up 😏 Welcome, {user}! You're member **#{count}** — not bad.",
+    "{user} just walked in and honestly? The vibe just improved. Welcome to **{server}**! 🔥",
+    "Careful everyone, {user} just arrived and they look dangerous 😈 Welcome!",
+    "The server was missing something... turns out it was you, {user}! Welcome to **{server}** 💫",
+    "{user} has entered the chat. Everyone act cool 😎 Welcome to **{server}**!",
+    "Plot twist: {user} just joined and now **{server}** is officially better 🎉",
+    "We don't know who you are yet, {user}, but we already like you 😌 Welcome!",
+    "{user} just dropped in! You're our **#{count}** member — make it count 👑",
+    "Roses are red, the server is lit, {user} just joined and we love it 💕",
+    "New member alert 🚨 {user} has arrived! Say hi before they think we're boring 😂",
+    "{user} walked in like they own the place. Honestly? Respect. Welcome to **{server}**! 💪",
+    "Hey {user}! Fair warning — we're a little chaotic here. You'll fit right in 😏",
+    "The stars aligned and brought {user} to **{server}**. Coincidence? We think not ✨",
+    "{user} just joined! Quick everyone, look busy 😅 Welcome to the crew!",
+]
+
+GOODBYE_MESSAGES = [
+    "**{username}** has left the building 👋 We'll miss you (a little).",
+    "**{username}** dipped. **{server}** has {count} members now.",
+    "And just like that, **{username}** was gone 💨 Take care out there!",
+    "**{username}** left. The vibe took a small hit ngl 😔",
+    "**{username}** has logged off from **{server}**. Until next time! 👋",
+]
 
 
 def _fill(template: str, member: discord.Member) -> str:
@@ -21,6 +61,19 @@ def _fill(template: str, member: discord.Member) -> str:
         .replace('{count}', str(member.guild.member_count))
         .replace('{id}', str(member.id))
     )
+
+
+def _parse_color(raw, default: int) -> int:
+    try:
+        s = str(raw).strip()
+        if s.startswith('#'):
+            return int(s[1:], 16)
+        elif s.lower().startswith('0x'):
+            return int(s, 16)
+        else:
+            return int(s, 16)
+    except Exception:
+        return default
 
 
 class Welcome(commands.Cog):
@@ -57,34 +110,34 @@ class Welcome(commands.Cog):
         ch = member.guild.get_channel(int(ch_id))
         if not ch:
             return
-        title = _fill(cfg.get(f'{event}_title', ''), member)
-        desc = _fill(cfg.get(f'{event}_message', ''), member)
-        # Support both '#rrggbb' (dashboard color picker) and '0xrrggbb' (slash command)
-        raw_color = cfg.get(f'{event}_color', '#57f287' if event == 'welcome' else '#ef4444')
-        try:
-            s = str(raw_color).strip()
-            if s.startswith('#'):
-                color = int(s[1:], 16)
-            elif s.startswith('0x') or s.startswith('0X'):
-                color = int(s, 16)
-            else:
-                color = int(s, 16)
-        except Exception:
-            color = 0x57f287 if event == 'welcome' else 0xef4444
-        embed = discord.Embed(title=title or None, description=desc, color=color)
+
+        # Use custom message if set, otherwise pick a random one
+        if event == 'welcome':
+            raw_title = cfg.get('welcome_title') or random.choice(WELCOME_TITLES)
+            raw_desc  = cfg.get('welcome_message') or random.choice(WELCOME_MESSAGES)
+            default_color = 0x57f287
+        else:
+            raw_title = cfg.get('goodbye_title') or '👋 See you around!'
+            raw_desc  = cfg.get('goodbye_message') or random.choice(GOODBYE_MESSAGES)
+            default_color = 0xef4444
+
+        title = _fill(raw_title, member)
+        desc  = _fill(raw_desc, member)
+        color = _parse_color(cfg.get(f'{event}_color', default_color), default_color)
+
+        embed = discord.Embed(title=title, description=desc, color=color)
         embed.set_thumbnail(url=member.display_avatar.url)
         embed.set_footer(text=f"{member.guild.name} • {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
         try:
             await ch.send(embed=embed)
         except Exception as e:
-            logger.warning(f"Welcome send error: {e}")
+            logger.warning(f"Welcome send error ({event}): {e}")
 
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         cfg = self._guild(member.guild.id)
         logger.info(f"Member join: {member} in {member.guild.name} — welcome_channel={cfg.get('welcome_channel')}")
         await self._send_embed(member, cfg, 'welcome')
-        # Auto-role on join
         role_id = cfg.get('autorole')
         if role_id:
             role = member.guild.get_role(int(role_id))
@@ -101,7 +154,6 @@ class Welcome(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        """Detect role promotions and send congrats message."""
         cfg = self._guild(after.guild.id)
         promo_channel_id = cfg.get('promo_channel')
         promo_msg_template = cfg.get('promo_message', '🎉 Congratulations {user}! You\'ve been promoted to **{role}**! Well deserved! 🎊')
@@ -109,8 +161,6 @@ class Welcome(commands.Cog):
         if not promo_channel_id or not watched_raw:
             return
         watched = [r.strip().lower() for r in watched_raw.split(',') if r.strip()]
-        if not watched:
-            return
         new_roles = [r for r in after.roles if r not in before.roles]
         for role in new_roles:
             if role.name.lower() in watched:
@@ -124,22 +174,29 @@ class Welcome(commands.Cog):
                 try:
                     await ch.send(embed=embed)
                 except Exception as e:
-                    logger.warning(f"Promo congrats send error: {e}")
-                break  # only one congrats per update
+                    logger.warning(f"Promo send error: {e}")
+                break
 
-    @app_commands.command(name="welcome-set", description="👋 Configure welcome messages")
+    # ── Slash commands ─────────────────────────────────────────────────────────
+
+    @app_commands.command(name="welcome-set", description="👋 Configure welcome messages (leave blank for random)")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_set(self, interaction: discord.Interaction,
                           channel: discord.TextChannel,
-                          message: str = "Welcome {user} to **{server}**! You are member #{count}.",
-                          title: str = "👋 Welcome!",
-                          color: str = "0x57f287"):
+                          message: str = "",
+                          title: str = "",
+                          color: str = "#57f287"):
         cfg = self._guild(interaction.guild.id)
-        cfg.update({'welcome_channel': channel.id, 'welcome_message': message,
-                    'welcome_title': title, 'welcome_color': color})
+        cfg.update({
+            'welcome_channel': str(channel.id),
+            'welcome_message': message,
+            'welcome_title': title,
+            'welcome_color': color,
+        })
         self._save()
+        note = "Random messages enabled (no custom message set)." if not message else f"Custom message saved."
         await interaction.response.send_message(
-            f"✅ Welcome messages → {channel.mention}\n"
+            f"✅ Welcome → {channel.mention}\n{note}\n"
             f"Variables: `{{user}}` `{{username}}` `{{server}}` `{{count}}` `{{id}}`",
             ephemeral=True)
 
@@ -147,19 +204,19 @@ class Welcome(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def goodbye_set(self, interaction: discord.Interaction,
                           channel: discord.TextChannel,
-                          message: str = "**{username}** has left **{server}**. We now have {count} members.",
-                          title: str = "👋 Goodbye!"):
+                          message: str = "",
+                          title: str = ""):
         cfg = self._guild(interaction.guild.id)
-        cfg.update({'goodbye_channel': channel.id, 'goodbye_message': message, 'goodbye_title': title})
+        cfg.update({'goodbye_channel': str(channel.id), 'goodbye_message': message, 'goodbye_title': title})
         self._save()
-        await interaction.response.send_message(f"✅ Goodbye messages → {channel.mention}", ephemeral=True)
+        await interaction.response.send_message(f"✅ Goodbye → {channel.mention}", ephemeral=True)
 
     @app_commands.command(name="autorole", description="👋 Set a role to auto-assign when members join")
     @app_commands.checks.has_permissions(manage_roles=True)
     async def autorole(self, interaction: discord.Interaction, role: discord.Role = None):
         cfg = self._guild(interaction.guild.id)
         if role:
-            cfg['autorole'] = role.id
+            cfg['autorole'] = str(role.id)
             self._save()
             await interaction.response.send_message(f"✅ New members will get **{role.name}** on join.", ephemeral=True)
         else:
