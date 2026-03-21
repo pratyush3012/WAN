@@ -518,3 +518,23 @@ class Welcome(commands.Cog):
 async def setup(bot):
     await bot.add_cog(Welcome(bot))
 
+
+# ── Write the file ────────────────────────────────────────────────────────────
+import ast
+
+src = open(__file__, encoding="utf-8").read()
+content = src.split("# ── Write the file")[0]
+lines_raw = content.splitlines()
+# Find start of actual cog code (after the script header)
+start = 0
+for i, l in enumerate(lines_raw):
+    if l.strip().startswith('"""'):
+        start = i
+        break
+final = "\n".join(lines_raw[start:])
+with open("cogs/welcome.py", "w", encoding="utf-8") as f:
+    f.write(final)
+print(f"Written {len(final.splitlines())} lines")
+import subprocess
+r = subprocess.run(["python3", "-m", "py_compile", "cogs/welcome.py"], capture_output=True, text=True)
+print("Syntax:", "OK" if r.returncode == 0 else r.stderr[:400])
