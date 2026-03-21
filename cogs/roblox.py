@@ -48,6 +48,8 @@ class RobloxIntegration(commands.Cog):
         self._load_links()
 
         self.update_player_stats.start()
+        # Track users we've DM'd so we know to expect a Roblox username reply
+        self._pending_dm: set = set()
 
     # ── lifecycle ──────────────────────────────────────────────────────────────
 
@@ -259,19 +261,30 @@ class RobloxIntegration(commands.Cog):
     async def _send_roblox_dm(self, member: discord.Member, guild: discord.Guild):
         """Send the 'what's your Roblox username?' DM to one member."""
         embed = discord.Embed(
-            title="🎮 What's your Roblox username?",
+            title="🎮 Link your Roblox account!",
             description=(
-                f"Hey **{member.display_name}**! The admins of **{guild.name}** are collecting "
-                f"Roblox usernames to track clan stats on the dashboard.\n\n"
-                f"**Reply to this message** with your exact Roblox username.\n\n"
+                f"Hey **{member.display_name}**! 👋\n\n"
+                f"The admins of **{guild.name}** want to link your Roblox account "
+                f"to track clan stats on the dashboard.\n\n"
+                f"**Just reply to this DM** with your exact Roblox username.\n\n"
                 f"Example: `Builderman`\n\n"
                 f"*You can also use `/roblox-link` in the server anytime.*"
             ),
             color=discord.Color.from_rgb(102, 126, 234)
         )
-        embed.set_footer(text=f"{guild.name} • Wizard West Clan")
-        dm = await member.create_dm()
-        await dm.send(embed=embed)
+        embed.set_footer(text=f"{guild.name} • Reply with your Roblox username below 👇")
+        try:
+            dm = await member.create_dm()
+            await dm.send(embed=embed)
+            # Track that we DM'd this user so on_message knows to expect a reply
+            self._pending_dm.add(member.id)
+            return True
+        except discord.Forbidden:
+            logger.warning(f"Cannot DM {member} — DMs closed")
+            return False
+        except Exception as e:
+            logger.warning(f"DM error for {member}: {e}")
+            return False
 
     # ── Event listeners ────────────────────────────────────────────────────────
 
@@ -287,21 +300,29 @@ class RobloxIntegration(commands.Cog):
         try:
             await asyncio.sleep(3)  # small delay so member is fully loaded
             await self._send_roblox_dm(member, member.guild)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Auto-DM on_member_join error: {e}")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """Listen for DM replies with Roblox username."""
+        """Listen for DM replies with Roblox username.
+        Accepts replies from anyone who was DM'd OR anyone who DMs the bot directly."""
+        # Only handle DMs (not guild messages)
         if message.guild is not None or message.author.bot:
             return
+
         username = message.content.strip()
-        if not username or len(username) > 50 or ' ' in username:
+        if not username or len(username) > 50:
             return
-        # Ignore if it looks like a command
+        # Ignore commands
         if username.startswith('/') or username.startswith('!'):
             return
+        # Ignore messages with spaces (not a valid Roblox username)
+        if ' ' in username:
+            return
 
+        # Accept reply if: user was DM'd by us, OR user is already trying to link
+        # (we accept from anyone to make it easy — they can always use /roblox-link too)
         user_info = await self.get_user_by_username(username)
         if user_info:
             self.clan_members[message.author.id] = {
@@ -312,11 +333,13 @@ class RobloxIntegration(commands.Cog):
                 'source':          'dm_reply',
             }
             self._save_links()
+            self._pending_dm.discard(message.author.id)
             embed = discord.Embed(
-                title="✅ Linked!",
+                title="✅ Roblox Account Linked!",
                 description=(
-                    f"Your Roblox account **{user_info['name']}** has been linked.\n"
-                    f"Your profile will appear on the clan dashboard shortly."
+                    f"Your Roblox account **{user_info['name']}** has been linked successfully! 🎮\n\n"
+                    f"Your profile will appear on the clan dashboard shortly.\n"
+                    f"Use `/roblox-stats` in the server to see your stats anytime."
                 ),
                 color=discord.Color.green()
             )
@@ -325,7 +348,11 @@ class RobloxIntegration(commands.Cog):
         else:
             embed = discord.Embed(
                 title="❌ Username Not Found",
-                description=f"Couldn't find a Roblox user named `{username}`.\nCheck the spelling and try again, or use `/roblox-link` in the server.",
+                description=(
+                    f"Couldn't find a Roblox user named `{username}`.\n\n"
+                    f"Make sure you typed it **exactly** as it appears on Roblox (case doesn't matter).\n"
+                    f"Try again or use `/roblox-link` in the server."
+                ),
                 color=discord.Color.red()
             )
             await message.channel.send(embed=embed)
@@ -433,8 +460,11 @@ class RobloxIntegration(commands.Cog):
         sent = failed = 0
         for m in members:
             try:
-                await self._send_roblox_dm(m, interaction.guild)
-                sent += 1
+                ok = await self._send_roblox_dm(m, interaction.guild)
+                if ok:
+                    sent += 1
+                else:
+                    failed += 1
                 await asyncio.sleep(0.6)
             except Exception:
                 failed += 1
