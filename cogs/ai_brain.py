@@ -385,7 +385,7 @@ class AIBrain(commands.Cog):
             lines = []
             for a in guild_actions:
                 ts = a["timestamp"][:16].replace("T", " ")
-                lines.append(f"`{ts}` **{a["type"]}**: {a["detail"][:55]}")
+                lines.append(f"`{ts}` **{a['type']}**: {a['detail'][:55]}")
             embed.add_field(name="Recent AI Actions", value="\n".join(lines), inline=False)
         else:
             embed.add_field(name="Recent AI Actions", value="No actions yet.", inline=False)
@@ -415,7 +415,6 @@ class AIBrain(commands.Cog):
     async def ai_suggest(self, ctx):
         if not GEMINI_API_KEY:
             return await ctx.send("❌ GEMINI_API_KEY not set.")
-        await ctx.defer()
         guild = ctx.guild
         stats = {}
         if hasattr(self.bot, "_get_live_stats"):

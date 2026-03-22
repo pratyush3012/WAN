@@ -42,7 +42,6 @@ class TranslationLanguageView(discord.ui.View):
 
     def _make_cb(self, code: str, name: str):
         async def callback(interaction: discord.Interaction):
-            await ctx.defer()
             try:
                 loop = asyncio.get_event_loop()
                 translated = await loop.run_in_executor(
@@ -151,7 +150,6 @@ class Translation(commands.Cog):
     @app_commands.command(name="translate", description="Translate text to any language")
     async def translate(self, ctx, text: str, language: str = "en"):
         """Translate text. Language = language code e.g. en, es, fr, de, ja"""
-        await ctx.defer()
         try:
             loop = asyncio.get_event_loop()
             translated = await loop.run_in_executor(

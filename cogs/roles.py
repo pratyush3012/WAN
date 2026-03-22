@@ -83,7 +83,6 @@ class RoleCommands(commands.Cog):
     @is_admin()
     async def setup_roles(self, ctx):
         """Setup recommended role hierarchy"""
-        await ctx.defer()
         
         roles_to_create = [
             ("Owner", discord.Color.red(), True),

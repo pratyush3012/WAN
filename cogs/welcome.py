@@ -434,7 +434,7 @@ class Welcome(commands.Cog):
                 break
 
     @commands.command(name="welcome-set")
-    async def welcome_set(self, interaction, channel: discord.TextChannel,
+    async def welcome_set(self, ctx, channel: discord.TextChannel,
                           message: str = "", title: str = "", color: str = "57f287"):
         cfg = self._guild(ctx.guild.id)
         cfg.update({"welcome_channel": str(channel.id), "welcome_message": message,
@@ -446,7 +446,7 @@ class Welcome(commands.Cog):
             f"Variables: `{{user}}` `{{username}}` `{{server}}` `{{count}}`")
 
     @commands.command(name="goodbye-set")
-    async def goodbye_set(self, interaction, channel: discord.TextChannel,
+    async def goodbye_set(self, ctx, channel: discord.TextChannel,
                           message: str = "", title: str = ""):
         cfg = self._guild(ctx.guild.id)
         cfg.update({"goodbye_channel": str(channel.id), "goodbye_message": message, "goodbye_title": title})
@@ -454,7 +454,7 @@ class Welcome(commands.Cog):
         await ctx.send(f"\u2705 Goodbye \u2192 {channel.mention}")
 
     @commands.command(name="welcome-dm")
-    async def welcome_dm(self, interaction, message: str, enabled: bool = True):
+    async def welcome_dm(self, ctx, message: str, enabled: bool = True):
         cfg = self._guild(ctx.guild.id)
         cfg["dm_enabled"] = enabled
         cfg["dm_message"] = message
@@ -464,7 +464,7 @@ class Welcome(commands.Cog):
             f"\u2705 Join DM {status}.\nMessage: {message[:100]}")
 
     @commands.command(name="promo-set")
-    async def promo_set(self, interaction, channel: discord.TextChannel,
+    async def promo_set(self, ctx, channel: discord.TextChannel,
                         roles: str, message: str = ""):
         cfg = self._guild(ctx.guild.id)
         cfg.update({"promo_channel": str(channel.id), "promo_roles": roles, "promo_message": message})
@@ -473,7 +473,7 @@ class Welcome(commands.Cog):
             f"\u2705 Promo announcements \u2192 {channel.mention}\nWatched roles: `{roles}`")
 
     @commands.command(name="autorole")
-    async def autorole(self, interaction, role: discord.Role = None):
+    async def autorole(self, ctx, role: discord.Role = None):
         cfg = self._guild(ctx.guild.id)
         if role:
             cfg["autorole"] = str(role.id)
@@ -485,19 +485,17 @@ class Welcome(commands.Cog):
             await ctx.send("\u2705 Auto-role disabled.")
 
     @commands.command(name="welcome-test")
-    async def welcome_test(self, interaction):
-        await ctx.defer()
+    async def welcome_test(self, ctx):
         await self._send_welcome(ctx.author)
         await ctx.send("\u2705 Test welcome sent!")
 
     @commands.command(name="goodbye-test")
-    async def goodbye_test(self, interaction):
-        await ctx.defer()
+    async def goodbye_test(self, ctx):
         await self._send_goodbye(ctx.author)
         await ctx.send("\u2705 Test goodbye sent!")
 
     @commands.command(name="welcome-status")
-    async def welcome_status(self, interaction):
+    async def welcome_status(self, ctx):
         cfg = self._guild(ctx.guild.id)
         embed = discord.Embed(title="Welcome System Status", color=0x57f287)
         wch = ctx.guild.get_channel(int(cfg["welcome_channel"])) if cfg.get("welcome_channel") else None

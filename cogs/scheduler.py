@@ -75,7 +75,7 @@ class Scheduler(commands.Cog):
                   channel: discord.TextChannel,
                   message: str,
                   when: str,
-                  recur: app_commands.Choice[str] = None):
+                  recur: str = None):
         now = datetime.now(timezone.utc)
         # Parse relative time
         try:

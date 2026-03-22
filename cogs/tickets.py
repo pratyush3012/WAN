@@ -242,7 +242,6 @@ class Tickets(commands.Cog):
                     category: discord.CategoryChannel = None,
                     support_role: discord.Role = None,
                     transcript_channel: discord.TextChannel = None):
-        await ctx.defer()
         guild = ctx.guild
 
         if not category:

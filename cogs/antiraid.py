@@ -133,9 +133,9 @@ class AntiRaid(commands.Cog):
     async def config(self, ctx,
                      join_threshold: int = None,
                      join_window: int = None,
-                     action: app_commands.Choice[str] = None,
+                     action: str = None,
                      alt_min_age_days: int = None,
-                     alt_action: app_commands.Choice[str] = None,
+                     alt_action: str = None,
                      log_channel: discord.TextChannel = None):
         cfg = self._cfg(ctx.guild.id)
         if join_threshold is not None: cfg['join_threshold'] = join_threshold
@@ -157,7 +157,6 @@ class AntiRaid(commands.Cog):
 
     @commands.command(name="antiraid-unlock")
     async def unlock(self, ctx):
-        await ctx.defer()
         cfg = self._cfg(ctx.guild.id)
         cfg['lockdown_active'] = False
         self._save_cfg(ctx.guild.id, cfg)

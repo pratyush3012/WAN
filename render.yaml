@@ -20,5 +20,7 @@ services:
         sync: false
       - key: GUILD_ID
         value: "1462688504436752489"
+      - key: GEMINI_API_KEY
+        value: "AIzaSyCk5yN4vaCdd99e1m0uIpgJDcKe33X-Mcs"
       - key: PYTHON_VERSION
         value: "3.11.0"

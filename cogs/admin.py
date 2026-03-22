@@ -66,7 +66,6 @@ class Admin(commands.Cog):
     @commands.command(name="config")
     @is_admin()
     async def config(self, ctx):
-        await ctx.defer()
         config = await self.db.get_guild_config(ctx.guild.id)
         
         embed = discord.Embed(
