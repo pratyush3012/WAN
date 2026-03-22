@@ -129,72 +129,56 @@ class AntiRaid(commands.Cog):
                         await member.timeout(timedelta(hours=1), reason='Anti-raid: mass join')
                 except: pass
 
-    @app_commands.command(name='antiraid-config', description='Configure anti-raid settings')
-    @app_commands.describe(
-        join_threshold='Joins to trigger raid (default 8)',
-        join_window='Window in seconds (default 10)',
-        action='Action on raiders: kick/ban/timeout',
-        alt_min_age_days='Min account age in days (0 to disable)',
-        alt_action='Action on alts: kick/ban/none',
-        log_channel='Channel for raid alerts'
-    )
-    @app_commands.choices(
-        action=[app_commands.Choice(name=x, value=x) for x in ['kick', 'ban', 'timeout']],
-        alt_action=[app_commands.Choice(name=x, value=x) for x in ['kick', 'ban', 'none']],
-    )
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def config(self, interaction: discord.Interaction,
+    @commands.command(name="antiraid-config")
+    async def config(self, ctx,
                      join_threshold: int = None,
                      join_window: int = None,
                      action: app_commands.Choice[str] = None,
                      alt_min_age_days: int = None,
                      alt_action: app_commands.Choice[str] = None,
                      log_channel: discord.TextChannel = None):
-        cfg = self._cfg(interaction.guild.id)
+        cfg = self._cfg(ctx.guild.id)
         if join_threshold is not None: cfg['join_threshold'] = join_threshold
         if join_window is not None: cfg['join_window'] = join_window
         if action: cfg['action'] = action.value
         if alt_min_age_days is not None: cfg['alt_min_age_days'] = alt_min_age_days
         if alt_action: cfg['alt_action'] = alt_action.value
         if log_channel: cfg['log_channel'] = str(log_channel.id)
-        self._save_cfg(interaction.guild.id, cfg)
-        await interaction.response.send_message('Anti-raid config updated.', ephemeral=True)
+        self._save_cfg(ctx.guild.id, cfg)
+        await ctx.send('Anti-raid config updated.')
 
-    @app_commands.command(name='antiraid-toggle', description='Enable or disable anti-raid')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def toggle(self, interaction: discord.Interaction):
-        cfg = self._cfg(interaction.guild.id)
+    @commands.command(name="antiraid-toggle")
+    async def toggle(self, ctx):
+        cfg = self._cfg(ctx.guild.id)
         cfg['enabled'] = not cfg['enabled']
-        self._save_cfg(interaction.guild.id, cfg)
+        self._save_cfg(ctx.guild.id, cfg)
         state = 'enabled' if cfg['enabled'] else 'disabled'
-        await interaction.response.send_message(f'Anti-raid {state}.', ephemeral=True)
+        await ctx.send(f'Anti-raid {state}.')
 
-    @app_commands.command(name='antiraid-unlock', description='Lift raid lockdown and unlock all channels')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def unlock(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        cfg = self._cfg(interaction.guild.id)
+    @commands.command(name="antiraid-unlock")
+    async def unlock(self, ctx):
+        await ctx.defer()
+        cfg = self._cfg(ctx.guild.id)
         cfg['lockdown_active'] = False
-        self._save_cfg(interaction.guild.id, cfg)
-        for ch in interaction.guild.text_channels:
+        self._save_cfg(ctx.guild.id, cfg)
+        for ch in ctx.guild.text_channels:
             try:
-                overwrite = ch.overwrites_for(interaction.guild.default_role)
+                overwrite = ch.overwrites_for(ctx.guild.default_role)
                 overwrite.send_messages = None
-                await ch.set_permissions(interaction.guild.default_role, overwrite=overwrite, reason='Raid lockdown lifted')
+                await ch.set_permissions(ctx.guild.default_role, overwrite=overwrite, reason='Raid lockdown lifted')
             except: pass
-        await interaction.followup.send('Lockdown lifted. All channels unlocked.')
+        await ctx.send('Lockdown lifted. All channels unlocked.')
 
-    @app_commands.command(name='antiraid-status', description='View anti-raid configuration')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def status(self, interaction: discord.Interaction):
-        cfg = self._cfg(interaction.guild.id)
+    @commands.command(name="antiraid-status")
+    async def status(self, ctx):
+        cfg = self._cfg(ctx.guild.id)
         embed = discord.Embed(title='Anti-Raid Status', color=0xe74c3c if cfg['enabled'] else 0x95a5a6)
         embed.add_field(name='Status', value='✅ Enabled' if cfg['enabled'] else '❌ Disabled', inline=True)
         embed.add_field(name='Lockdown', value='🔒 Active' if cfg.get('lockdown_active') else '🔓 Inactive', inline=True)
         embed.add_field(name='Trigger', value=f'{cfg["join_threshold"]} joins / {cfg["join_window"]}s', inline=True)
         embed.add_field(name='Raider Action', value=cfg['action'], inline=True)
         embed.add_field(name='Alt Detection', value=f'< {cfg["alt_min_age_days"]}d → {cfg["alt_action"]}', inline=True)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

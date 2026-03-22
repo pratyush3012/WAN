@@ -23,7 +23,7 @@ class RoleCommands(commands.Cog):
     
     # mod-announce removed — use /announce from dashboard or cogs/announce
     
-    @app_commands.command(name="slowmode", description="[Moderator] Set channel slowmode")
+    @commands.command(name="slowmode")
     @is_moderator()
     async def slowmode(
         self,
@@ -32,12 +32,11 @@ class RoleCommands(commands.Cog):
         channel: discord.TextChannel = None
     ):
         """Set slowmode for a channel"""
-        channel = channel or interaction.channel
+        channel = channel or ctx.channel
         
         if seconds < 0 or seconds > 21600:
-            return await interaction.response.send_message(
-                embed=EmbedFactory.error("Invalid Duration", "Slowmode must be between 0 and 21600 seconds (6 hours)."),
-                ephemeral=True
+            return await ctx.send(
+                embed=EmbedFactory.error("Invalid Duration", "Slowmode must be between 0 and 21600 seconds (6 hours).")
             )
         
         await channel.edit(slowmode_delay=seconds)
@@ -47,9 +46,9 @@ class RoleCommands(commands.Cog):
         else:
             embed = EmbedFactory.success("Slowmode Enabled", f"Slowmode set to **{seconds}s** in {channel.mention}")
         
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
     
-    @app_commands.command(name="nickname", description="[Moderator] Change a user's nickname")
+    @commands.command(name="nickname")
     @is_moderator()
     async def nickname(
         self,
@@ -59,10 +58,9 @@ class RoleCommands(commands.Cog):
     ):
         """Change a user's nickname"""
         # Check role hierarchy
-        if member.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
-            return await interaction.response.send_message(
-                embed=EmbedFactory.error("Permission Denied", "You can't change the nickname of someone with a higher or equal role."),
-                ephemeral=True
+        if member.top_role >= ctx.author.top_role and ctx.author.id != ctx.guild.owner_id:
+            return await ctx.send(
+                embed=EmbedFactory.error("Permission Denied", "You can't change the nickname of someone with a higher or equal role.")
             )
         
         old_nick = member.display_name
@@ -74,18 +72,18 @@ class RoleCommands(commands.Cog):
             f"Changed {member.mention}'s nickname\n**From:** {old_nick}\n**To:** {new_nick}"
         )
         
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
     
     # modstats removed — use dashboard analytics instead
     
     # ==================== ADMIN COMMANDS ====================
     # Server configuration and management
     
-    @app_commands.command(name="setup-roles", description="[Admin] Setup role hierarchy")
+    @commands.command(name="setup-roles")
     @is_admin()
-    async def setup_roles(self, interaction: discord.Interaction):
+    async def setup_roles(self, ctx):
         """Setup recommended role hierarchy"""
-        await interaction.response.defer()
+        await ctx.defer()
         
         roles_to_create = [
             ("Owner", discord.Color.red(), True),
@@ -98,14 +96,14 @@ class RoleCommands(commands.Cog):
         created = []
         for role_name, color, hoist in roles_to_create:
             # Check if role exists
-            existing = discord.utils.get(interaction.guild.roles, name=role_name)
+            existing = discord.utils.get(ctx.guild.roles, name=role_name)
             if not existing:
                 try:
-                    role = await interaction.guild.create_role(
+                    role = await ctx.guild.create_role(
                         name=role_name,
                         color=color,
                         hoist=hoist,
-                        reason=f"Role setup by {interaction.user}"
+                        reason=f"Role setup by {ctx.author}"
                     )
                     created.append(role_name)
                 except Exception as e:
@@ -119,7 +117,7 @@ class RoleCommands(commands.Cog):
         else:
             embed = EmbedFactory.info("Roles Exist", "All recommended roles already exist!")
         
-        await interaction.followup.send(embed=embed)
+        await ctx.send(embed=embed)
     
     # backup removed — placeholder only, no real functionality
     
@@ -130,12 +128,12 @@ class RoleCommands(commands.Cog):
     
     @app_commands.command(name="shutdown", description="[Owner] Shutdown the bot")
     @is_owner()
-    async def shutdown(self, interaction: discord.Interaction):
+    async def shutdown(self, ctx):
         """Shutdown the bot"""
         embed = EmbedFactory.info("🛑 Shutting Down", "Bot is shutting down...")
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
         
-        logger.info(f"Bot shutdown initiated by {interaction.user}")
+        logger.info(f"Bot shutdown initiated by {ctx.author}")
         await self.bot.close()
     
     # reload-cog removed — use /reload in admin.py instead

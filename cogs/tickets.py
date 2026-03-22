@@ -38,12 +38,12 @@ class RatingView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=300)
 
-    async def _rate(self, interaction: discord.Interaction, rating: int):
+    async def _rate(self, ctx, rating: int):
         embed = discord.Embed(
             description=f'Thanks for your feedback! You rated this ticket **{rating}/5 ⭐**',
             color=0x2ecc71
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
         self.stop()
 
     @discord.ui.button(label='⭐', style=discord.ButtonStyle.secondary, custom_id='rate_1')
@@ -64,12 +64,12 @@ class TicketView(discord.ui.View):
         self.bot = bot
 
     @discord.ui.button(label='Close Ticket', style=discord.ButtonStyle.danger, custom_id='ticket_close_btn', emoji='🔒')
-    async def close_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not (interaction.user.guild_permissions.manage_channels or
-                interaction.channel.topic and str(interaction.user.id) in interaction.channel.topic):
-            return await interaction.response.send_message('Only staff or the ticket owner can close this.', ephemeral=True)
-        await _do_close(interaction.channel, interaction.user, self.bot)
-        await interaction.response.send_message('Closing ticket...', ephemeral=True)
+    async def close_btn(self, ctx, button: discord.ui.Button):
+        if not (ctx.author.guild_permissions.manage_channels or
+                ctx.channel.topic and str(ctx.author.id) in ctx.channel.topic):
+            return await ctx.send('Only staff or the ticket owner can close this.')
+        await _do_close(ctx.channel, ctx.author, self.bot)
+        await ctx.send('Closing ticket...')
 
 
 class CategorySelectView(discord.ui.View):
@@ -81,9 +81,9 @@ class CategorySelectView(discord.ui.View):
         select.callback = self._on_select
         self.add_item(select)
 
-    async def _on_select(self, interaction: discord.Interaction):
+    async def _on_select(self, ctx):
         chosen = interaction.data['values'][0]
-        cfg = _cfg(interaction.guild.id)
+        cfg = _cfg(ctx.guild.id)
         cats = cfg.get('categories', [])
         cat = next((c for c in cats if c['name'] == chosen), None)
         await _open_ticket(interaction, self.bot, cat)
@@ -144,19 +144,19 @@ async def _do_close(channel: discord.TextChannel, closer: discord.Member, bot):
 
 async def _open_ticket(interaction: discord.Interaction, bot, category: dict = None):
     """Create a ticket channel."""
-    cfg = _cfg(interaction.guild.id)
+    cfg = _cfg(ctx.guild.id)
     cat_id = cfg.get('category_id')
     if not cat_id:
-        return await interaction.response.send_message('Ticket system not set up. Ask an admin to run `/ticket-setup`.', ephemeral=True)
+        return await ctx.send('Ticket system not set up. Ask an admin to run `/ticket-setup`.')
 
-    discord_cat = interaction.guild.get_channel(int(cat_id))
+    discord_cat = ctx.guild.get_channel(int(cat_id))
     if not discord_cat:
-        return await interaction.response.send_message('Ticket category not found.', ephemeral=True)
+        return await ctx.send('Ticket category not found.')
 
     # Check for existing ticket
     for ch in discord_cat.text_channels:
-        if ch.topic and f'owner:{interaction.user.id}' in ch.topic:
-            return await interaction.response.send_message(f'You already have an open ticket: {ch.mention}', ephemeral=True)
+        if ch.topic and f'owner:{ctx.author.id}' in ch.topic:
+            return await ctx.send(f'You already have an open ticket: {ch.mention}')
 
     # Determine support role
     support_role_id = cfg.get('support_role_id')
@@ -165,31 +165,31 @@ async def _open_ticket(interaction: discord.Interaction, bot, category: dict = N
 
     counter = cfg.get('counter', 0) + 1
     cfg['counter'] = counter
-    _save_cfg(interaction.guild.id, cfg)
+    _save_cfg(ctx.guild.id, cfg)
 
     cat_label = f'-{category["name"].lower().replace(" ", "-")}' if category else ''
     ch_name = f'ticket-{counter}{cat_label}'
 
     overwrites = {
-        interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
-        interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True),
-        interaction.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True),
+        ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        ctx.author: discord.PermissionOverwrite(read_messages=True, send_messages=True, attach_files=True),
+        ctx.guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True, manage_channels=True),
     }
     if support_role_id:
-        role = interaction.guild.get_role(int(support_role_id))
+        role = ctx.guild.get_role(int(support_role_id))
         if role:
             overwrites[role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
     channel = await discord_cat.create_text_channel(
         ch_name,
         overwrites=overwrites,
-        topic=f'owner:{interaction.user.id} | opened:{datetime.now(timezone.utc).isoformat()}',
-        reason=f'Ticket by {interaction.user}'
+        topic=f'owner:{ctx.author.id} | opened:{datetime.now(timezone.utc).isoformat()}',
+        reason=f'Ticket by {ctx.author}'
     )
 
     embed = discord.Embed(
         title=f'🎫 Ticket #{counter}{" — " + category["name"] if category else ""}',
-        description=f'Welcome {interaction.user.mention}! Support will be with you shortly.\nDescribe your issue in detail.',
+        description=f'Welcome {ctx.author.mention}! Support will be with you shortly.\nDescribe your issue in detail.',
         color=0x5865f2,
         timestamp=datetime.now(timezone.utc)
     )
@@ -200,20 +200,20 @@ async def _open_ticket(interaction: discord.Interaction, bot, category: dict = N
             responses = ai_coder.get_generated("ticket_responses")
             if responses:
                 import random as _r
-                ai_msg = _r.choice(responses).replace("{user}", interaction.user.mention)
+                ai_msg = _r.choice(responses).replace("{user}", ctx.author.mention)
                 embed.description = ai_msg
     except Exception:
         pass
     embed.set_footer(text=f'Ticket #{counter}')
     view = TicketView(bot)
-    await channel.send(interaction.user.mention, embed=embed, view=view)
+    await channel.send(ctx.author.mention, embed=embed, view=view)
 
     if support_role_id:
-        role = interaction.guild.get_role(int(support_role_id))
+        role = ctx.guild.get_role(int(support_role_id))
         if role:
             await channel.send(f'{role.mention} — new ticket opened!')
 
-    await interaction.response.send_message(f'✅ Ticket created: {channel.mention}', ephemeral=True)
+    await ctx.send(f'✅ Ticket created: {channel.mention}')
 
 
 class OpenTicketView(discord.ui.View):
@@ -222,11 +222,11 @@ class OpenTicketView(discord.ui.View):
         self.bot = bot
 
     @discord.ui.button(label='Open Ticket', style=discord.ButtonStyle.success, custom_id='ticket_open_btn', emoji='🎫')
-    async def open_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        cfg = _cfg(interaction.guild.id)
+    async def open_btn(self, ctx, button: discord.ui.Button):
+        cfg = _cfg(ctx.guild.id)
         cats = cfg.get('categories', [])
         if cats:
-            await interaction.response.send_message('Select a category:', view=CategorySelectView(self.bot, cats), ephemeral=True)
+            await ctx.send('Select a category:', view=CategorySelectView(self.bot, cats))
         else:
             await _open_ticket(interaction, self.bot)
 
@@ -237,19 +237,13 @@ class Tickets(commands.Cog):
         bot.add_view(TicketView(bot))
         bot.add_view(OpenTicketView(bot))
 
-    @app_commands.command(name='ticket-setup', description='Set up the ticket system')
-    @app_commands.describe(
-        category='Discord category for ticket channels',
-        support_role='Default support role',
-        transcript_channel='Channel to save transcripts'
-    )
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def setup(self, interaction: discord.Interaction,
+    @commands.command(name="ticket-setup")
+    async def setup(self, ctx,
                     category: discord.CategoryChannel = None,
                     support_role: discord.Role = None,
                     transcript_channel: discord.TextChannel = None):
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.guild
+        await ctx.defer()
+        guild = ctx.guild
 
         if not category:
             category = await guild.create_category('Tickets')
@@ -274,58 +268,49 @@ class Tickets(commands.Cog):
             embed.add_field(name='Support Team', value=support_role.mention, inline=True)
         await panel_ch.send(embed=embed, view=OpenTicketView(self.bot))
 
-        await interaction.followup.send(f'Ticket system set up in {category.mention}. Panel: {panel_ch.mention}')
+        await ctx.send(f'Ticket system set up in {category.mention}. Panel: {panel_ch.mention}')
 
-    @app_commands.command(name='ticket-category-add', description='Add a ticket category')
-    @app_commands.describe(name='Category name', role='Staff role for this category')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def add_category(self, interaction: discord.Interaction, name: str, role: discord.Role = None):
-        cfg = _cfg(interaction.guild.id)
+    @commands.command(name="ticket-category-add")
+    async def add_category(self, ctx, name: str, role: discord.Role = None):
+        cfg = _cfg(ctx.guild.id)
         cats = cfg.setdefault('categories', [])
         if any(c['name'].lower() == name.lower() for c in cats):
-            return await interaction.response.send_message('Category already exists.', ephemeral=True)
+            return await ctx.send('Category already exists.')
         cats.append({'name': name, 'role_id': str(role.id) if role else None})
-        _save_cfg(interaction.guild.id, cfg)
-        await interaction.response.send_message(f'Category `{name}` added.', ephemeral=True)
+        _save_cfg(ctx.guild.id, cfg)
+        await ctx.send(f'Category `{name}` added.')
 
-    @app_commands.command(name='ticket-category-remove', description='Remove a ticket category')
-    @app_commands.describe(name='Category name to remove')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def remove_category(self, interaction: discord.Interaction, name: str):
-        cfg = _cfg(interaction.guild.id)
+    @commands.command(name="ticket-category-remove")
+    async def remove_category(self, ctx, name: str):
+        cfg = _cfg(ctx.guild.id)
         cats = cfg.get('categories', [])
         new_cats = [c for c in cats if c['name'].lower() != name.lower()]
         if len(new_cats) == len(cats):
-            return await interaction.response.send_message('Category not found.', ephemeral=True)
+            return await ctx.send('Category not found.')
         cfg['categories'] = new_cats
-        _save_cfg(interaction.guild.id, cfg)
-        await interaction.response.send_message(f'Category `{name}` removed.', ephemeral=True)
+        _save_cfg(ctx.guild.id, cfg)
+        await ctx.send(f'Category `{name}` removed.')
 
-    @app_commands.command(name='ticket-close', description='Close the current ticket')
-    async def close(self, interaction: discord.Interaction):
-        if not interaction.channel.name.startswith('ticket-'):
-            return await interaction.response.send_message('This is not a ticket channel.', ephemeral=True)
-        if not (interaction.user.guild_permissions.manage_channels or
-                (interaction.channel.topic and f'owner:{interaction.user.id}' in interaction.channel.topic)):
-            return await interaction.response.send_message('Only staff or the ticket owner can close this.', ephemeral=True)
-        await interaction.response.send_message('Closing ticket...')
-        await _do_close(interaction.channel, interaction.user, self.bot)
+    async def close(self, ctx):
+        if not ctx.channel.name.startswith('ticket-'):
+            return await ctx.send('This is not a ticket channel.')
+        if not (ctx.author.guild_permissions.manage_channels or
+                (ctx.channel.topic and f'owner:{ctx.author.id}' in ctx.channel.topic)):
+            return await ctx.send('Only staff or the ticket owner can close this.')
+        await ctx.send('Closing ticket...')
+        await _do_close(ctx.channel, ctx.author, self.bot)
 
-    @app_commands.command(name='ticket-add', description='Add a user to this ticket')
-    @app_commands.checks.has_permissions(manage_channels=True)
-    async def add_user(self, interaction: discord.Interaction, user: discord.Member):
-        if not interaction.channel.name.startswith('ticket-'):
-            return await interaction.response.send_message('Not a ticket channel.', ephemeral=True)
-        await interaction.channel.set_permissions(user, read_messages=True, send_messages=True)
-        await interaction.response.send_message(f'Added {user.mention} to this ticket.')
+    async def add_user(self, ctx, user: discord.Member):
+        if not ctx.channel.name.startswith('ticket-'):
+            return await ctx.send('Not a ticket channel.')
+        await ctx.channel.set_permissions(user, read_messages=True, send_messages=True)
+        await ctx.send(f'Added {user.mention} to this ticket.')
 
-    @app_commands.command(name='ticket-remove', description='Remove a user from this ticket')
-    @app_commands.checks.has_permissions(manage_channels=True)
-    async def remove_user(self, interaction: discord.Interaction, user: discord.Member):
-        if not interaction.channel.name.startswith('ticket-'):
-            return await interaction.response.send_message('Not a ticket channel.', ephemeral=True)
-        await interaction.channel.set_permissions(user, overwrite=None)
-        await interaction.response.send_message(f'Removed {user.mention} from this ticket.')
+    async def remove_user(self, ctx, user: discord.Member):
+        if not ctx.channel.name.startswith('ticket-'):
+            return await ctx.send('Not a ticket channel.')
+        await ctx.channel.set_permissions(user, overwrite=None)
+        await ctx.send(f'Removed {user.mention} from this ticket.')
 
 
 async def setup(bot):

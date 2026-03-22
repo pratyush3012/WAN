@@ -42,7 +42,7 @@ class TranslationLanguageView(discord.ui.View):
 
     def _make_cb(self, code: str, name: str):
         async def callback(interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)
+            await ctx.defer()
             try:
                 loop = asyncio.get_event_loop()
                 translated = await loop.run_in_executor(
@@ -55,11 +55,11 @@ class TranslationLanguageView(discord.ui.View):
                     color=0x5865f2
                 )
                 embed.add_field(name="Original", value=self.original_text[:1000], inline=False)
-                embed.set_footer(text=f"Translated for {interaction.user.display_name}")
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                embed.set_footer(text=f"Translated for {ctx.author.display_name}")
+                await ctx.send(embed=embed)
             except Exception as e:
                 logger.error(f"Translation error: {e}")
-                await interaction.followup.send("❌ Translation failed. Try again later.", ephemeral=True)
+                await ctx.send("❌ Translation failed. Try again later.")
         return callback
 
 
@@ -149,9 +149,9 @@ class Translation(commands.Cog):
     # ── SLASH COMMANDS ────────────────────────────────────────────────────
 
     @app_commands.command(name="translate", description="Translate text to any language")
-    async def translate(self, interaction: discord.Interaction, text: str, language: str = "en"):
+    async def translate(self, ctx, text: str, language: str = "en"):
         """Translate text. Language = language code e.g. en, es, fr, de, ja"""
-        await interaction.response.defer(ephemeral=True)
+        await ctx.defer()
         try:
             loop = asyncio.get_event_loop()
             translated = await loop.run_in_executor(
@@ -161,21 +161,20 @@ class Translation(commands.Cog):
             embed = discord.Embed(title=f"🌐 Translation → {language.upper()}",
                                   description=translated, color=0x5865f2)
             embed.add_field(name="Original", value=text[:1000], inline=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await ctx.send(embed=embed)
         except Exception as e:
             logger.error(f"Translate command error: {e}")
-            await interaction.followup.send(
-                "❌ Translation failed. Check the language code (e.g. `en`, `es`, `fr`, `de`, `ja`, `ko`, `ru`, `hi`, `pt`, `zh-CN`).",
-                ephemeral=True
+            await ctx.send(
+                "❌ Translation failed. Check the language code (e.g. `en`, `es`, `fr`, `de`, `ja`, `ko`, `ru`, `hi`, `pt`, `zh-CN`)."
             )
 
-    @app_commands.command(name="languages", description="Show all supported translation languages")
-    async def languages(self, interaction: discord.Interaction):
+    @commands.command(name="languages")
+    async def languages(self, ctx):
         langs = "\n".join(f"{e} **{name}** — `{code}`"
                           for e, code, name in TranslationLanguageView.LANGUAGES)
         embed = discord.Embed(title="🌐 Supported Languages", description=langs, color=0x5865f2)
         embed.set_footer(text="React 🌐 on any message to translate it to English instantly!")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

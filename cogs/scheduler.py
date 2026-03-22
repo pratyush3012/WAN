@@ -70,21 +70,8 @@ class Scheduler(commands.Cog):
     async def _before(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name='schedule-add', description='Schedule a message to be posted')
-    @app_commands.describe(
-        channel='Channel to post in',
-        message='Message content',
-        when='ISO datetime or relative like "2h", "1d" from now',
-        recur='Recurrence (once/hourly/daily/weekly)'
-    )
-    @app_commands.choices(recur=[
-        app_commands.Choice(name='Once', value='once'),
-        app_commands.Choice(name='Hourly', value='hourly'),
-        app_commands.Choice(name='Daily', value='daily'),
-        app_commands.Choice(name='Weekly', value='weekly'),
-    ])
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def add(self, interaction: discord.Interaction,
+    @commands.command(name="schedule-add")
+    async def add(self, ctx,
                   channel: discord.TextChannel,
                   message: str,
                   when: str,
@@ -101,53 +88,49 @@ class Scheduler(commands.Cog):
             else:
                 run_at = datetime.fromisoformat(when).replace(tzinfo=timezone.utc)
         except:
-            return await interaction.response.send_message(
-                'Invalid time. Use relative like `2h`, `1d`, or ISO datetime.', ephemeral=True)
+            return await ctx.send(
+                'Invalid time. Use relative like `2h`, `1d`, or ISO datetime.')
 
         jobs = _load()
         job = {
             'id': len(jobs) + 1,
-            'guild_id': str(interaction.guild.id),
+            'guild_id': str(ctx.guild.id),
             'channel_id': str(channel.id),
             'message': message,
             'run_at': run_at.isoformat(),
             'recur': recur.value if recur else 'once',
-            'created_by': str(interaction.user.id),
+            'created_by': str(ctx.author.id),
         }
         jobs.append(job)
         _save(jobs)
         recur_str = recur.value if recur else 'once'
-        await interaction.response.send_message(
-            f'Scheduled message #{job["id"]} in {channel.mention} at `{run_at.strftime("%Y-%m-%d %H:%M UTC")}` ({recur_str}).',
-            ephemeral=True)
+        await ctx.send(
+            f'Scheduled message #{job["id"]} in {channel.mention} at `{run_at.strftime("%Y-%m-%d %H:%M UTC")}` ({recur_str}).')
 
-    @app_commands.command(name='schedule-list', description='List scheduled messages')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def list_jobs(self, interaction: discord.Interaction):
-        jobs = [j for j in _load() if j.get('guild_id') == str(interaction.guild.id)]
+    @commands.command(name="schedule-list")
+    async def list_jobs(self, ctx):
+        jobs = [j for j in _load() if j.get('guild_id') == str(ctx.guild.id)]
         if not jobs:
-            return await interaction.response.send_message('No scheduled messages.', ephemeral=True)
+            return await ctx.send('No scheduled messages.')
         embed = discord.Embed(title='Scheduled Messages', color=0x5865f2)
         for j in jobs[:10]:
-            ch = interaction.guild.get_channel(int(j['channel_id']))
+            ch = ctx.guild.get_channel(int(j['channel_id']))
             embed.add_field(
                 name=f'#{j["id"]} — {j["recur"]}',
                 value=f'{ch.mention if ch else j["channel_id"]} • `{j["run_at"][:16]}`\n{j["message"][:80]}',
                 inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name='schedule-remove', description='Remove a scheduled message')
-    @app_commands.describe(job_id='Job ID from /schedule-list')
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def remove(self, interaction: discord.Interaction, job_id: int):
+    @commands.command(name="schedule-remove")
+    async def remove(self, ctx, job_id: int):
         jobs = _load()
         before = len(jobs)
-        jobs = [j for j in jobs if not (j.get('guild_id') == str(interaction.guild.id) and j['id'] == job_id)]
+        jobs = [j for j in jobs if not (j.get('guild_id') == str(ctx.guild.id) and j['id'] == job_id)]
         if len(jobs) < before:
             _save(jobs)
-            await interaction.response.send_message(f'Removed job #{job_id}.', ephemeral=True)
+            await ctx.send(f'Removed job #{job_id}.')
         else:
-            await interaction.response.send_message('Job not found.', ephemeral=True)
+            await ctx.send('Job not found.')
 
 
 async def setup(bot):

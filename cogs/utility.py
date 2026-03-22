@@ -14,8 +14,8 @@ class Utility(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="uptime", description="Show how long the bot has been online")
-    async def uptime(self, interaction: discord.Interaction):
+    @commands.command(name="uptime")
+    async def uptime(self, ctx):
         now = datetime.now(timezone.utc)
         start = self.bot.start_time
         if start.tzinfo is None:
@@ -29,7 +29,7 @@ class Utility(commands.Cog):
             description=f"**{days}d {hours}h {mins}m {secs}s**",
             color=0x5865f2
         )
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

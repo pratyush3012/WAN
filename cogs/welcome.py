@@ -433,83 +433,76 @@ class Welcome(commands.Cog):
                     logger.warning(f"Promo send error: {e}")
                 break
 
-    @app_commands.command(name="welcome-set", description="Set welcome channel and optional custom message")
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @commands.command(name="welcome-set")
     async def welcome_set(self, interaction, channel: discord.TextChannel,
                           message: str = "", title: str = "", color: str = "57f287"):
-        cfg = self._guild(interaction.guild.id)
+        cfg = self._guild(ctx.guild.id)
         cfg.update({"welcome_channel": str(channel.id), "welcome_message": message,
                     "welcome_title": title, "welcome_color": color})
         self._save()
         note = "AI-generated messages enabled." if not message else "Custom message saved."
-        await interaction.response.send_message(
+        await ctx.send(
             f"\u2705 Welcome \u2192 {channel.mention}\n{note}\n"
-            f"Variables: `{{user}}` `{{username}}` `{{server}}` `{{count}}`", ephemeral=True)
+            f"Variables: `{{user}}` `{{username}}` `{{server}}` `{{count}}`")
 
-    @app_commands.command(name="goodbye-set", description="Set goodbye channel and optional custom message")
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @commands.command(name="goodbye-set")
     async def goodbye_set(self, interaction, channel: discord.TextChannel,
                           message: str = "", title: str = ""):
-        cfg = self._guild(interaction.guild.id)
+        cfg = self._guild(ctx.guild.id)
         cfg.update({"goodbye_channel": str(channel.id), "goodbye_message": message, "goodbye_title": title})
         self._save()
-        await interaction.response.send_message(f"\u2705 Goodbye \u2192 {channel.mention}", ephemeral=True)
+        await ctx.send(f"\u2705 Goodbye \u2192 {channel.mention}")
 
-    @app_commands.command(name="welcome-dm", description="Set a DM message sent to new members on join")
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @commands.command(name="welcome-dm")
     async def welcome_dm(self, interaction, message: str, enabled: bool = True):
-        cfg = self._guild(interaction.guild.id)
+        cfg = self._guild(ctx.guild.id)
         cfg["dm_enabled"] = enabled
         cfg["dm_message"] = message
         self._save()
         status = "enabled" if enabled else "disabled"
-        await interaction.response.send_message(
-            f"\u2705 Join DM {status}.\nMessage: {message[:100]}", ephemeral=True)
+        await ctx.send(
+            f"\u2705 Join DM {status}.\nMessage: {message[:100]}")
 
-    @app_commands.command(name="promo-set", description="Set promotion announcements channel and watched roles")
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @commands.command(name="promo-set")
     async def promo_set(self, interaction, channel: discord.TextChannel,
                         roles: str, message: str = ""):
-        cfg = self._guild(interaction.guild.id)
+        cfg = self._guild(ctx.guild.id)
         cfg.update({"promo_channel": str(channel.id), "promo_roles": roles, "promo_message": message})
         self._save()
-        await interaction.response.send_message(
-            f"\u2705 Promo announcements \u2192 {channel.mention}\nWatched roles: `{roles}`", ephemeral=True)
+        await ctx.send(
+            f"\u2705 Promo announcements \u2192 {channel.mention}\nWatched roles: `{roles}`")
 
-    @app_commands.command(name="autorole", description="Set a role to auto-assign when members join")
-    @app_commands.checks.has_permissions(manage_roles=True)
+    @commands.command(name="autorole")
     async def autorole(self, interaction, role: discord.Role = None):
-        cfg = self._guild(interaction.guild.id)
+        cfg = self._guild(ctx.guild.id)
         if role:
             cfg["autorole"] = str(role.id)
             self._save()
-            await interaction.response.send_message(f"\u2705 New members will get **{role.name}** on join.", ephemeral=True)
+            await ctx.send(f"\u2705 New members will get **{role.name}** on join.")
         else:
             cfg.pop("autorole", None)
             self._save()
-            await interaction.response.send_message("\u2705 Auto-role disabled.", ephemeral=True)
+            await ctx.send("\u2705 Auto-role disabled.")
 
-    @app_commands.command(name="welcome-test", description="Test your welcome message right now")
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @commands.command(name="welcome-test")
     async def welcome_test(self, interaction):
-        await interaction.response.defer(ephemeral=True)
-        await self._send_welcome(interaction.user)
-        await interaction.followup.send("\u2705 Test welcome sent!", ephemeral=True)
+        await ctx.defer()
+        await self._send_welcome(ctx.author)
+        await ctx.send("\u2705 Test welcome sent!")
 
-    @app_commands.command(name="goodbye-test", description="Test your goodbye message right now")
-    @app_commands.checks.has_permissions(manage_guild=True)
+    @commands.command(name="goodbye-test")
     async def goodbye_test(self, interaction):
-        await interaction.response.defer(ephemeral=True)
-        await self._send_goodbye(interaction.user)
-        await interaction.followup.send("\u2705 Test goodbye sent!", ephemeral=True)
+        await ctx.defer()
+        await self._send_goodbye(ctx.author)
+        await ctx.send("\u2705 Test goodbye sent!")
 
-    @app_commands.command(name="welcome-status", description="View current welcome/goodbye configuration")
+    @commands.command(name="welcome-status")
     async def welcome_status(self, interaction):
-        cfg = self._guild(interaction.guild.id)
+        cfg = self._guild(ctx.guild.id)
         embed = discord.Embed(title="Welcome System Status", color=0x57f287)
-        wch = interaction.guild.get_channel(int(cfg["welcome_channel"])) if cfg.get("welcome_channel") else None
-        gch = interaction.guild.get_channel(int(cfg["goodbye_channel"])) if cfg.get("goodbye_channel") else None
-        pch = interaction.guild.get_channel(int(cfg["promo_channel"])) if cfg.get("promo_channel") else None
+        wch = ctx.guild.get_channel(int(cfg["welcome_channel"])) if cfg.get("welcome_channel") else None
+        gch = ctx.guild.get_channel(int(cfg["goodbye_channel"])) if cfg.get("goodbye_channel") else None
+        pch = ctx.guild.get_channel(int(cfg["promo_channel"])) if cfg.get("promo_channel") else None
         embed.add_field(name="Welcome Channel", value=wch.mention if wch else "Auto-detect", inline=True)
         embed.add_field(name="Goodbye Channel", value=gch.mention if gch else "Same as welcome", inline=True)
         embed.add_field(name="Promo Channel", value=pch.mention if pch else "Not set", inline=True)
@@ -518,7 +511,7 @@ class Welcome(commands.Cog):
         embed.add_field(name="Join DM", value="\u2705 Enabled" if cfg.get("dm_enabled") else "\u274c Disabled", inline=True)
         embed.add_field(name="Auto-Role", value=f"<@&{cfg['autorole']}>" if cfg.get("autorole") else "None", inline=True)
         embed.add_field(name="AI Messages", value="\u2705 Gemini" if GEMINI_API_KEY else "\u274c No API key (using fallback)", inline=True)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

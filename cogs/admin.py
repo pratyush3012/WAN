@@ -10,47 +10,45 @@ class Admin(commands.Cog):
         self.bot = bot
         self.db = Database()
     
-    @app_commands.command(name="addrole", description="Give a role to a member")
+    @commands.command(name="addrole")
     @is_admin()
-    async def addrole(self, interaction: discord.Interaction, member: discord.Member, role: discord.Role):
-        if role >= interaction.guild.me.top_role:
-            return await interaction.response.send_message(
-                embed=EmbedFactory.error("Permission Error", "I cannot manage this role (it's higher than my highest role)"),
-                ephemeral=True
+    async def addrole(self, ctx, member: discord.Member, role: discord.Role):
+        if role >= ctx.guild.me.top_role:
+            return await ctx.send(
+                embed=EmbedFactory.error("Permission Error", "I cannot manage this role (it's higher than my highest role)")
             )
         
         await member.add_roles(role)
-        await interaction.response.send_message(
+        await ctx.send(
             embed=EmbedFactory.success("Role Added", f"Added {role.mention} to {member.mention}")
         )
     
-    @app_commands.command(name="removerole", description="Remove a role from a member")
+    @commands.command(name="removerole")
     @is_admin()
-    async def removerole(self, interaction: discord.Interaction, member: discord.Member, role: discord.Role):
-        if role >= interaction.guild.me.top_role:
-            return await interaction.response.send_message(
-                embed=EmbedFactory.error("Permission Error", "I cannot manage this role"),
-                ephemeral=True
+    async def removerole(self, ctx, member: discord.Member, role: discord.Role):
+        if role >= ctx.guild.me.top_role:
+            return await ctx.send(
+                embed=EmbedFactory.error("Permission Error", "I cannot manage this role")
             )
         
         await member.remove_roles(role)
-        await interaction.response.send_message(
+        await ctx.send(
             embed=EmbedFactory.success("Role Removed", f"Removed {role.mention} from {member.mention}")
         )
     
-    @app_commands.command(name="setlogchannel", description="Set the logging channel")
+    @commands.command(name="setlogchannel")
     @is_admin()
-    async def setlogchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        await self.db.update_guild_config(interaction.guild.id, log_channel=channel.id)
-        await interaction.response.send_message(
+    async def setlogchannel(self, ctx, channel: discord.TextChannel):
+        await self.db.update_guild_config(ctx.guild.id, log_channel=channel.id)
+        await ctx.send(
             embed=EmbedFactory.success("Log Channel Set", f"Logs will be sent to {channel.mention}")
         )
     
     
-    @app_commands.command(name="togglemodule", description="Enable or disable a bot module")
+    @commands.command(name="togglemodule")
     @is_admin()
-    async def togglemodule(self, interaction: discord.Interaction, module: str):
-        config = await self.db.get_guild_config(interaction.guild.id)
+    async def togglemodule(self, ctx, module: str):
+        config = await self.db.get_guild_config(ctx.guild.id)
         disabled = config.disabled_modules or []
         
         if module in disabled:
@@ -60,19 +58,19 @@ class Admin(commands.Cog):
             disabled.append(module)
             status = "disabled"
         
-        await self.db.update_guild_config(interaction.guild.id, disabled_modules=disabled)
-        await interaction.response.send_message(
+        await self.db.update_guild_config(ctx.guild.id, disabled_modules=disabled)
+        await ctx.send(
             embed=EmbedFactory.success("Module Toggled", f"Module `{module}` has been {status}")
         )
     
-    @app_commands.command(name="config", description="View server configuration")
+    @commands.command(name="config")
     @is_admin()
-    async def config(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        config = await self.db.get_guild_config(interaction.guild.id)
+    async def config(self, ctx):
+        await ctx.defer()
+        config = await self.db.get_guild_config(ctx.guild.id)
         
         embed = discord.Embed(
-            title=f"⚙️ {interaction.guild.name} Configuration",
+            title=f"⚙️ {ctx.guild.name} Configuration",
             color=discord.Color.blue()
         )
         
@@ -90,21 +88,19 @@ class Admin(commands.Cog):
         embed.add_field(name="Anti-Spam", value="✅" if config.anti_spam else "❌", inline=True)
         embed.add_field(name="Anti-Raid", value="✅" if config.anti_raid else "❌", inline=True)
         
-        await interaction.followup.send(embed=embed)
+        await ctx.send(embed=embed)
     
-    @app_commands.command(name="reload", description="Reload a cog (Owner only)")
+    @commands.command(name="reload")
     @is_owner()
-    async def reload(self, interaction: discord.Interaction, cog: str):
+    async def reload(self, ctx, cog: str):
         try:
             await self.bot.reload_extension(f"cogs.{cog}")
-            await interaction.response.send_message(
-                embed=EmbedFactory.success("Cog Reloaded", f"Successfully reloaded `{cog}`"),
-                ephemeral=True
+            await ctx.send(
+                embed=EmbedFactory.success("Cog Reloaded", f"Successfully reloaded `{cog}`")
             )
         except Exception as e:
-            await interaction.response.send_message(
-                embed=EmbedFactory.error("Reload Failed", f"Error: {str(e)}"),
-                ephemeral=True
+            await ctx.send(
+                embed=EmbedFactory.error("Reload Failed", f"Error: {str(e)}")
             )
     
     # sync-commands removed — use /reload instead

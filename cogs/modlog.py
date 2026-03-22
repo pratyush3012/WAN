@@ -149,29 +149,23 @@ class ModLog(commands.Cog):
 
     # ── Commands ──────────────────────────────────────────────────────────
 
-    @app_commands.command(name="warn", description="Warn a member")
-    @app_commands.describe(member="Member to warn", reason="Reason for warning")
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def warn(self, interaction: discord.Interaction, member: discord.Member, reason: str = None):
+    async def warn(self, ctx, member: discord.Member, reason: str = None):
         data = _load()
-        case = _add_case(data, interaction.guild.id, 'warn', interaction.user, member, reason)
-        await self._log_to_channel(interaction.guild, case)
-        await self._check_thresholds(interaction.guild, member, data)
-        warns = sum(1 for c in data['cases'].get(str(interaction.guild.id), [])
+        case = _add_case(data, ctx.guild.id, 'warn', ctx.author, member, reason)
+        await self._log_to_channel(ctx.guild, case)
+        await self._check_thresholds(ctx.guild, member, data)
+        warns = sum(1 for c in data['cases'].get(str(ctx.guild.id), [])
                     if c['target_id'] == str(member.id) and c['action'] == 'warn')
         embed = _case_embed(case, ACTION_COLORS['warn'])
         embed.add_field(name="Total Warnings", value=str(warns), inline=True)
         try:
-            await member.send(f"You were warned in **{interaction.guild.name}**: {reason or 'No reason'}")
+            await member.send(f"You were warned in **{ctx.guild.name}**: {reason or 'No reason'}")
         except: pass
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="warnings", description="View warnings for a member")
-    @app_commands.describe(member="Member to check")
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def warnings(self, interaction: discord.Interaction, member: discord.Member):
+    async def warnings(self, ctx, member: discord.Member):
         data = _load()
-        cases = [c for c in data['cases'].get(str(interaction.guild.id), [])
+        cases = [c for c in data['cases'].get(str(ctx.guild.id), [])
                  if c['target_id'] == str(member.id) and c['action'] == 'warn']
         embed = discord.Embed(title=f"Warnings for {member}", color=0xf39c12)
         if not cases:
@@ -181,65 +175,53 @@ class ModLog(commands.Cog):
                 embed.add_field(name=f"Case #{c['id']} — {c['timestamp'][:10]}",
                                 value=c['reason'], inline=False)
         embed.set_footer(text=f"Total: {len(cases)} warning(s)")
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="clearwarnings", description="Clear all warnings for a member")
-    @app_commands.describe(member="Member to clear")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def clearwarnings(self, interaction: discord.Interaction, member: discord.Member):
+    async def clearwarnings(self, ctx, member: discord.Member):
         data = _load()
-        gid = str(interaction.guild.id)
+        gid = str(ctx.guild.id)
         before = len([c for c in data['cases'].get(gid, [])
                       if c['target_id'] == str(member.id) and c['action'] == 'warn'])
         data['cases'][gid] = [c for c in data['cases'].get(gid, [])
                                if not (c['target_id'] == str(member.id) and c['action'] == 'warn')]
         _save(data)
-        await interaction.response.send_message(f"Cleared {before} warning(s) for {member.mention}.")
+        await ctx.send(f"Cleared {before} warning(s) for {member.mention}.")
 
-    @app_commands.command(name="tempban", description="Temporarily ban a member")
-    @app_commands.describe(member="Member to ban", duration="Duration e.g. 1h, 1d, 7d", reason="Reason")
-    @app_commands.checks.has_permissions(ban_members=True)
-    async def tempban(self, interaction: discord.Interaction, member: discord.Member,
+    async def tempban(self, ctx, member: discord.Member,
                       duration: str, reason: str = None):
         units = {'m': 60, 'h': 3600, 'd': 86400, 'w': 604800}
         try:
             secs = int(duration[:-1]) * units[duration[-1].lower()]
         except:
-            return await interaction.response.send_message("Invalid duration. Use e.g. 1h, 7d", ephemeral=True)
+            return await ctx.send("Invalid duration. Use e.g. 1h, 7d")
         expires = datetime.now(timezone.utc) + timedelta(seconds=secs)
         data = _load()
-        case = _add_case(data, interaction.guild.id, 'tempban', interaction.user, member, reason, duration)
+        case = _add_case(data, ctx.guild.id, 'tempban', ctx.author, member, reason, duration)
         data.setdefault('tempbans', []).append({
-            'guild_id': str(interaction.guild.id),
+            'guild_id': str(ctx.guild.id),
             'user_id': str(member.id),
             'expires': expires.isoformat(),
         })
         _save(data)
         try:
-            await member.send(f"You were tempbanned from **{interaction.guild.name}** for {duration}: {reason or 'No reason'}")
+            await member.send(f"You were tempbanned from **{ctx.guild.name}** for {duration}: {reason or 'No reason'}")
         except: pass
         await member.ban(reason=f"Tempban ({duration}): {reason or 'No reason'}")
-        await self._log_to_channel(interaction.guild, case)
-        await interaction.response.send_message(embed=_case_embed(case, ACTION_COLORS['tempban']))
+        await self._log_to_channel(ctx.guild, case)
+        await ctx.send(embed=_case_embed(case, ACTION_COLORS['tempban']))
 
-    @app_commands.command(name="case", description="View a specific mod case")
-    @app_commands.describe(case_id="Case number")
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def case(self, interaction: discord.Interaction, case_id: int):
+    async def case(self, ctx, case_id: int):
         data = _load()
-        cases = data['cases'].get(str(interaction.guild.id), [])
+        cases = data['cases'].get(str(ctx.guild.id), [])
         c = next((x for x in cases if x['id'] == case_id), None)
         if not c:
-            return await interaction.response.send_message("Case not found.", ephemeral=True)
+            return await ctx.send("Case not found.")
         color = ACTION_COLORS.get(c['action'], 0xe74c3c)
-        await interaction.response.send_message(embed=_case_embed(c, color))
+        await ctx.send(embed=_case_embed(c, color))
 
-    @app_commands.command(name="modhistory", description="View mod history for a member")
-    @app_commands.describe(member="Member to check")
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def modhistory(self, interaction: discord.Interaction, member: discord.Member):
+    async def modhistory(self, ctx, member: discord.Member):
         data = _load()
-        cases = [c for c in data['cases'].get(str(interaction.guild.id), [])
+        cases = [c for c in data['cases'].get(str(ctx.guild.id), [])
                  if c['target_id'] == str(member.id)]
         embed = discord.Embed(title=f"Mod History — {member}", color=0x5865f2)
         embed.set_thumbnail(url=member.display_avatar.url)
@@ -253,42 +235,29 @@ class ModLog(commands.Cog):
                     name=f"{color_dot} Case #{c['id']} — {c['action'].upper()} ({c['timestamp'][:10]})",
                     value=f"By {c['mod']} • {c['reason']}", inline=False)
         embed.set_footer(text=f"Total cases: {len(cases)}")
-        await interaction.response.send_message(embed=embed)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="note", description="Add a private note to a member's record")
-    @app_commands.describe(member="Member", note="Note content")
-    @app_commands.checks.has_permissions(moderate_members=True)
-    async def note(self, interaction: discord.Interaction, member: discord.Member, note: str):
+    async def note(self, ctx, member: discord.Member, note: str):
         data = _load()
-        case = _add_case(data, interaction.guild.id, 'note', interaction.user, member, note)
-        await interaction.response.send_message(f"Note added as Case #{case['id']}.", ephemeral=True)
+        case = _add_case(data, ctx.guild.id, 'note', ctx.author, member, note)
+        await ctx.send(f"Note added as Case #{case['id']}.")
 
-    @app_commands.command(name="modlog-setup", description="Set the moderation log channel")
-    @app_commands.describe(channel="Channel for mod logs")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def modlog_setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    @commands.command(name="modlog-setup")
+    async def modlog_setup(self, ctx, channel: discord.TextChannel):
         data = _load()
-        data['config'].setdefault(str(interaction.guild.id), {})['log_channel'] = str(channel.id)
+        data['config'].setdefault(str(ctx.guild.id), {})['log_channel'] = str(channel.id)
         _save(data)
-        await interaction.response.send_message(f"Mod log channel set to {channel.mention}.")
+        await ctx.send(f"Mod log channel set to {channel.mention}.")
 
-    @app_commands.command(name="threshold-set", description="Set auto-action at X warnings")
-    @app_commands.describe(warnings="Number of warnings to trigger action",
-                           action="Action: kick, ban, timeout")
-    @app_commands.choices(action=[
-        app_commands.Choice(name="Kick", value="kick"),
-        app_commands.Choice(name="Ban", value="ban"),
-        app_commands.Choice(name="Timeout 1h", value="timeout"),
-    ])
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def threshold_set(self, interaction: discord.Interaction,
-                             warnings: int, action: app_commands.Choice[str]):
+    @commands.command(name="threshold-set")
+    async def threshold_set(self, ctx,
+                             warnings: int, action: str):
         data = _load()
-        cfg = data['config'].setdefault(str(interaction.guild.id), {})
-        cfg.setdefault('thresholds', {})[str(warnings)] = action.value
+        cfg = data['config'].setdefault(str(ctx.guild.id), {})
+        cfg.setdefault('thresholds', {})[str(warnings)] = action
         _save(data)
-        await interaction.response.send_message(
-            f"At **{warnings}** warnings → auto **{action.value}**.")
+        await ctx.send(
+            f"At **{warnings}** warnings → auto **{action}**.")
 
 
 async def setup(bot):

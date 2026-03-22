@@ -72,11 +72,10 @@ class ReactionRoles(commands.Cog):
             except Exception as e:
                 logger.warning(f"RR remove role failed: {e}")
 
-    @app_commands.command(name="rr-add", description="🎭 Add a reaction role to a message")
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def rr_add(self, interaction: discord.Interaction,
+    @commands.command(name="rr-add")
+    async def rr_add(self, ctx,
                      message_id: str, emoji: str, role: discord.Role):
-        gid = str(interaction.guild.id)
+        gid = str(ctx.guild.id)
         if gid not in self.data:
             self.data[gid] = {}
         if message_id not in self.data[gid]:
@@ -85,51 +84,47 @@ class ReactionRoles(commands.Cog):
         self._save()
         # Add the reaction to the message
         try:
-            ch = interaction.channel
+            ch = ctx.channel
             msg = await ch.fetch_message(int(message_id))
             await msg.add_reaction(emoji)
         except Exception as e:
             logger.warning(f"Could not add reaction: {e}")
-        await interaction.response.send_message(
-            f"✅ React {emoji} on message `{message_id}` → **{role.name}**", ephemeral=True)
+        await ctx.send(
+            f"✅ React {emoji} on message `{message_id}` → **{role.name}**")
 
-    @app_commands.command(name="rr-remove", description="🎭 Remove a reaction role")
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def rr_remove(self, interaction: discord.Interaction, message_id: str, emoji: str):
-        gid = str(interaction.guild.id)
+    @commands.command(name="rr-remove")
+    async def rr_remove(self, ctx, message_id: str, emoji: str):
+        gid = str(ctx.guild.id)
         removed = self.data.get(gid, {}).get(message_id, {}).pop(emoji, None)
         self._save()
         if removed:
-            await interaction.response.send_message(f"✅ Removed reaction role {emoji} from `{message_id}`", ephemeral=True)
+            await ctx.send(f"✅ Removed reaction role {emoji} from `{message_id}`")
         else:
-            await interaction.response.send_message("❌ No reaction role found for that emoji/message.", ephemeral=True)
+            await ctx.send("❌ No reaction role found for that emoji/message.")
 
-    @app_commands.command(name="rr-list", description="🎭 List all reaction roles in this server")
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def rr_list(self, interaction: discord.Interaction):
-        gid = str(interaction.guild.id)
+    @commands.command(name="rr-list")
+    async def rr_list(self, ctx):
+        gid = str(ctx.guild.id)
         entries = self.data.get(gid, {})
         if not entries:
-            return await interaction.response.send_message("No reaction roles set up.", ephemeral=True)
+            return await ctx.send("No reaction roles set up.")
         lines = []
         for mid, emojis in entries.items():
             for emoji, rid in emojis.items():
-                role = interaction.guild.get_role(int(rid))
+                role = ctx.guild.get_role(int(rid))
                 lines.append(f"Message `{mid}` • {emoji} → **{role.name if role else rid}**")
         embed = discord.Embed(title="🎭 Reaction Roles", description="\n".join(lines), color=0x7c3aed)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="rr-panel", description="🎭 Create a reaction role panel")
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def rr_panel(self, interaction: discord.Interaction,
+    @commands.command(name="rr-panel")
+    async def rr_panel(self, ctx,
                        title: str, description: str, channel: discord.TextChannel = None):
-        ch = channel or interaction.channel
+        ch = channel or ctx.channel
         embed = discord.Embed(title=title, description=description, color=0x7c3aed)
         embed.set_footer(text="React below to get your roles!")
         msg = await ch.send(embed=embed)
-        await interaction.response.send_message(
-            f"✅ Panel created in {ch.mention}!\nUse `/rr-add {msg.id} <emoji> <role>` to add roles to it.",
-            ephemeral=True)
+        await ctx.send(
+            f"✅ Panel created in {ch.mention}!\nUse `/rr-add {msg.id} <emoji> <role>` to add roles to it.")
 
 
 async def setup(bot):

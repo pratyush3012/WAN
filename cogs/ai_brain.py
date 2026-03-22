@@ -360,11 +360,11 @@ class AIBrain(commands.Cog):
 
     # ── Slash commands ────────────────────────────────────────────────────
 
-    @app_commands.command(name="ai-status", description="View AI Brain activity and auto-learn stats")
-    async def ai_status(self, interaction: discord.Interaction):
+    @commands.command(name="ai-status")
+    async def ai_status(self, ctx):
         embed = discord.Embed(title="🧠 AI Brain Status", color=0x7c3aed if GEMINI_API_KEY else 0x6b7280)
         embed.add_field(name="Gemini AI", value="✅ Active" if GEMINI_API_KEY else "❌ No API key", inline=True)
-        guild_id = str(interaction.guild.id)
+        guild_id = str(ctx.guild.id)
         embed.add_field(name="AI Moderation",
                         value="✅ On" if guild_id in self._mod_enabled else "❌ Off", inline=True)
         feedback = self.data.get("reply_feedback", {})
@@ -380,7 +380,7 @@ class AIBrain(commands.Cog):
             value="• AI Moderation\n• AI Welcome/Goodbye\n• AI Promo Messages\n• Chatbot Persona Evolution\n• Server Health Monitor\n• Self-Improvement (every 6h)",
             inline=False)
         guild_actions = [a for a in self.actions_log
-                         if a.get("guild") in (interaction.guild.name, "global")][:8]
+                         if a.get("guild") in (ctx.guild.name, "global")][:8]
         if guild_actions:
             lines = []
             for a in guild_actions:
@@ -390,12 +390,11 @@ class AIBrain(commands.Cog):
         else:
             embed.add_field(name="Recent AI Actions", value="No actions yet.", inline=False)
         embed.set_footer(text="Auto-improves every 6h • React 👍/👎 to chatbot replies to train it")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="ai-mod", description="Toggle AI auto-moderation")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def ai_mod_toggle(self, interaction: discord.Interaction):
-        guild_id = str(interaction.guild.id)
+    @commands.command(name="ai-mod")
+    async def ai_mod_toggle(self, ctx):
+        guild_id = str(ctx.guild.id)
         if guild_id in self._mod_enabled:
             self._mod_enabled.discard(guild_id)
             status, color = "disabled", discord.Color.red()
@@ -410,15 +409,14 @@ class AIBrain(commands.Cog):
                 if status == "enabled" else "AI moderation turned off."
             ),
             color=color)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="ai-suggest", description="Ask AI for server improvement suggestions")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def ai_suggest(self, interaction: discord.Interaction):
+    @commands.command(name="ai-suggest")
+    async def ai_suggest(self, ctx):
         if not GEMINI_API_KEY:
-            return await interaction.response.send_message("❌ GEMINI_API_KEY not set.", ephemeral=True)
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.guild
+            return await ctx.send("❌ GEMINI_API_KEY not set.")
+        await ctx.defer()
+        guild = ctx.guild
         stats = {}
         if hasattr(self.bot, "_get_live_stats"):
             stats = self.bot._get_live_stats(str(guild.id))
@@ -431,28 +429,26 @@ class AIBrain(commands.Cog):
         )
         result = await _gemini(prompt, max_tokens=250)
         if not result:
-            return await interaction.followup.send("❌ AI unavailable right now.", ephemeral=True)
+            return await ctx.send("❌ AI unavailable right now.")
         embed = discord.Embed(title="🧠 AI Server Suggestions", description=result, color=0x7c3aed)
         embed.set_footer(text="Powered by Gemini AI • Auto-improves every 6h")
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
-    @app_commands.command(name="ai-welcome", description="Enable AI-powered welcome messages in a channel")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def ai_welcome_setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    @commands.command(name="ai-welcome")
+    async def ai_welcome_setup(self, ctx, channel: discord.TextChannel):
         if not GEMINI_API_KEY:
-            return await interaction.response.send_message("❌ GEMINI_API_KEY not set.", ephemeral=True)
+            return await ctx.send("❌ GEMINI_API_KEY not set.")
         # Delegate to Welcome cog
         welcome_cog = self.bot.cogs.get("Welcome")
         if welcome_cog:
-            cfg = welcome_cog._guild(interaction.guild.id)
+            cfg = welcome_cog._guild(ctx.guild.id)
             cfg["welcome_channel"] = str(channel.id)
             welcome_cog._save()
-            await interaction.response.send_message(
+            await ctx.send(
                 f"✅ AI welcome enabled in {channel.mention}! "
-                f"Every new member gets a unique Gemini-generated welcome 🤖",
-                ephemeral=True)
+                f"Every new member gets a unique Gemini-generated welcome 🤖")
         else:
-            await interaction.response.send_message("❌ Welcome cog not loaded.", ephemeral=True)
+            await ctx.send("❌ Welcome cog not loaded.")
 
 
 async def setup(bot):
