@@ -65,44 +65,45 @@ class AutoResponder(commands.Cog):
                     pass
                 break  # only first match
 
-    @app_commands.command(name="ar-add", description="🤖 Add an auto-response trigger")
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def ar_add(self, interaction: discord.Interaction,
-                     trigger: str, response: str,
-                     exact_match: bool = False):
-        rules = self._guild(interaction.guild.id)
-        # Check for duplicate
+    @commands.command(name="ar-add")
+    @commands.has_permissions(manage_messages=True)
+    async def ar_add(self, ctx, trigger: str, *, response: str):
+        """Add an auto-response trigger. Usage: !ar-add trigger | response"""
+        # Support pipe separator for trigger|response
+        if "|" in trigger and not response:
+            parts = trigger.split("|", 1)
+            trigger, response = parts[0].strip(), parts[1].strip()
+        rules = self._guild(ctx.guild.id)
         if any(r['trigger'].lower() == trigger.lower() for r in rules):
-            return await interaction.response.send_message(
-                f"❌ Trigger `{trigger}` already exists. Remove it first with `/ar-remove`.", ephemeral=True)
-        rules.append({'trigger': trigger, 'response': response, 'exact': exact_match, 'enabled': True})
+            return await ctx.send(f"❌ Trigger `{trigger}` already exists.")
+        rules.append({'trigger': trigger, 'response': response, 'exact': False})
         self._save()
-        await interaction.response.send_message(
-            f"✅ Auto-response added!\n**Trigger:** `{trigger}`\n**Response:** {response}\n**Exact match:** {exact_match}",
-            ephemeral=True)
+        await ctx.send(f"✅ Added: `{trigger}` → {response[:50]}")
 
-    @app_commands.command(name="ar-remove", description="🤖 Remove an auto-response trigger")
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def ar_remove(self, interaction: discord.Interaction, trigger: str):
-        rules = self._guild(interaction.guild.id)
+    @commands.command(name="ar-remove")
+    @commands.has_permissions(manage_messages=True)
+    async def ar_remove(self, ctx, *, trigger: str):
+        """Remove an auto-response trigger"""
+        rules = self._guild(ctx.guild.id)
         before = len(rules)
-        self.data[str(interaction.guild.id)] = [r for r in rules if r['trigger'].lower() != trigger.lower()]
+        self.data[str(ctx.guild.id)] = [r for r in rules if r['trigger'].lower() != trigger.lower()]
         self._save()
-        if len(self.data[str(interaction.guild.id)]) < before:
-            await interaction.response.send_message(f"✅ Removed trigger `{trigger}`.", ephemeral=True)
+        if len(self.data[str(ctx.guild.id)]) < before:
+            await ctx.send(f"✅ Removed trigger `{trigger}`.")
         else:
-            await interaction.response.send_message(f"❌ Trigger `{trigger}` not found.", ephemeral=True)
+            await ctx.send(f"❌ Trigger `{trigger}` not found.")
 
-    @app_commands.command(name="ar-list", description="🤖 List all auto-response triggers")
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def ar_list(self, interaction: discord.Interaction):
-        rules = self._guild(interaction.guild.id)
+    @commands.command(name="ar-list")
+    @commands.has_permissions(manage_messages=True)
+    async def ar_list(self, ctx):
+        """List all auto-response triggers"""
+        rules = self._guild(ctx.guild.id)
         if not rules:
-            return await interaction.response.send_message("No auto-responses set up.", ephemeral=True)
+            return await ctx.send("No auto-responses set up.")
         lines = [f"`{r['trigger']}` → {r['response'][:50]}{'...' if len(r['response'])>50 else ''} {'(exact)' if r.get('exact') else ''}"
                  for r in rules]
         embed = discord.Embed(title="🤖 Auto Responses", description="\n".join(lines), color=0x06b6d4)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

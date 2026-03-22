@@ -606,50 +606,52 @@ class Chatbot(commands.Cog):
     async def before_silence_check(self):
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="chatbot-toggle", description="Toggle chatbot on/off for this server")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def toggle(self, interaction: discord.Interaction):
-        gd = self._guild_data(str(interaction.guild.id))
+    @commands.command(name="chatbot-toggle")
+    @commands.has_permissions(manage_guild=True)
+    async def toggle(self, ctx):
+        """Toggle chatbot on/off for this server"""
+        gd = self._guild_data(str(ctx.guild.id))
         gd["enabled"] = not gd.get("enabled", True)
         _save(self.data)
-        status = "enabled" if gd["enabled"] else "disabled"
-        await interaction.response.send_message(f"Chatbot {status} for this server.", ephemeral=True)
+        status = "enabled ✅" if gd["enabled"] else "disabled ❌"
+        await ctx.send(f"Chatbot {status} for this server.")
 
-    @app_commands.command(name="chatbot-addchannel", description="Add a dedicated chatbot channel")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def add_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        gd = self._guild_data(str(interaction.guild.id))
+    @commands.command(name="chatbot-addchannel")
+    @commands.has_permissions(manage_guild=True)
+    async def add_channel(self, ctx, channel: discord.TextChannel):
+        """Add a dedicated chatbot channel"""
+        gd = self._guild_data(str(ctx.guild.id))
         ch_id = str(channel.id)
         if ch_id not in gd["channels"]:
             gd["channels"].append(ch_id)
             _save(self.data)
-        await interaction.response.send_message(
-            f"Chatbot enabled in {channel.mention}! Replies every message + breaks silence after 5min.",
-            ephemeral=True)
+        await ctx.send(f"✅ Chatbot enabled in {channel.mention}! Replies every message + breaks silence after 5min.")
 
-    @app_commands.command(name="chatbot-removechannel", description="Remove a chatbot channel")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def remove_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        gd = self._guild_data(str(interaction.guild.id))
+    @commands.command(name="chatbot-removechannel")
+    @commands.has_permissions(manage_guild=True)
+    async def remove_channel(self, ctx, channel: discord.TextChannel):
+        """Remove a chatbot channel"""
+        gd = self._guild_data(str(ctx.guild.id))
         ch_id = str(channel.id)
         if ch_id in gd["channels"]:
             gd["channels"].remove(ch_id)
             _save(self.data)
-        await interaction.response.send_message(f"Chatbot disabled in {channel.mention}.", ephemeral=True)
+        await ctx.send(f"✅ Chatbot disabled in {channel.mention}.")
 
-    @app_commands.command(name="chatbot-list", description="List chatbot channels and status")
-    async def list_channels(self, interaction: discord.Interaction):
-        gd = self._guild_data(str(interaction.guild.id))
+    @commands.command(name="chatbot-list")
+    async def list_channels(self, ctx):
+        """List chatbot channels and status"""
+        gd = self._guild_data(str(ctx.guild.id))
         enabled = gd.get("enabled", True)
         mentions = []
         for ch_id in gd.get("channels", []):
-            ch = interaction.guild.get_channel(int(ch_id))
+            ch = ctx.guild.get_channel(int(ch_id))
             mentions.append(ch.mention if ch else f"`{ch_id}`")
-        embed = discord.Embed(title="Chatbot Status", color=0x5865f2 if enabled else 0x6b7280)
-        embed.add_field(name="Status", value="Enabled" if enabled else "Disabled", inline=True)
-        embed.add_field(name="Mode", value="Gemini AI" if GEMINI_API_KEY else "Fallback", inline=True)
+        embed = discord.Embed(title="💬 Chatbot Status", color=0x5865f2 if enabled else 0x6b7280)
+        embed.add_field(name="Status", value="✅ Enabled" if enabled else "❌ Disabled", inline=True)
+        embed.add_field(name="Mode", value="🔥 Gemini AI" if GEMINI_API_KEY else "💬 Fallback", inline=True)
         embed.add_field(name="Always-On Channels", value="\n".join(mentions) if mentions else "None set", inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):

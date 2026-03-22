@@ -172,21 +172,23 @@ class Leveling(commands.Cog):
         embed.description = "\n".join(lines) if lines else "No data yet."
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="set-level-role", description="⭐ Assign a role when members reach a level")
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def set_level_role(self, interaction: discord.Interaction, level: int, role: discord.Role):
-        g = self._guild(interaction.guild.id)
+    @commands.command(name="set-level-role")
+    @commands.has_permissions(manage_roles=True)
+    async def set_level_role(self, ctx, level: int, role: discord.Role):
+        """Assign a role when members reach a level"""
+        g = self._guild(ctx.guild.id)
         g['config']['level_roles'][str(level)] = role.id
         self._save()
-        await interaction.response.send_message(f"✅ Members will get **{role.name}** at level **{level}**.", ephemeral=True)
+        await ctx.send(f"✅ Members will get **{role.name}** at level **{level}**.")
 
-    @app_commands.command(name="xp-channel", description="⭐ Set channel for level-up announcements")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def xp_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        g = self._guild(interaction.guild.id)
+    @commands.command(name="xp-channel")
+    @commands.has_permissions(manage_guild=True)
+    async def xp_channel(self, ctx, channel: discord.TextChannel):
+        """Set channel for level-up announcements"""
+        g = self._guild(ctx.guild.id)
         g['config']['announce_channel'] = channel.id
         self._save()
-        await interaction.response.send_message(f"✅ Level-up announcements → {channel.mention}", ephemeral=True)
+        await ctx.send(f"✅ Level-up announcements → {channel.mention}")
 
 
 async def setup(bot):
