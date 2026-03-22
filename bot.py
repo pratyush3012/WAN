@@ -91,10 +91,8 @@ class GamingBot(commands.Bot):
             'cogs.polls',
             'cogs.afk',
             'cogs.reminders',
-            'cogs.info',
             'cogs.modlog',
             'cogs.scheduler',
-            'cogs.highlights',
             'cogs.antiraid',
             'cogs.webdashboard',
             'cogs.dashboard_custom',
@@ -107,10 +105,10 @@ class GamingBot(commands.Bot):
             'cogs.starboard',
             'cogs.timedactions',
             'cogs.embedbuilder',
-            'cogs.dashboard',
             'cogs.botanalyzer',
             'cogs.ai_brain',
             'cogs.ai_coder',
+            # NOTE: cogs.dashboard and cogs.highlights removed to stay under 100 slash command limit
         ]
 
         self.cog_errors = {}
