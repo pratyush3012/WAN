@@ -61,6 +61,21 @@ class ModAction(Base):
         Index('idx_user_actions', 'user_id', 'guild_id'),
     )
 
+
+class GuildSettings(Base):
+    """Generic key-value settings store — persists all cog settings across deploys."""
+    __tablename__ = 'guild_settings'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guild_id = Column(BigInteger, nullable=False)
+    key = Column(String, nullable=False)
+    value = Column(JSON, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint('guild_id', 'key', name='uix_guild_key'),
+        Index('idx_guild_settings', 'guild_id', 'key'),
+    )
+
 class Database:
     _instance = None
     

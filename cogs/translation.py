@@ -4,7 +4,6 @@ React with 🌐 to translate any message to English instantly.
 Use /translate for custom language.
 """
 import discord
-from discord import app_commands
 from discord.ext import commands
 from deep_translator import GoogleTranslator
 import asyncio
@@ -147,8 +146,8 @@ class Translation(commands.Cog):
 
     # ── SLASH COMMANDS ────────────────────────────────────────────────────
 
-    @app_commands.command(name="translate", description="Translate text to any language")
-    async def translate(self, ctx, text: str, language: str = "en"):
+    @commands.command(name="translate")
+    async def translate(self, ctx, language: str = "en", *, text: str):
         """Translate text. Language = language code e.g. en, es, fr, de, ja"""
         try:
             loop = asyncio.get_event_loop()

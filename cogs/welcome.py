@@ -1,18 +1,17 @@
 """
 WAN Bot - Welcome / Goodbye / Promotion System
-- Auto-detects welcome channel if none configured
+- Settings stored in DB (persistent across Render redeploys)
 - Gemini AI generates unique welcome/goodbye messages
 - Gender-aware fallback pool (20+ messages each)
 - Promotion announcements on role gain
 """
 import discord
-from discord import app_commands
 from discord.ext import commands
 import json, os, logging, random, asyncio
 import urllib.request
+from utils.settings import get_setting, set_setting
 
 logger = logging.getLogger("discord_bot.welcome")
-DATA_FILE = "welcome_data.json"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
@@ -175,7 +174,8 @@ def _parse_color(raw, default=0x57f287):
     except Exception:
         return default
 
-def _auto_channel(guild, keywords=("welcome","general","lobby","chat","main","arrival")):
+def _auto_channel(guild, keywords=("lounge","welcome","general","lobby","chat","main","arrival")):
+    """Find best channel — prioritises 'lounge' and 'welcome' first."""
     for kw in keywords:
         for ch in guild.text_channels:
             if kw in ch.name.lower():
@@ -192,29 +192,22 @@ def _auto_channel(guild, keywords=("welcome","general","lobby","chat","main","ar
 class Welcome(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.data = self._load()
+        # In-memory cache per guild to avoid DB round-trips on every join
+        self._cache: dict = {}
 
-    def _load(self):
-        try:
-            if os.path.exists(DATA_FILE):
-                with open(DATA_FILE) as f:
-                    return json.load(f)
-        except Exception:
-            pass
-        return {}
+    async def _get_cfg(self, guild_id: int) -> dict:
+        """Load guild welcome config from DB (with in-memory cache)."""
+        gid = str(guild_id)
+        if gid not in self._cache:
+            stored = await get_setting(guild_id, "welcome_config", {})
+            self._cache[gid] = stored if isinstance(stored, dict) else {}
+        return self._cache[gid]
 
-    def _save(self):
-        try:
-            with open(DATA_FILE, "w") as f:
-                json.dump(self.data, f, indent=2)
-        except Exception as e:
-            logger.error(f"Welcome save error: {e}")
-
-    def _guild(self, gid):
-        key = str(gid)
-        if key not in self.data:
-            self.data[key] = {}
-        return self.data[key]
+    async def _save_cfg(self, guild_id: int, cfg: dict):
+        """Persist guild welcome config to DB and update cache."""
+        gid = str(guild_id)
+        self._cache[gid] = cfg
+        await set_setting(guild_id, "welcome_config", cfg)
 
     async def _ai_welcome(self, member, gender):
         gender_ctx = {
@@ -253,17 +246,23 @@ class Welcome(commands.Cog):
             await self._send_welcome(member)
 
     async def _send_welcome(self, member):
-        cfg = self._guild(member.guild.id)
+        cfg = await self._get_cfg(member.guild.id)
         gender = _detect_gender(member)
 
         ch_id = cfg.get("welcome_channel")
         if ch_id:
             ch = member.guild.get_channel(int(ch_id))
+            # If saved channel no longer exists, fall back to auto-detect
+            if not ch:
+                ch = _auto_channel(member.guild)
+                if ch:
+                    cfg["welcome_channel"] = str(ch.id)
+                    await self._save_cfg(member.guild.id, cfg)
         else:
             ch = _auto_channel(member.guild)
             if ch:
                 cfg["welcome_channel"] = str(ch.id)
-                self._save()
+                await self._save_cfg(member.guild.id, cfg)
                 logger.info(f"Auto-detected welcome channel: #{ch.name} in {member.guild.name}")
 
         if not ch:
@@ -333,7 +332,7 @@ class Welcome(commands.Cog):
                 pass
 
     async def _send_goodbye(self, member):
-        cfg = self._guild(member.guild.id)
+        cfg = await self._get_cfg(member.guild.id)
 
         ch_id = cfg.get("goodbye_channel") or cfg.get("welcome_channel")
         if ch_id:
@@ -347,7 +346,6 @@ class Welcome(commands.Cog):
         if cfg.get("goodbye_message"):
             desc = _fill(cfg["goodbye_message"], member)
         else:
-            # Try AI Coder generated goodbye messages first
             ai_coder_msg = None
             try:
                 ai_coder = self.bot.cogs.get("AICoder")
@@ -396,7 +394,7 @@ class Welcome(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
-        cfg = self._guild(after.guild.id)
+        cfg = await self._get_cfg(after.guild.id)
         promo_ch_id = cfg.get("promo_channel")
         watched_raw = cfg.get("promo_roles", "")
         if not promo_ch_id or not watched_raw:
@@ -436,10 +434,10 @@ class Welcome(commands.Cog):
     @commands.command(name="welcome-set")
     async def welcome_set(self, ctx, channel: discord.TextChannel,
                           message: str = "", title: str = "", color: str = "57f287"):
-        cfg = self._guild(ctx.guild.id)
+        cfg = await self._get_cfg(ctx.guild.id)
         cfg.update({"welcome_channel": str(channel.id), "welcome_message": message,
                     "welcome_title": title, "welcome_color": color})
-        self._save()
+        await self._save_cfg(ctx.guild.id, cfg)
         note = "AI-generated messages enabled." if not message else "Custom message saved."
         await ctx.send(
             f"\u2705 Welcome \u2192 {channel.mention}\n{note}\n"
@@ -448,40 +446,38 @@ class Welcome(commands.Cog):
     @commands.command(name="goodbye-set")
     async def goodbye_set(self, ctx, channel: discord.TextChannel,
                           message: str = "", title: str = ""):
-        cfg = self._guild(ctx.guild.id)
+        cfg = await self._get_cfg(ctx.guild.id)
         cfg.update({"goodbye_channel": str(channel.id), "goodbye_message": message, "goodbye_title": title})
-        self._save()
+        await self._save_cfg(ctx.guild.id, cfg)
         await ctx.send(f"\u2705 Goodbye \u2192 {channel.mention}")
 
     @commands.command(name="welcome-dm")
     async def welcome_dm(self, ctx, message: str, enabled: bool = True):
-        cfg = self._guild(ctx.guild.id)
+        cfg = await self._get_cfg(ctx.guild.id)
         cfg["dm_enabled"] = enabled
         cfg["dm_message"] = message
-        self._save()
+        await self._save_cfg(ctx.guild.id, cfg)
         status = "enabled" if enabled else "disabled"
-        await ctx.send(
-            f"\u2705 Join DM {status}.\nMessage: {message[:100]}")
+        await ctx.send(f"\u2705 Join DM {status}.\nMessage: {message[:100]}")
 
     @commands.command(name="promo-set")
     async def promo_set(self, ctx, channel: discord.TextChannel,
                         roles: str, message: str = ""):
-        cfg = self._guild(ctx.guild.id)
+        cfg = await self._get_cfg(ctx.guild.id)
         cfg.update({"promo_channel": str(channel.id), "promo_roles": roles, "promo_message": message})
-        self._save()
-        await ctx.send(
-            f"\u2705 Promo announcements \u2192 {channel.mention}\nWatched roles: `{roles}`")
+        await self._save_cfg(ctx.guild.id, cfg)
+        await ctx.send(f"\u2705 Promo announcements \u2192 {channel.mention}\nWatched roles: `{roles}`")
 
     @commands.command(name="autorole")
     async def autorole(self, ctx, role: discord.Role = None):
-        cfg = self._guild(ctx.guild.id)
+        cfg = await self._get_cfg(ctx.guild.id)
         if role:
             cfg["autorole"] = str(role.id)
-            self._save()
+            await self._save_cfg(ctx.guild.id, cfg)
             await ctx.send(f"\u2705 New members will get **{role.name}** on join.")
         else:
             cfg.pop("autorole", None)
-            self._save()
+            await self._save_cfg(ctx.guild.id, cfg)
             await ctx.send("\u2705 Auto-role disabled.")
 
     @commands.command(name="welcome-test")
@@ -496,7 +492,7 @@ class Welcome(commands.Cog):
 
     @commands.command(name="welcome-status")
     async def welcome_status(self, ctx):
-        cfg = self._guild(ctx.guild.id)
+        cfg = await self._get_cfg(ctx.guild.id)
         embed = discord.Embed(title="Welcome System Status", color=0x57f287)
         wch = ctx.guild.get_channel(int(cfg["welcome_channel"])) if cfg.get("welcome_channel") else None
         gch = ctx.guild.get_channel(int(cfg["goodbye_channel"])) if cfg.get("goodbye_channel") else None

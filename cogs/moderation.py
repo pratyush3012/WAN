@@ -238,64 +238,6 @@ class Moderation(commands.Cog):
                 ephemeral=True
             )
     
-    @app_commands.command(name="lock", description="Lock a channel")
-    @is_mod()
-    async def lock(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
-        channel = channel or interaction.channel
-        
-        # Check if bot has permission
-        if not channel.permissions_for(interaction.guild.me).manage_permissions:
-            return await interaction.response.send_message(
-                embed=EmbedFactory.error("Missing Permission", f"I don't have permission to manage permissions in {channel.mention}"),
-                ephemeral=True
-            )
-        
-        try:
-            await channel.set_permissions(interaction.guild.default_role, send_messages=False)
-            await interaction.response.send_message(
-                embed=EmbedFactory.success("Channel Locked", f"{channel.mention} has been locked.")
-            )
-        except discord.Forbidden:
-            await interaction.response.send_message(
-                embed=EmbedFactory.error("Error", f"Failed to lock {channel.mention} - insufficient permissions"),
-                ephemeral=True
-            )
-        except Exception as e:
-            logger.error(f"Error locking channel {channel.id}: {e}")
-            await interaction.response.send_message(
-                embed=EmbedFactory.error("Error", "An error occurred while locking the channel"),
-                ephemeral=True
-            )
-    
-    @app_commands.command(name="unlock", description="Unlock a channel")
-    @is_mod()
-    async def unlock(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
-        channel = channel or interaction.channel
-        
-        # Check if bot has permission
-        if not channel.permissions_for(interaction.guild.me).manage_permissions:
-            return await interaction.response.send_message(
-                embed=EmbedFactory.error("Missing Permission", f"I don't have permission to manage permissions in {channel.mention}"),
-                ephemeral=True
-            )
-        
-        try:
-            await channel.set_permissions(interaction.guild.default_role, send_messages=None)
-            await interaction.response.send_message(
-                embed=EmbedFactory.success("Channel Unlocked", f"{channel.mention} has been unlocked.")
-            )
-        except discord.Forbidden:
-            await interaction.response.send_message(
-                embed=EmbedFactory.error("Error", f"Failed to unlock {channel.mention} - insufficient permissions"),
-                ephemeral=True
-            )
-        except Exception as e:
-            logger.error(f"Error unlocking channel {channel.id}: {e}")
-            await interaction.response.send_message(
-                embed=EmbedFactory.error("Error", "An error occurred while unlocking the channel"),
-                ephemeral=True
-            )
-    
     @app_commands.command(name="purge", description="Delete multiple messages")
     @is_mod()
     async def purge(self, interaction: discord.Interaction, amount: int):
@@ -304,29 +246,48 @@ class Moderation(commands.Cog):
                 embed=EmbedFactory.error("Limit Exceeded", "Cannot delete more than 100 messages at once"),
                 ephemeral=True
             )
-        
         await interaction.response.defer(ephemeral=True)
         deleted = await interaction.channel.purge(limit=amount)
         await interaction.followup.send(
             embed=EmbedFactory.success("Messages Purged", f"Deleted {len(deleted)} messages"),
             ephemeral=True
         )
-    
-    @app_commands.command(name="lockdown", description="Lock all channels in the server")
-    @is_admin()
-    async def lockdown(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+
+    @commands.command(name="lock")
+    @commands.has_permissions(manage_channels=True)
+    async def lock(self, ctx, channel: discord.TextChannel = None):
+        channel = channel or ctx.channel
+        if not channel.permissions_for(ctx.guild.me).manage_permissions:
+            return await ctx.send(f"❌ I don't have permission to manage permissions in {channel.mention}")
+        try:
+            await channel.set_permissions(ctx.guild.default_role, send_messages=False)
+            await ctx.send(f"🔒 {channel.mention} has been locked.")
+        except discord.Forbidden:
+            await ctx.send(f"❌ Failed to lock {channel.mention}")
+
+    @commands.command(name="unlock")
+    @commands.has_permissions(manage_channels=True)
+    async def unlock(self, ctx, channel: discord.TextChannel = None):
+        channel = channel or ctx.channel
+        if not channel.permissions_for(ctx.guild.me).manage_permissions:
+            return await ctx.send(f"❌ I don't have permission to manage permissions in {channel.mention}")
+        try:
+            await channel.set_permissions(ctx.guild.default_role, send_messages=None)
+            await ctx.send(f"🔓 {channel.mention} has been unlocked.")
+        except discord.Forbidden:
+            await ctx.send(f"❌ Failed to unlock {channel.mention}")
+
+    @commands.command(name="lockdown")
+    @commands.has_permissions(administrator=True)
+    async def lockdown(self, ctx):
         locked = 0
-        for channel in interaction.guild.text_channels:
+        for channel in ctx.guild.text_channels:
             try:
-                await channel.set_permissions(interaction.guild.default_role, send_messages=False)
+                await channel.set_permissions(ctx.guild.default_role, send_messages=False)
                 locked += 1
-            except:
+            except Exception:
                 pass
-        
-        await interaction.followup.send(
-            embed=EmbedFactory.warning("Server Lockdown", f"🔒 Locked {locked} channels. Server is in lockdown mode.")
-        )
+        await ctx.send(f"🔒 Server lockdown active — locked {locked} channels.")
     
     @commands.Cog.listener()
     async def on_message(self, message):

@@ -2264,11 +2264,15 @@ def save_welcome_config(server_id):
             return jsonify({'error': 'Welcome cog not loaded'}), 503
 
         if request.method == 'GET':
-            cfg = welcome_cog._guild(int(server_id))
+            future = asyncio.run_coroutine_threadsafe(
+                welcome_cog._get_cfg(int(server_id)), bot_instance.loop)
+            cfg = future.result(timeout=5)
             return jsonify(cfg)
 
         data = request.json
-        cfg = welcome_cog._guild(int(server_id))
+        future = asyncio.run_coroutine_threadsafe(
+            welcome_cog._get_cfg(int(server_id)), bot_instance.loop)
+        cfg = future.result(timeout=5)
         # Normalize incoming values
         for k, v in data.items():
             if v is None or v == '':
@@ -2284,7 +2288,11 @@ def save_welcome_config(server_id):
                 cfg[k] = '#' + s.lower()
             else:
                 cfg[k] = v
-        welcome_cog._save()
+        # Invalidate in-memory cache so next read gets fresh data
+        welcome_cog._cache.pop(str(server_id), None)
+        save_future = asyncio.run_coroutine_threadsafe(
+            welcome_cog._save_cfg(int(server_id), cfg), bot_instance.loop)
+        save_future.result(timeout=5)
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"Welcome config error: {e}")
@@ -2311,7 +2319,9 @@ def test_welcome_message(server_id):
         event_map = {'join': 'welcome', 'leave': 'goodbye'}
         event = event_map.get(msg_type, 'welcome')
 
-        cfg = welcome_cog._guild(int(server_id))
+        cfg_future = asyncio.run_coroutine_threadsafe(
+            welcome_cog._get_cfg(int(server_id)), bot_instance.loop)
+        cfg = cfg_future.result(timeout=5)
         ch_id = cfg.get(f'{event}_channel')
         if not ch_id:
             return jsonify({'error': f'No {event} channel set — save your config first'}), 400
@@ -2374,13 +2384,13 @@ def save_verification(server_id):
                 # Store config in welcome cog if available
                 welcome_cog = bot_instance.get_cog('Welcome')
                 if welcome_cog:
-                    cfg = welcome_cog._guild(int(server_id))
+                    cfg = await welcome_cog._get_cfg(int(server_id))
                     cfg['verify_message_id'] = str(msg.id)
                     cfg['verify_role_id'] = str(role_id)
                     cfg['verify_channel_id'] = str(channel_id)
                     if data.get('unverify_role'):
                         cfg['unverify_role_id'] = str(data['unverify_role'])
-                    welcome_cog._save()
+                    await welcome_cog._save_cfg(int(server_id), cfg)
                 return {'success': True, 'message_id': str(msg.id)}
 
             elif method == 'button':
@@ -2410,12 +2420,12 @@ def save_verification(server_id):
                 # Store Q&A in welcome cog
                 welcome_cog = bot_instance.get_cog('Welcome')
                 if welcome_cog:
-                    cfg = welcome_cog._guild(int(server_id))
+                    cfg = await welcome_cog._get_cfg(int(server_id))
                     cfg['verify_question'] = question
                     cfg['verify_answer'] = answer
                     cfg['verify_role_id'] = str(role_id)
                     cfg['verify_channel_id'] = str(channel_id)
-                    welcome_cog._save()
+                    await welcome_cog._save_cfg(int(server_id), cfg)
                 return {'success': True}
 
             return {'error': 'Unknown method'}

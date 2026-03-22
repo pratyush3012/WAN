@@ -5,6 +5,10 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
     healthCheckPath: /api/health
+    disk:
+      name: bot-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: DISCORD_TOKEN
         sync: false
@@ -24,3 +28,7 @@ services:
         value: "AIzaSyCk5yN4vaCdd99e1m0uIpgJDcKe33X-Mcs"
       - key: PYTHON_VERSION
         value: "3.11.0"
+      - key: DATA_DIR
+        value: "/data"
+      - key: DATABASE_URL
+        value: "sqlite+aiosqlite:///data/bot.db"
