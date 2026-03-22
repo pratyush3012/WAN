@@ -149,6 +149,8 @@ class AICoder(commands.Cog):
             await asyncio.sleep(8)
             await self._improve_moderation_messages()
             await asyncio.sleep(8)
+            await self._improve_witty_comebacks()
+            await asyncio.sleep(8)
             await self._generate_feature_suggestions()
         except Exception as e:
             logger.error(f"AI Coder daily cycle error: {e}")
@@ -328,6 +330,13 @@ class AICoder(commands.Cog):
                         _save_log(self.log)
                         self._record("chatbot", "new_fallbacks",
                                      f"Generated {len(new_replies)} new {gender} fallback replies")
+                        # Push live into Chatbot cog pools
+                        chatbot_cog = self.bot.cogs.get("Chatbot")
+                        if chatbot_cog and hasattr(chatbot_cog, "inject_fallback_pool"):
+                            # Map gender key to lang pools (inject into all lang variants)
+                            g = "unknown" if gender == "neutral" else gender
+                            for lang in ("english", "hinglish", "hindi"):
+                                chatbot_cog.inject_fallback_pool(lang, g, new_replies)
             except Exception as e:
                 logger.warning(f"AI Coder chatbot fallback parse error ({gender}): {e}")
             await asyncio.sleep(5)
@@ -414,6 +423,43 @@ class AICoder(commands.Cog):
             "generated": {k: v.get("updated") for k, v in generated.items()},
         }
 
+    async def _improve_witty_comebacks(self):
+        """Generate new trigger→comeback mappings and push them live into Chatbot cog."""
+        prompt = (
+            "Generate 15 new witty savage Discord chatbot comebacks for an Indian server.\n"
+            "Style: Hinglish/English mix, savage, funny, unhinged — like 'chup kr bey kutte'\n"
+            "Rules:\n"
+            "- Each comeback 1 sentence, use emojis\n"
+            "- Mix Hindi/Hinglish/English\n"
+            "- Be savage but not hateful\n"
+            "- Pair each with a trigger word/phrase\n\n"
+            "Return as JSON object: {\"trigger_word\": [\"comeback1\", \"comeback2\"], ...}\n"
+            "Example: {\"teri maa\": [\"bhai seedha attack 💀\", \"creative insult 😂\"]}"
+        )
+        result = await _gemini(prompt, max_tokens=600)
+        if not result:
+            return
+        try:
+            import re
+            match = re.search(r'\{.*\}', result, re.DOTALL)
+            if match:
+                new_comebacks = json.loads(match.group())
+                if isinstance(new_comebacks, dict) and len(new_comebacks) >= 3:
+                    self.log.setdefault("generated", {})["witty_comebacks"] = {
+                        "comebacks": new_comebacks,
+                        "updated": datetime.now(timezone.utc).isoformat()
+                    }
+                    _save_log(self.log)
+                    self._record("chatbot", "witty_comebacks",
+                                 f"Generated {len(new_comebacks)} new witty comeback triggers")
+                    # Push live into Chatbot cog
+                    chatbot_cog = self.bot.cogs.get("Chatbot")
+                    if chatbot_cog and hasattr(chatbot_cog, "inject_witty_comebacks"):
+                        chatbot_cog.inject_witty_comebacks(new_comebacks)
+                    logger.info(f"AI Coder: generated {len(new_comebacks)} new witty comeback triggers")
+        except Exception as e:
+            logger.warning(f"AI Coder witty comebacks parse error: {e}")
+
     def get_generated(self, key: str) -> list:
         """Get generated content for a specific feature."""
         generated = self.log.get("generated", {})
@@ -445,6 +491,8 @@ class AICoder(commands.Cog):
             await self._improve_ticket_responses()
             await asyncio.sleep(5)
             await self._improve_moderation_messages()
+            await asyncio.sleep(5)
+            await self._improve_witty_comebacks()
             await asyncio.sleep(5)
             await self._generate_feature_suggestions()
         except Exception as e:

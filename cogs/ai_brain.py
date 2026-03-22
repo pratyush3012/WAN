@@ -249,7 +249,7 @@ class AIBrain(commands.Cog):
 
     # ── Self-improvement + Auto-learn (every 6h) ──────────────────────────
 
-    @tasks.loop(hours=6)
+    @tasks.loop(hours=2)
     async def self_improve_task(self):
         """Every 6h: improve personas, analyze servers, suggest improvements."""
         await self.bot.wait_until_ready()
@@ -275,7 +275,7 @@ class AIBrain(commands.Cog):
             self.data["learned_personas"] = {}
         for gender in ("female", "male", "unknown"):
             fb_list = feedback.get(gender, [])
-            if len(fb_list) < 5:
+            if len(fb_list) < 2:
                 continue
             good = [r["reply"] for r in fb_list if r["good"] > r["bad"]][:10]
             bad = [r["reply"] for r in fb_list if r["bad"] > r["good"]][:5]
@@ -290,14 +290,21 @@ class AIBrain(commands.Cog):
                 f"Replies users LOVED (positive reactions):\n{good_str}\n"
                 + (f"\nReplies users HATED (negative reactions):\n{bad_str}\n" if bad_str else "")
                 + "Rewrite the persona to be MORE like the loved examples. "
-                "Keep it under 4 sentences. Keep the unhinged/flirty/chaotic core. "
-                f"Gender: {gender}. Return ONLY the new persona instruction."
+                "Keep it under 4 sentences. Keep the unhinged/flirty/chaotic/savage core. "
+                "Make it MORE extreme, MORE dirty, MORE funny than before. "
+                f"Gender: {gender}. Return ONLY the new persona instruction, no explanation."
             )
             new_persona = await _gemini(prompt, max_tokens=200, temperature=0.8)
             if new_persona and len(new_persona) > 50:
                 self.data["learned_personas"][f"persona_{gender}"] = new_persona
                 self._log_action("auto_improve", "global",
                                  f"Persona evolved for {gender} ({len(good)} good replies)")
+                # Push live into DEFAULT_PERSONA so chatbot picks it up immediately
+                try:
+                    from cogs.ai_brain import DEFAULT_PERSONA
+                    DEFAULT_PERSONA[gender] = new_persona
+                except Exception:
+                    pass
             await asyncio.sleep(5)
         _save(self.data)
 
