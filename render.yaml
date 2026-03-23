@@ -32,3 +32,7 @@ services:
         value: "/data"
       - key: DATABASE_URL
         value: "sqlite+aiosqlite:///data/bot.db"
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false

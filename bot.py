@@ -72,6 +72,7 @@ class GamingBot(commands.Bot):
 
         # All cogs — overflow cogs now use prefix commands so we stay under 100 slash commands
         all_cogs = [
+            'cogs.music',
             'cogs.admin',
             'cogs.moderation',
             'cogs.utility',
