@@ -80,7 +80,6 @@ class GamingBot(commands.Bot):
             'cogs.automod',
             'cogs.autoresponder',
             'cogs.welcome',
-            'cogs.chatbot',
             'cogs.reactionroles',
             'cogs.leveling',
             'cogs.tickets',

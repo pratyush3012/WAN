@@ -211,32 +211,51 @@ class Welcome(commands.Cog):
 
     async def _ai_welcome(self, member, gender):
         gender_ctx = {
-            "female": "She is a girl. Be warm, flirty, welcoming. Call her queen/gorgeous.",
-            "male": "He is a guy. Be hype, bro energy, welcoming. Call him legend/bro.",
-            "unknown": "Gender unknown. Be warm and welcoming to everyone.",
+            "female": (
+                "She is a girl. Be warm, flirty, and welcoming. "
+                "Call her queen/gorgeous/jaan. Mix in a short Urdu/Hindi shayari line. "
+                "Be unhinged and fun, not boring."
+            ),
+            "male": (
+                "He is a guy. Be hype, bro energy, welcoming. "
+                "Call him legend/bhai/bro. Mix in a short Hindi/Urdu shayari or desi phrase. "
+                "Be energetic and fun."
+            ),
+            "unknown": "Be warm, welcoming, and fun. Mix in a short shayari line.",
         }.get(gender, "Be warm and welcoming.")
+
         prompt = (
-            f"Write a short Discord welcome message for a new member.\n"
+            f"Write a short Discord welcome message for a new member joining a server.\n"
             f"Member name: {member.display_name}\n"
             f"Server name: {member.guild.name}\n"
             f"Member count: {member.guild.member_count}\n"
-            f"{gender_ctx}\n"
-            f"Rules: 1-2 sentences MAX. Use emojis. Be fun and hype. "
-            f"Mention their name. Do NOT use markdown headers. "
-            f"Make it feel personal and exciting, not generic."
+            f"Personality: {gender_ctx}\n\n"
+            f"Rules:\n"
+            f"- 2-3 sentences MAX\n"
+            f"- Use 2-3 relevant emojis\n"
+            f"- Mention their name with @mention placeholder {{user}}\n"
+            f"- Include one short shayari or desi phrase (Hindi/Urdu romanized)\n"
+            f"- Do NOT use markdown headers or asterisks for bold\n"
+            f"- Make it feel personal, exciting, and unique — not generic\n"
+            f"- End with a warm invitation to the server"
         )
-        return await _gemini(prompt, max_tokens=100)
+        return await _gemini(prompt, max_tokens=150)
 
     async def _ai_goodbye(self, member):
         prompt = (
             f"Write a short Discord goodbye message for a member who just left.\n"
             f"Member name: {member.display_name}\n"
             f"Server name: {member.guild.name}\n"
-            f"Remaining members: {member.guild.member_count}\n"
-            f"Rules: 1-2 sentences MAX. Use emojis. Be warm but a little sad. "
-            f"Mention their name. Make it feel genuine."
+            f"Remaining members: {member.guild.member_count}\n\n"
+            f"Rules:\n"
+            f"- 2 sentences MAX\n"
+            f"- Use 1-2 emojis\n"
+            f"- Mention their name\n"
+            f"- Include a short sad/nostalgic shayari line (Hindi/Urdu romanized)\n"
+            f"- Be warm but a little sad — like saying bye to a friend\n"
+            f"- Do NOT be generic or robotic"
         )
-        return await _gemini(prompt, max_tokens=80)
+        return await _gemini(prompt, max_tokens=100)
 
     async def _send_embed(self, member, cfg, event: str):
         """Compatibility shim called by the dashboard test button."""
