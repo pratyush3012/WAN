@@ -158,7 +158,8 @@ class Moderation(commands.Cog):
             )
     
     @app_commands.command(name="unban", description="Unban a user from the server")
-    @is_mod()
+    @app_commands.describe(user_id="User ID to unban", reason="Reason for unban")
+    @app_commands.checks.has_permissions(ban_members=True)
     async def unban(self, interaction: discord.Interaction, user_id: str, reason: str = "No reason provided"):
         try:
             user = await self.bot.fetch_user(int(user_id))
@@ -166,9 +167,25 @@ class Moderation(commands.Cog):
             await interaction.response.send_message(
                 embed=EmbedFactory.success("User Unbanned", f"{user.mention} has been unbanned.")
             )
-        except:
+        except ValueError:
+            await interaction.response.send_message(
+                embed=EmbedFactory.error("Error", "Invalid user ID — must be a number"),
+                ephemeral=True
+            )
+        except discord.NotFound:
             await interaction.response.send_message(
                 embed=EmbedFactory.error("Error", "User not found or not banned"),
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                embed=EmbedFactory.error("Error", "I don't have permission to unban members"),
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Unban error for {user_id}: {e}")
+            await interaction.response.send_message(
+                embed=EmbedFactory.error("Error", "An error occurred while unbanning"),
                 ephemeral=True
             )
     

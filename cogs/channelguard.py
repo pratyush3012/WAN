@@ -121,7 +121,8 @@ def _load():
     if os.path.exists(GUARD_FILE):
         try:
             with open(GUARD_FILE) as f: return json.load(f)
-        except: pass
+        except Exception:
+                pass
     return {}
 
 
@@ -222,13 +223,15 @@ class ChannelGuard(commands.Cog):
         if reason:
             try:
                 await message.delete()
-            except: pass
+            except Exception:
+                pass
             try:
                 notice = await message.channel.send(
                     f'🚫 {message.author.mention} — {reason}',
                     delete_after=8
                 )
-            except: pass
+            except Exception:
+                pass
             # Log it
             log_ch_id = guild_cfg.get('log_channel')
             if log_ch_id:
@@ -245,7 +248,8 @@ class ChannelGuard(commands.Cog):
                     embed.add_field(name='Message', value=message.content[:300] or '[no text]', inline=False)
                     try:
                         await log_ch.send(embed=embed)
-                    except: pass
+                    except Exception as e:
+                        logger.debug(f"Channelguard log error: {e}")
 
     # ── Commands ──────────────────────────────────────────────────────────────
 

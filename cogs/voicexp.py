@@ -139,7 +139,7 @@ class VoiceXP(commands.Cog):
         units = {'m': 60, 'h': 3600, 'd': 86400}
         try:
             secs = int(duration[:-1]) * units[duration[-1].lower()]
-        except:
+        except (ValueError, KeyError):
             return await ctx.send('Invalid duration. Use e.g. 1h, 2h, 1d')
         expires = datetime.now(timezone.utc) + timedelta(seconds=secs)
         event = _load_event()

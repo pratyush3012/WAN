@@ -101,7 +101,8 @@ def _load():
     if os.path.exists(SMARTMOD_FILE):
         try:
             with open(SMARTMOD_FILE) as f: return json.load(f)
-        except: pass
+        except Exception as e:
+                logger.debug(f"SmartMod error: {e}")
     return {}
 
 def _save(d):
@@ -229,7 +230,8 @@ class OwnerAppealView(discord.ui.View):
                     color=0x10b981
                 )
                 await user.send(embed=embed)
-            except: pass
+            except Exception as e:
+                logger.debug(f"Could not DM user for appeal approval: {e}")
             await interaction.followup.send(f'✅ Appeal approved — timeout removed for <@{self.user_id}>.', ephemeral=True)
         else:
             # Notify user of denial
@@ -244,7 +246,8 @@ class OwnerAppealView(discord.ui.View):
                     color=0xe74c3c
                 )
                 await user.send(embed=embed)
-            except: pass
+            except Exception as e:
+                logger.debug(f"Could not DM user for appeal denial: {e}")
             await interaction.followup.send(f'❌ Appeal denied — punishment kept for <@{self.user_id}>.', ephemeral=True)
 
     @discord.ui.button(label='✅ Approve — Remove Punishment', style=discord.ButtonStyle.success)
@@ -280,7 +283,8 @@ class SmartMod(commands.Cog):
         if ch:
             try:
                 await ch.send(embed=embed)
-            except: pass
+            except Exception as e:
+                logger.debug(f"SmartMod error: {e}")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -318,7 +322,8 @@ class SmartMod(commands.Cog):
         # Delete message
         try:
             await message.delete()
-        except: pass
+        except Exception as e:
+                logger.debug(f"SmartMod error: {e}")
 
         action, duration, label = ESCALATION.get(strike, ('ban', None, '🔨 Banned'))
 
@@ -343,7 +348,8 @@ class SmartMod(commands.Cog):
 
         try:
             await message.channel.send(embed=pub_embed, delete_after=20)
-        except: pass
+        except Exception as e:
+                logger.debug(f"SmartMod error: {e}")
 
         # ── DM the user with full details + appeal button ─────────────────────
         owner_id = message.guild.owner_id

@@ -17,7 +17,7 @@ def _parse_duration(s: str) -> int | None:
     """Parse '10m', '2h', '7d' etc into seconds."""
     try:
         return int(s[:-1]) * UNITS[s[-1].lower()]
-    except:
+    except (ValueError, KeyError, IndexError):
         return None
 
 
@@ -25,7 +25,8 @@ def _load():
     if os.path.exists(TA_FILE):
         try:
             with open(TA_FILE) as f: return json.load(f)
-        except: pass
+        except Exception as e:
+            logger.warning(f"timedactions load error: {e}")
     return {'timed_roles': [], 'timed_mutes': []}
 
 def _save(d):
@@ -118,7 +119,8 @@ class TimedActions(commands.Cog):
 
         try:
             await member.send(f'You were muted in **{ctx.guild.name}** for {duration}. Reason: {reason}')
-        except: pass
+        except (discord.Forbidden, discord.HTTPException):
+            pass  # DMs closed
 
     @commands.command(name='unmute')
     @commands.has_permissions(moderate_members=True)
@@ -220,7 +222,8 @@ class TimedActions(commands.Cog):
                 user = await self.bot.fetch_user(int(uid))
                 await ctx.guild.ban(user, reason=f'Massban by {ctx.author}')
                 banned.append(str(uid))
-            except:
+            except Exception as e:
+                logger.warning(f"Massban failed for {uid}: {e}")
                 failed.append(str(uid))
 
         embed = discord.Embed(title='🔨 Mass Ban', color=0xe74c3c)

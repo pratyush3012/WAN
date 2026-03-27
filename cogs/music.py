@@ -184,18 +184,26 @@ class Music(commands.Cog):
         return vc
 
     async def _fetch_song(self, query: str, requester: discord.Member) -> Song:
-        loop = asyncio.get_event_loop()
         if "spotify.com" in query:
             query = _spotify_to_search(query)
         if not query.startswith("http"):
             query = f"ytsearch:{query}"
         try:
+            loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(
                 None, lambda: ytdl.extract_info(query, download=False)
             )
+            if not data:
+                return None
             if "entries" in data:
-                data = data["entries"][0]
+                entries = [e for e in data["entries"] if e]
+                if not entries:
+                    return None
+                data = entries[0]
             return Song(data, requester)
+        except yt_dlp.utils.DownloadError as e:
+            logger.warning(f"yt-dlp download error: {e}")
+            return None
         except Exception as e:
             logger.error(f"yt-dlp fetch error: {e}")
             return None
@@ -213,11 +221,21 @@ class Music(commands.Cog):
             return
         song = gp.queue.popleft()
         gp.current = song
-        source = discord.PCMVolumeTransformer(
-            discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTS),
-            volume=gp.volume
-        )
-        vc.play(source, after=lambda e: self._play_next(channel, guild, gp))
+        try:
+            source = discord.PCMVolumeTransformer(
+                discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTS),
+                volume=gp.volume
+            )
+        except Exception as e:
+            logger.error(f"FFmpeg source error for '{song.title}': {e}")
+            # Skip to next song
+            self._play_next(channel, guild, gp)
+            return
+        def _after(error):
+            if error:
+                logger.error(f"Player error: {error}")
+            self._play_next(channel, guild, gp)
+        vc.play(source, after=_after)
         asyncio.run_coroutine_threadsafe(
             channel.send(embed=song.embed(), view=MusicControls(self, guild.id)),
             self.bot.loop

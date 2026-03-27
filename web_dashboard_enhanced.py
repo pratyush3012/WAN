@@ -77,7 +77,7 @@ ADMIN_USERS = {
     'admin': {
         'password_hash': bcrypt.hashpw('admin'.encode(), bcrypt.gensalt()),
         'permissions': ['all'],
-        'created_at': datetime.utcnow().isoformat()
+        'created_at': datetime.now(timezone.utc).isoformat()
     }
 }
 
@@ -198,7 +198,7 @@ def auth():
                 session['guild_id'] = str(token_data['guild_id'])
                 session['role'] = token_data['role']
                 session['username'] = f"User {token_data['user_id']}"
-                session['login_time'] = datetime.utcnow().isoformat()
+                session['login_time'] = datetime.now(timezone.utc).isoformat()
                 
                 logger.info(f"Token auth successful for user {token_data['user_id']} with role {token_data['role']}")
                 return redirect(url_for('index'))
@@ -236,7 +236,7 @@ def login():
                 session.permanent = True
                 session['user_id'] = username
                 session['username'] = username
-                session['login_time'] = datetime.utcnow().isoformat()
+                session['login_time'] = datetime.now(timezone.utc).isoformat()
                 
                 logger.info(f"User {username} logged in from {request.remote_addr}")
                 return jsonify({'success': True})
@@ -369,7 +369,7 @@ def discord_oauth_callback():
         session['username'] = username
         session['discriminator'] = discriminator
         session['avatar_url'] = avatar_url
-        session['login_time'] = datetime.utcnow().isoformat()
+        session['login_time'] = datetime.now(timezone.utc).isoformat()
         session['auth_method'] = 'discord'
         session['authorized_guilds'] = authorized_guilds if user_id != owner_id else list(bot_guild_ids)
         session.pop('oauth_state', None)
@@ -418,10 +418,10 @@ def bot_status():
                 'uptime_seconds': int(uptime.total_seconds()),
                 'commands': len(bot_instance.tree.get_commands()),
                 'cogs': len(bot_instance.cogs),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             })
         
-        return jsonify({'status': 'offline', 'timestamp': datetime.utcnow().isoformat()})
+        return jsonify({'status': 'offline', 'timestamp': datetime.now(timezone.utc).isoformat()})
     except Exception as e:
         logger.error(f"Error getting bot status: {e}")
         return jsonify({'error': 'Failed to get bot status'}), 500
@@ -560,7 +560,7 @@ def export_data(format):
         elif format == 'json':
             # Export as JSON
             data = {
-                'exported_at': datetime.utcnow().isoformat(),
+                'exported_at': datetime.now(timezone.utc).isoformat(),
                 'bot_status': {
                     'servers': len(bot_instance.guilds),
                     'users': sum(g.member_count for g in bot_instance.guilds)
@@ -601,7 +601,7 @@ def health_check():
         'music_loaded': 'Music' in cogs_loaded,
         'cog_errors': getattr(bot_instance, 'cog_errors', {}),
         'nacl_installed': _check_nacl(),
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.now(timezone.utc).isoformat()
     }
     status = 'healthy' if checks['bot'] else 'degraded'
     # Always return 200 so Render health checks pass even while bot is connecting
@@ -642,7 +642,7 @@ def get_bot_analyzer(server_id):
                 'last_seen': entry.get('last_seen', ''),
             })
         bots.sort(key=lambda x: x['message_count'], reverse=True)
-        return jsonify({'bots': bots, 'total': len(bots), 'timestamp': datetime.utcnow().isoformat()})
+        return jsonify({'bots': bots, 'total': len(bots), 'timestamp': datetime.now(timezone.utc).isoformat()})
     except Exception as e:
         logger.error(f"Bot analyzer error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -708,7 +708,7 @@ def get_live_stats(server_id):
             'online_now': online,
             'member_count': guild.member_count,
             'date': stats['date'],
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
     except Exception as e:
         logger.error(f"Error getting live stats: {e}")
@@ -793,7 +793,7 @@ def get_roblox_linked_members(server_id):
             'total': len(members),
             'is_demo': is_demo,
             'auto_dm_enabled': server_id in roblox_cog.auto_dm_guilds,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
     except Exception as e:
         logger.error(f"Error getting Roblox members: {e}")
@@ -866,7 +866,7 @@ def roblox_link_member(server_id):
             'discord_id': discord_id,
             'roblox_username': user_info['name'],
             'roblox_id': user_info['id'],
-            'linked_at': datetime.utcnow().isoformat(),
+            'linked_at': datetime.now(timezone.utc).isoformat(),
             'source': 'dashboard'
         }
         roblox_cog._save_links()
@@ -970,7 +970,7 @@ def get_roblox_clan_stats_server(server_id):
                 'kd_ratio': round(total_kills / max(total_deaths, 1), 2)
             },
             'averages': {'level': round(avg_level, 2)},
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
     except Exception as e:
         logger.error(f"Error getting clan stats: {e}")
@@ -1026,7 +1026,7 @@ def get_activity_leaderboard(category):
             'category': category,
             'leaderboard': entries[:20],
             'total': len(entries),
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
     except Exception as e:
         logger.error(f"Error getting leaderboard: {e}")
@@ -1040,7 +1040,7 @@ def handle_connect():
         return False
     
     logger.info(f"Client connected: {session.get('username')}")
-    emit('connected', {'message': 'Connected to WAN Bot Dashboard', 'timestamp': datetime.utcnow().isoformat()})
+    emit('connected', {'message': 'Connected to WAN Bot Dashboard', 'timestamp': datetime.now(timezone.utc).isoformat()})
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -1859,7 +1859,7 @@ def get_ai_brain(server_id):
             'chatbot_enabled': chatbot_enabled,
             'actions': actions,
             'channels': channels,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
     except Exception as e:
         logger.error(f"AI Brain GET error: {e}", exc_info=True)
@@ -1993,7 +1993,7 @@ def get_ai_report(server_id):
         with _urlreq.urlopen(req, timeout=15) as resp:
             data = _json.loads(resp.read())
         report = data['candidates'][0]['content']['parts'][0]['text'].strip()
-        return jsonify({'report': report, 'timestamp': datetime.utcnow().isoformat()})
+        return jsonify({'report': report, 'timestamp': datetime.now(timezone.utc).isoformat()})
 
     except Exception as e:
         logger.error(f"AI report error: {e}", exc_info=True)
@@ -2030,7 +2030,7 @@ def run_ai_coder():
         import asyncio
         future = asyncio.run_coroutine_threadsafe(cog.run_cycle_now(), bot_instance.loop)
         result = future.result(timeout=5)
-        return jsonify({'status': result, 'timestamp': datetime.utcnow().isoformat()})
+        return jsonify({'status': result, 'timestamp': datetime.now(timezone.utc).isoformat()})
     except Exception as e:
         logger.error(f"AI Coder run error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -2126,7 +2126,7 @@ def api_register():
     otp = str(_r.randint(100000, 999999))
     _OTP_STORE[email] = {
         'otp': otp,
-        'expires': datetime.utcnow().timestamp() + 600,
+        'expires': datetime.now(timezone.utc).timestamp() + 600,
         'pending': {'username': username, 'email': email, 'password_hash': hash_password(password).decode()}
     }
     sent = _send_otp_email(email, otp, username)
@@ -2144,7 +2144,7 @@ def api_verify_otp():
     entry = _OTP_STORE.get(email)
     if not entry:
         return jsonify({'success': False, 'error': 'No pending verification for this email'}), 400
-    if datetime.utcnow().timestamp() > entry['expires']:
+    if datetime.now(timezone.utc).timestamp() > entry['expires']:
         del _OTP_STORE[email]
         return jsonify({'success': False, 'error': 'OTP expired — please register again'}), 400
     if entry['otp'] != otp:
@@ -2156,7 +2156,7 @@ def api_verify_otp():
         'email': pending['email'],
         'password_hash': pending['password_hash'],
         'permissions': ['dashboard'],
-        'created_at': datetime.utcnow().isoformat(),
+        'created_at': datetime.now(timezone.utc).isoformat(),
         'verified': True
     }
     _save_users(users)
@@ -2165,7 +2165,7 @@ def api_verify_otp():
     session.permanent = True
     session['user_id'] = pending['username']
     session['username'] = pending['username']
-    session['login_time'] = datetime.utcnow().isoformat()
+    session['login_time'] = datetime.now(timezone.utc).isoformat()
     return jsonify({'success': True})
 
 @app.route('/api/auth/resend-otp', methods=['POST'])
@@ -2179,7 +2179,7 @@ def api_resend_otp():
     import random as _r
     otp = str(_r.randint(100000, 999999))
     entry['otp'] = otp
-    entry['expires'] = datetime.utcnow().timestamp() + 600
+    entry['expires'] = datetime.now(timezone.utc).timestamp() + 600
     sent = _send_otp_email(email, otp, entry['pending']['username'])
     if not sent:
         logger.info(f"[DEV] Resent OTP for {email}: {otp}")
@@ -2912,7 +2912,7 @@ def server_analytics(server_id):
             'channels': len(guild.channels),
             'roles': len(guild.roles),
             'top_channels': top_channels,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         })
     except Exception as e:
         logger.error(f"Analytics error: {e}")
@@ -3084,7 +3084,7 @@ def scheduler_add(server_id):
         if not all([channel_id, message, when]):
             return jsonify({'error': 'channel_id, message, when required'}), 400
 
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
         try:
             if when.endswith('m'):
                 run_at = now + timedelta(minutes=int(when[:-1]))
@@ -3621,7 +3621,7 @@ def command_center(server_id):
                     _cases.append({'id': len(_cases)+1, 'action': 'warn', 'mod_id': str(guild.me.id),
                                    'mod': str(guild.me), 'target_id': str(member.id), 'target': str(member),
                                    'reason': body.get('reason','No reason'),
-                                   'timestamp': datetime.utcnow().isoformat()})
+                                   'timestamp': datetime.now(timezone.utc).isoformat()})
                     with open(_ml_path, 'w') as _f: _json.dump(_ml_data, _f, indent=2)
                 except Exception: pass
                 try:

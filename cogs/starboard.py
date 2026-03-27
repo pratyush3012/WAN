@@ -14,7 +14,8 @@ def _load():
     if os.path.exists(SB_FILE):
         try:
             with open(SB_FILE) as f: return json.load(f)
-        except: pass
+        except Exception as e:
+            logger.debug(f"Starboard error: {e}")
     return {}
 
 def _save(d):
@@ -58,7 +59,7 @@ class Starboard(commands.Cog):
 
         try:
             message = await channel.fetch_message(payload.message_id)
-        except:
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             return
 
         star_count = 0
@@ -80,8 +81,8 @@ class Starboard(commands.Cog):
             try:
                 sb_msg = await sb_channel.fetch_message(int(posted[msg_id]))
                 await sb_msg.edit(content=f'⭐ **{star_count}** | {channel.mention}')
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"Starboard update error: {e}")
             return
 
         embed = discord.Embed(color=0xf59e0b, timestamp=message.created_at)
@@ -121,7 +122,7 @@ class Starboard(commands.Cog):
 
         try:
             message = await channel.fetch_message(payload.message_id)
-        except:
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             return
 
         star_count = sum(r.count for r in message.reactions if str(r.emoji) in ('⭐', '🌟'))

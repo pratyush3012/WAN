@@ -147,6 +147,11 @@ class Leveling(commands.Cog):
             return
         stored = await get_setting(0, "leveling_data", {})
         self._cache = stored if isinstance(stored, dict) else {}
+        # Restore active XP event if any
+        event = await get_setting(0, "xp_event", {})
+        if event and event.get("end", 0) > time.time():
+            self._multiplier = event.get("multiplier", 1.0)
+            self._multiplier_end = event.get("end", 0)
         self._loaded = True
 
     async def _persist(self):
@@ -299,8 +304,10 @@ class Leveling(commands.Cog):
                     f"☀️ {message.author.mention} First message of the day! **+{XP_FIRST_MSG_DAY} bonus XP**",
                     delete_after=8
                 )
-            except Exception:
+            except discord.Forbidden:
                 pass
+            except Exception as e:
+                logger.debug(f"First-msg-day notification failed: {e}")
 
         await self._grant_xp(message.guild, message.author, xp, "message")
 
@@ -360,14 +367,13 @@ class Leveling(commands.Cog):
                 for member in vc.members:
                     if member.bot:
                         continue
-                    # Check if they're muted/deafened (no XP for AFK)
+                    # No XP for AFK, self-deafened, or server-deafened
                     vs = member.voice
-                    if vs and (vs.self_deaf or vs.afk):
+                    if vs and (vs.self_deaf or vs.deaf or vs.afk):
                         continue
                     key = f"{guild.id}_{member.id}"
                     if key not in self._voice_join:
                         self._voice_join[key] = now
-                    # Grant 5 min worth of XP
                     xp = 5 * XP_VOICE_PER_MIN
                     u = self._user(guild.id, member.id)
                     u["voice_minutes"] = u.get("voice_minutes", 0) + 5
@@ -518,6 +524,11 @@ class Leveling(commands.Cog):
             return await interaction.response.send_message("❌ Multiplier must be 1.0–5.0", ephemeral=True)
         self._multiplier = multiplier
         self._multiplier_end = time.time() + (hours * 3600)
+        # Persist so it survives restarts
+        await set_setting(0, "xp_event", {
+            "multiplier": multiplier,
+            "end": self._multiplier_end
+        })
         embed = discord.Embed(
             title="⚡ XP Event Started!",
             description=f"**{multiplier}x XP** for the next **{hours} hour{'s' if hours != 1 else ''}**!\nGo go go — chat, react, join voice! 🚀",
