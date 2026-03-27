@@ -951,28 +951,59 @@ select.form-control option{background:var(--surface2);}
   <!-- MUSIC -->
   <div id="sec-music" class="section">
     <div class="card">
-      <div class="card-header"><h3 class="card-title"><i class="fas fa-music"></i> Now Playing</h3><span id="musicStatus" class="badge badge-secondary">Idle</span></div>
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-music"></i> Now Playing</h3>
+        <span id="musicStatus" class="badge badge-secondary">Idle</span>
+      </div>
+      <!-- Now playing info -->
       <div style="display:flex;align-items:center;gap:20px;margin-bottom:16px;">
-        <img id="musicThumb" src="" style="width:80px;height:80px;border-radius:12px;object-fit:cover;display:none;">
-        <div style="flex:1;">
-          <div id="musicTitle" style="font-weight:700;font-size:16px;">Nothing playing</div>
+        <img id="musicThumb" src="" style="width:90px;height:90px;border-radius:12px;object-fit:cover;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+        <div style="flex:1;min-width:0;">
+          <div id="musicTitle" style="font-weight:700;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Nothing playing</div>
+          <div id="musicUploader" style="color:var(--text-muted);font-size:13px;margin-top:2px;"></div>
+          <div id="musicMeta" style="color:var(--text-muted);font-size:12px;margin-top:4px;"></div>
           <div id="musicQueue" style="color:var(--text-muted);font-size:13px;margin-top:4px;">Queue empty</div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-primary btn-sm" onclick="musicControl('pause')"><i class="fas fa-pause"></i> Pause</button>
-        <button class="btn btn-primary btn-sm" onclick="musicControl('resume')"><i class="fas fa-play"></i> Resume</button>
-        <button class="btn btn-primary btn-sm" onclick="musicControl('skip')"><i class="fas fa-forward"></i> Skip</button>
-        <button class="btn btn-danger btn-sm" onclick="musicControl('stop')"><i class="fas fa-stop"></i> Stop</button>
+      <!-- Controls -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <button class="btn btn-secondary btn-sm" onclick="musicControl('pause')" title="Pause"><i class="fas fa-pause"></i></button>
+        <button class="btn btn-secondary btn-sm" onclick="musicControl('resume')" title="Resume"><i class="fas fa-play"></i></button>
+        <button class="btn btn-secondary btn-sm" onclick="musicControl('skip')" title="Skip"><i class="fas fa-forward"></i></button>
+        <button class="btn btn-secondary btn-sm" onclick="musicControl('shuffle')" title="Shuffle"><i class="fas fa-random"></i></button>
+        <button class="btn btn-secondary btn-sm" onclick="musicControl('loop')" id="loopBtn" title="Loop"><i class="fas fa-redo"></i></button>
+        <button class="btn btn-danger btn-sm" onclick="musicControl('stop')" title="Stop &amp; Disconnect"><i class="fas fa-stop"></i> Stop</button>
       </div>
-      <div style="margin-top:16px;"><p class="form-label">UP NEXT</p><div id="musicQueueList" style="max-height:200px;overflow-y:auto;"><p style="color:var(--text-muted);font-size:13px;">Queue is empty</p></div></div>
+      <!-- Volume -->
+      <div class="form-group" style="margin-bottom:16px;">
+        <label class="form-label">🔊 Volume: <span id="volumeVal">50</span>%</label>
+        <input type="range" id="volumeSlider" min="1" max="100" value="50" class="form-control" style="padding:4px;"
+          oninput="document.getElementById('volumeVal').textContent=this.value"
+          onchange="musicControl('volume',this.value)">
+      </div>
+      <!-- Queue -->
+      <div>
+        <p class="form-label">UP NEXT</p>
+        <div id="musicQueueList" style="max-height:220px;overflow-y:auto;">
+          <p style="color:var(--text-muted);font-size:13px;">Queue is empty</p>
+        </div>
+      </div>
     </div>
+    <!-- Play a song -->
     <div class="card">
-      <div class="card-header"><h3 class="card-title">Play a Song</h3></div>
-      <div class="form-group"><label class="form-label">Search / YouTube / SoundCloud URL</label>
-        <div style="display:flex;gap:10px;"><input type="text" id="musicQuery" class="form-control" placeholder="Song name or URL..." onkeydown="if(event.key==='Enter')playMusic()"><button class="btn btn-primary" onclick="playMusic()"><i class="fas fa-play"></i> Play</button></div>
+      <div class="card-header"><h3 class="card-title"><i class="fas fa-search"></i> Play a Song</h3></div>
+      <div class="form-group">
+        <label class="form-label">Song name, YouTube URL, or Spotify URL</label>
+        <div style="display:flex;gap:10px;">
+          <input type="text" id="musicQuery" class="form-control" placeholder="e.g. Tum Hi Ho, or paste a Spotify/YouTube link..."
+            onkeydown="if(event.key==='Enter')playMusic()">
+          <button class="btn btn-primary" onclick="playMusic()"><i class="fas fa-play"></i> Play</button>
+        </div>
       </div>
-      <div class="form-group"><label class="form-label">Voice Channel</label><select id="musicChannel" class="form-control"><option value="">Auto-select</option></select></div>
+      <div class="form-group">
+        <label class="form-label">Voice Channel</label>
+        <select id="musicChannel" class="form-control"><option value="">Auto-select (join most populated)</option></select>
+      </div>
     </div>
   </div>
 
@@ -2929,20 +2960,32 @@ function updateMusicUI(d){
   const status=document.getElementById('musicStatus');
   const queueEl=document.getElementById('musicQueue');
   const queueList=document.getElementById('musicQueueList');
+  const uploader=document.getElementById('musicUploader');
+  const meta=document.getElementById('musicMeta');
+  const loopBtn=document.getElementById('loopBtn');
+  const volSlider=document.getElementById('volumeSlider');
+  const volVal=document.getElementById('volumeVal');
+
   if(d.current&&d.current.title){
     if(title)title.textContent=d.current.title;
     if(thumb){thumb.src=d.current.thumbnail||'';thumb.style.display=d.current.thumbnail?'block':'none';}
-    if(status){status.textContent=d.playing?'Playing':'Paused';status.className='badge '+(d.playing?'badge-success':'badge-warning');}
-    if(queueEl)queueEl.textContent=d.queue_size+' songs in queue';
+    if(status){status.textContent=d.playing?'🎵 Playing':(d.paused?'⏸ Paused':'Idle');status.className='badge '+(d.playing?'badge-success':d.paused?'badge-warning':'badge-secondary');}
+    if(uploader)uploader.textContent=d.current.uploader||'';
+    if(meta)meta.textContent=(d.current.duration?'⏱ '+d.current.duration:'')+(d.current.requester?' • Requested by '+d.current.requester:'')+(d.voice_channel?' • 🔊 '+d.voice_channel:'');
+    if(queueEl)queueEl.textContent=d.queue_size+' song'+(d.queue_size!==1?'s':'')+' in queue';
   }else{
     if(title)title.textContent='Nothing playing';
     if(thumb)thumb.style.display='none';
     if(status){status.textContent='Idle';status.className='badge badge-secondary';}
+    if(uploader)uploader.textContent='';
+    if(meta)meta.textContent='';
     if(queueEl)queueEl.textContent='Queue empty';
   }
+  if(loopBtn)loopBtn.style.opacity=d.loop?'1':'0.4';
+  if(volSlider&&d.volume!=null){volSlider.value=d.volume;if(volVal)volVal.textContent=d.volume;}
   if(queueList){
     const q=d.queue||[];
-    queueList.innerHTML=q.length?q.map((t,i)=>`<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-muted);">${i+1}. ${escHtml(t)}</div>`).join(''):'<p style="color:var(--text-muted);font-size:13px;">Queue is empty</p>';
+    queueList.innerHTML=q.length?q.map((t,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;"><span style="color:var(--text-muted);">${i+1}. ${escHtml(t)}</span><button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:11px;" onclick="musicRemove(${i+1})">✕</button></div>`).join(''):'<p style="color:var(--text-muted);font-size:13px;">Queue is empty</p>';
   }
 }
 
@@ -2960,14 +3003,26 @@ async function playMusic(){
   }catch(e){notify('Error: '+e.message,'danger');}
 }
 
-async function musicControl(action){
+async function musicControl(action,value){
   if(!currentServer){notify('Select a server first','warning');return;}
   try{
-    const res=await apiFetch('/api/server/'+currentServer+'/music/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
+    const body={action};
+    if(value!==undefined)body.value=value;
+    const res=await apiFetch('/api/server/'+currentServer+'/music/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await res.json();
     if(d.error)notify(d.error,'danger');
-    else{notify(action+' done','success');setTimeout(loadMusicStatus,500);}
+    else{if(action!=='volume')notify(action+' done','success');setTimeout(loadMusicStatus,500);}
   }catch(e){notify('Error','danger');}
+}
+
+async function musicRemove(index){
+  if(!currentServer)return;
+  try{
+    const res=await apiFetch('/api/server/'+currentServer+'/music/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'remove',index})});
+    const d=await res.json();
+    if(d.error)notify(d.error,'danger');
+    else{notify('Removed from queue','success');setTimeout(loadMusicStatus,300);}
+  }catch(e){}
 }
 
 // ANNOUNCE
