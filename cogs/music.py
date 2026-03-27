@@ -16,7 +16,7 @@ from collections import deque
 
 logger = logging.getLogger("discord_bot.music")
 
-# ── yt-dlp options — tuned to bypass YouTube bot detection ────────────────────
+# ── yt-dlp options — use android client to avoid JS runtime requirement ───────
 YTDL_OPTS = {
     "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
     "noplaylist": True,
@@ -26,24 +26,19 @@ YTDL_OPTS = {
     "source_address": "0.0.0.0",
     "extract_flat": False,
     "skip_download": True,
-    # Bypass bot detection
-    "http_headers": {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "en-US,en;q=0.9",
-    },
+    # Force android_vr client — works without JS runtime (no deno/node needed on Render)
     "extractor_args": {
         "youtube": {
-            "skip": ["dash", "hls"],
-            "player_skip": ["js", "configs", "webpage"],
+            "player_client": ["android_vr"],
         }
     },
-    # Use innertube API directly — more reliable on server IPs
-    "compat_opts": set(),
-    "age_limit": None,
+    "http_headers": {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 11; Pixel 5) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/90.0.4430.91 Mobile Safari/537.36"
+        ),
+    },
     "geo_bypass": True,
     "geo_bypass_country": "US",
 }
