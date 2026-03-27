@@ -22,8 +22,7 @@ Features:
 """
 import discord
 from discord import app_commands
-from discord.ext import commands
-from discord.ext import tasks
+from discord.ext import commands, tasks
 import asyncio
 import logging
 import random
@@ -526,60 +525,62 @@ class Leveling(commands.Cog):
         )
         await interaction.response.send_message(embed=embed)
 
-    # ── Prefix admin commands ──────────────────────────────────────────────────
+    # ── Admin slash commands ───────────────────────────────────────────────────
 
-    @commands.command(name="set-level-role")
-    @commands.has_permissions(manage_roles=True)
-    async def set_level_role(self, ctx, level: int, role: discord.Role):
+    @app_commands.command(name="set-level-role", description="🎭 Assign a role when members reach a level")
+    @app_commands.describe(level="Level to trigger the role", role="Role to assign")
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def set_level_role(self, interaction: discord.Interaction, level: int, role: discord.Role):
         await self._ensure_loaded()
-        g = self._guild(ctx.guild.id)
+        g = self._guild(interaction.guild.id)
         g["config"]["level_roles"][str(level)] = role.id
         await self._persist()
-        await ctx.send(f"✅ Members get **{role.name}** at level **{level}**.")
+        await interaction.response.send_message(f"✅ Members get **{role.name}** at level **{level}**.", ephemeral=True)
 
-    @commands.command(name="xp-channel")
-    @commands.has_permissions(manage_guild=True)
-    async def xp_channel(self, ctx, channel: discord.TextChannel):
+    @app_commands.command(name="xp-channel", description="📢 Set channel for level-up announcements")
+    @app_commands.describe(channel="Channel to send level-up messages in")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def xp_channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await self._ensure_loaded()
-        g = self._guild(ctx.guild.id)
+        g = self._guild(interaction.guild.id)
         g["config"]["announce_channel"] = channel.id
         await self._persist()
-        await ctx.send(f"✅ Level-up announcements → {channel.mention}")
+        await interaction.response.send_message(f"✅ Level-up announcements → {channel.mention}", ephemeral=True)
 
-    @commands.command(name="xp-noxp")
-    @commands.has_permissions(manage_guild=True)
-    async def xp_noxp(self, ctx, channel: discord.TextChannel):
-        """Add a channel to the no-XP list."""
+    @app_commands.command(name="xp-noxp", description="🚫 Toggle no-XP for a channel")
+    @app_commands.describe(channel="Channel to toggle XP off/on")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def xp_noxp(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await self._ensure_loaded()
-        g = self._guild(ctx.guild.id)
+        g = self._guild(interaction.guild.id)
         noxp = g["config"].setdefault("no_xp_channels", [])
         cid = str(channel.id)
         if cid in noxp:
             noxp.remove(cid)
             await self._persist()
-            await ctx.send(f"✅ {channel.mention} removed from no-XP list.")
+            await interaction.response.send_message(f"✅ {channel.mention} removed from no-XP list.", ephemeral=True)
         else:
             noxp.append(cid)
             await self._persist()
-            await ctx.send(f"✅ {channel.mention} added to no-XP list.")
+            await interaction.response.send_message(f"✅ {channel.mention} added to no-XP list.", ephemeral=True)
 
-    @commands.command(name="xp-give")
-    @commands.has_permissions(manage_guild=True)
-    async def xp_give(self, ctx, member: discord.Member, amount: int):
-        """Manually give XP to a member."""
+    @app_commands.command(name="xp-give", description="🎁 Manually give XP to a member")
+    @app_commands.describe(member="Member to give XP to", amount="Amount of XP to give")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def xp_give(self, interaction: discord.Interaction, member: discord.Member, amount: int):
         await self._ensure_loaded()
-        await self._grant_xp(ctx.guild, member, amount, "manual")
-        await ctx.send(f"✅ Gave **{amount} XP** to {member.mention}.")
+        await self._grant_xp(interaction.guild, member, amount, "manual")
+        await interaction.response.send_message(f"✅ Gave **{amount} XP** to {member.mention}.", ephemeral=True)
 
-    @commands.command(name="xp-reset")
-    @commands.has_permissions(administrator=True)
-    async def xp_reset(self, ctx, member: discord.Member):
-        """Reset a member's XP."""
+    @app_commands.command(name="xp-reset", description="🗑️ Reset a member's XP")
+    @app_commands.describe(member="Member to reset")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def xp_reset(self, interaction: discord.Interaction, member: discord.Member):
         await self._ensure_loaded()
-        g = self._guild(ctx.guild.id)
+        g = self._guild(interaction.guild.id)
         g["users"].pop(str(member.id), None)
         await self._persist()
-        await ctx.send(f"✅ Reset XP for {member.mention}.")
+        await interaction.response.send_message(f"✅ Reset XP for {member.mention}.", ephemeral=True)
 
 
 async def setup(bot):

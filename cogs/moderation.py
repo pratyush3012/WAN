@@ -253,41 +253,40 @@ class Moderation(commands.Cog):
             ephemeral=True
         )
 
-    @commands.command(name="lock")
-    @commands.has_permissions(manage_channels=True)
-    async def lock(self, ctx, channel: discord.TextChannel = None):
-        channel = channel or ctx.channel
-        if not channel.permissions_for(ctx.guild.me).manage_permissions:
-            return await ctx.send(f"❌ I don't have permission to manage permissions in {channel.mention}")
+    @app_commands.command(name="lock", description="🔒 Lock a channel")
+    @app_commands.describe(channel="Channel to lock (defaults to current)")
+    @app_commands.checks.has_permissions(manage_channels=True)
+    async def lock(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+        channel = channel or interaction.channel
         try:
-            await channel.set_permissions(ctx.guild.default_role, send_messages=False)
-            await ctx.send(f"🔒 {channel.mention} has been locked.")
+            await channel.set_permissions(interaction.guild.default_role, send_messages=False)
+            await interaction.response.send_message(f"🔒 {channel.mention} locked.")
         except discord.Forbidden:
-            await ctx.send(f"❌ Failed to lock {channel.mention}")
+            await interaction.response.send_message(f"❌ Failed to lock {channel.mention}", ephemeral=True)
 
-    @commands.command(name="unlock")
-    @commands.has_permissions(manage_channels=True)
-    async def unlock(self, ctx, channel: discord.TextChannel = None):
-        channel = channel or ctx.channel
-        if not channel.permissions_for(ctx.guild.me).manage_permissions:
-            return await ctx.send(f"❌ I don't have permission to manage permissions in {channel.mention}")
+    @app_commands.command(name="unlock", description="🔓 Unlock a channel")
+    @app_commands.describe(channel="Channel to unlock (defaults to current)")
+    @app_commands.checks.has_permissions(manage_channels=True)
+    async def unlock(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+        channel = channel or interaction.channel
         try:
-            await channel.set_permissions(ctx.guild.default_role, send_messages=None)
-            await ctx.send(f"🔓 {channel.mention} has been unlocked.")
+            await channel.set_permissions(interaction.guild.default_role, send_messages=None)
+            await interaction.response.send_message(f"🔓 {channel.mention} unlocked.")
         except discord.Forbidden:
-            await ctx.send(f"❌ Failed to unlock {channel.mention}")
+            await interaction.response.send_message(f"❌ Failed to unlock {channel.mention}", ephemeral=True)
 
-    @commands.command(name="lockdown")
-    @commands.has_permissions(administrator=True)
-    async def lockdown(self, ctx):
+    @app_commands.command(name="lockdown", description="🔒 Lock ALL channels (server lockdown)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def lockdown(self, interaction: discord.Interaction):
+        await interaction.response.defer()
         locked = 0
-        for channel in ctx.guild.text_channels:
+        for channel in interaction.guild.text_channels:
             try:
-                await channel.set_permissions(ctx.guild.default_role, send_messages=False)
+                await channel.set_permissions(interaction.guild.default_role, send_messages=False)
                 locked += 1
             except Exception:
                 pass
-        await ctx.send(f"🔒 Server lockdown active — locked {locked} channels.")
+        await interaction.followup.send(f"🔒 Server lockdown active — locked {locked} channels.")
     
     @commands.Cog.listener()
     async def on_message(self, message):

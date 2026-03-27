@@ -15,15 +15,15 @@ class AFK(commands.Cog):
         self.bot = bot
         self._afk: dict = {}  # user_id -> {reason, since}
 
-    @commands.command(name="afk")
-    async def afk(self, ctx, reason: str = "AFK"):
-        uid = ctx.author.id
-        self._afk[uid] = {
+    @app_commands.command(name="afk", description="💤 Set your AFK status")
+    @app_commands.describe(reason="Reason for being AFK")
+    async def afk(self, interaction: discord.Interaction, reason: str = "AFK"):
+        self._afk[interaction.user.id] = {
             'reason': reason,
             'since': datetime.now(timezone.utc).isoformat()
         }
-        await ctx.send(
-            f"You're now AFK: **{reason}**\nI'll let people know when they mention you.")
+        await interaction.response.send_message(
+            f"💤 You're now AFK: **{reason}**\nI'll let people know when they mention you.", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

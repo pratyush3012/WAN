@@ -237,58 +237,54 @@ class Tickets(commands.Cog):
         bot.add_view(TicketView(bot))
         bot.add_view(OpenTicketView(bot))
 
-    @commands.command(name="ticket-setup")
-    async def setup(self, ctx,
-                    category: discord.CategoryChannel = None,
-                    support_role: discord.Role = None,
-                    transcript_channel: discord.TextChannel = None):
-        guild = ctx.guild
-
+    @app_commands.command(name="ticket-setup", description="🎫 Set up the ticket system")
+    @app_commands.describe(category="Category for tickets", support_role="Support team role", transcript_channel="Channel for transcripts")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setup(self, interaction: discord.Interaction, category: discord.CategoryChannel = None,
+                    support_role: discord.Role = None, transcript_channel: discord.TextChannel = None):
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
         if not category:
             category = await guild.create_category('Tickets')
-
         cfg = _cfg(guild.id)
         cfg['category_id'] = str(category.id)
-        if support_role:
-            cfg['support_role_id'] = str(support_role.id)
-        if transcript_channel:
-            cfg['transcript_channel'] = str(transcript_channel.id)
+        if support_role: cfg['support_role_id'] = str(support_role.id)
+        if transcript_channel: cfg['transcript_channel'] = str(transcript_channel.id)
         cfg.setdefault('counter', 0)
         _save_cfg(guild.id, cfg)
-
-        # Create panel channel
         panel_ch = await category.create_text_channel('open-a-ticket')
-        embed = discord.Embed(
-            title='🎫 Support Tickets',
-            description='Need help? Click the button below to open a private support ticket.',
-            color=0x5865f2
-        )
+        embed = discord.Embed(title='🎫 Support Tickets',
+                              description='Need help? Click the button below to open a private support ticket.',
+                              color=0x5865f2)
         if support_role:
             embed.add_field(name='Support Team', value=support_role.mention, inline=True)
         await panel_ch.send(embed=embed, view=OpenTicketView(self.bot))
+        await interaction.followup.send(f'✅ Ticket system set up in {category.mention}. Panel: {panel_ch.mention}', ephemeral=True)
 
-        await ctx.send(f'Ticket system set up in {category.mention}. Panel: {panel_ch.mention}')
-
-    @commands.command(name="ticket-category-add")
-    async def add_category(self, ctx, name: str, role: discord.Role = None):
-        cfg = _cfg(ctx.guild.id)
+    @app_commands.command(name="ticket-category-add", description="➕ Add a ticket category")
+    @app_commands.describe(name="Category name", role="Support role for this category")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def add_category(self, interaction: discord.Interaction, name: str, role: discord.Role = None):
+        cfg = _cfg(interaction.guild.id)
         cats = cfg.setdefault('categories', [])
         if any(c['name'].lower() == name.lower() for c in cats):
-            return await ctx.send('Category already exists.')
+            return await interaction.response.send_message('Category already exists.', ephemeral=True)
         cats.append({'name': name, 'role_id': str(role.id) if role else None})
-        _save_cfg(ctx.guild.id, cfg)
-        await ctx.send(f'Category `{name}` added.')
+        _save_cfg(interaction.guild.id, cfg)
+        await interaction.response.send_message(f'✅ Category `{name}` added.', ephemeral=True)
 
-    @commands.command(name="ticket-category-remove")
-    async def remove_category(self, ctx, name: str):
-        cfg = _cfg(ctx.guild.id)
+    @app_commands.command(name="ticket-category-remove", description="➖ Remove a ticket category")
+    @app_commands.describe(name="Category name to remove")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def remove_category(self, interaction: discord.Interaction, name: str):
+        cfg = _cfg(interaction.guild.id)
         cats = cfg.get('categories', [])
         new_cats = [c for c in cats if c['name'].lower() != name.lower()]
         if len(new_cats) == len(cats):
-            return await ctx.send('Category not found.')
+            return await interaction.response.send_message('Category not found.', ephemeral=True)
         cfg['categories'] = new_cats
-        _save_cfg(ctx.guild.id, cfg)
-        await ctx.send(f'Category `{name}` removed.')
+        _save_cfg(interaction.guild.id, cfg)
+        await interaction.response.send_message(f'✅ Category `{name}` removed.', ephemeral=True)
 
     async def close(self, ctx):
         if not ctx.channel.name.startswith('ticket-'):

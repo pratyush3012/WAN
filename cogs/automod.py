@@ -299,54 +299,47 @@ class AutoMod(commands.Cog):
                     )
                     break
     
-    @commands.command(name="automod-config")
-    @commands.has_permissions(administrator=True)
-    async def automod_config(self, ctx):
-        """Show automod configuration"""
-        settings = self.settings[ctx.guild.id]
+    @app_commands.command(name="automod-config", description="🤖 Show AutoMod configuration")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def automod_config(self, interaction: discord.Interaction):
+        settings = self.settings[interaction.guild.id]
         embed = discord.Embed(title="🤖 Auto-Moderation Configuration", color=discord.Color.blue())
-        embed.add_field(name="Spam Detection", value="✅ Enabled" if settings['spam_enabled'] else "❌ Disabled", inline=True)
-        embed.add_field(name="Link Filter", value="✅ Enabled" if settings['link_filter_enabled'] else "❌ Disabled", inline=True)
-        embed.add_field(name="Bad Words", value="✅ Enabled" if settings.get('bad_words_enabled') else "❌ Disabled", inline=True)
-        await ctx.send(embed=embed)
+        embed.add_field(name="Spam Detection", value="✅" if settings['spam_enabled'] else "❌", inline=True)
+        embed.add_field(name="Link Filter", value="✅" if settings['link_filter_enabled'] else "❌", inline=True)
+        embed.add_field(name="Bad Words", value="✅" if settings.get('bad_words_enabled') else "❌", inline=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @commands.command(name="automod-toggle")
-    @commands.has_permissions(administrator=True)
-    async def automod_toggle(self, ctx, feature: str):
-        """Toggle automod features: spam, links, badwords, raid, caps, mentions"""
-        valid_features = ['spam', 'links', 'badwords', 'raid', 'caps', 'mentions']
-        if feature not in valid_features:
-            return await ctx.send(f"❌ Invalid feature! Choose from: {', '.join(valid_features)}")
-        settings = self.settings[ctx.guild.id]
-        feature_map = {
-            'spam': 'spam_enabled',
-            'links': 'link_filter_enabled',
-            'badwords': 'bad_words_enabled',
-            'raid': 'raid_enabled',
-            'caps': 'caps_enabled',
-            'mentions': 'mentions_enabled',
-        }
-        key = feature_map.get(feature, f"{feature}_enabled")
+    @app_commands.command(name="automod-toggle", description="🔀 Toggle an AutoMod feature")
+    @app_commands.describe(feature="Feature to toggle: spam, links, badwords, raid, caps, mentions")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def automod_toggle(self, interaction: discord.Interaction, feature: str):
+        valid = ['spam', 'links', 'badwords', 'raid', 'caps', 'mentions']
+        if feature not in valid:
+            return await interaction.response.send_message(f"❌ Choose from: {', '.join(valid)}", ephemeral=True)
+        settings = self.settings[interaction.guild.id]
+        key_map = {'spam': 'spam_enabled', 'links': 'link_filter_enabled', 'badwords': 'bad_words_enabled',
+                   'raid': 'raid_protection_enabled', 'caps': 'caps_filter_enabled', 'mentions': 'mention_spam_enabled'}
+        key = key_map[feature]
         settings[key] = not settings.get(key, False)
         status = "✅ Enabled" if settings[key] else "❌ Disabled"
-        await ctx.send(f"AutoMod `{feature}` is now {status}")
+        await interaction.response.send_message(f"AutoMod `{feature}` is now {status}", ephemeral=True)
 
-    @commands.command(name="automod-badword-add")
-    @commands.has_permissions(administrator=True)
-    async def add_badword(self, ctx, *, word: str):
-        """Add a bad word to filter"""
-        self.bad_words[ctx.guild.id].add(word.lower())
-        await ctx.send(f"✅ Added `{word}` to bad words filter")
+    @app_commands.command(name="automod-badword-add", description="🚫 Add a word to the bad words filter")
+    @app_commands.describe(word="Word to filter")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def add_badword(self, interaction: discord.Interaction, word: str):
+        self.bad_words[interaction.guild.id].add(word.lower())
+        await interaction.response.send_message(f"✅ Added `{word}` to bad words filter", ephemeral=True)
 
-    @commands.command(name="automod-badword-remove")
-    @commands.has_permissions(administrator=True)
-    async def remove_badword(self, ctx, *, word: str):
-        """Remove a bad word from filter"""
-        if word.lower() in self.bad_words[ctx.guild.id]:
-            self.bad_words[ctx.guild.id].remove(word.lower())
-            await ctx.send(f"✅ Removed `{word}` from bad words filter")
+    @app_commands.command(name="automod-badword-remove", description="✅ Remove a word from the bad words filter")
+    @app_commands.describe(word="Word to remove")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def remove_badword(self, interaction: discord.Interaction, word: str):
+        if word.lower() in self.bad_words[interaction.guild.id]:
+            self.bad_words[interaction.guild.id].remove(word.lower())
+            await interaction.response.send_message(f"✅ Removed `{word}`", ephemeral=True)
         else:
-            await ctx.send(f"❌ `{word}` is not in the filter")
+            await interaction.response.send_message(f"❌ `{word}` not in filter", ephemeral=True)
 
 
 async def setup(bot):

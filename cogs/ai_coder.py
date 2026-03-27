@@ -502,67 +502,8 @@ class AICoder(commands.Cog):
 
     # ── Slash commands ────────────────────────────────────────────────────────
 
-    @app_commands.command(name="ai-coder-status", description="View AI Coder improvement history")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def ai_coder_status(self, interaction: discord.Interaction):
-        status = self.get_status()
-        embed = discord.Embed(
-            title="🤖 AI Coder Status",
-            color=0x7c3aed if status["active"] else 0x6b7280
-        )
-        embed.add_field(name="Status",
-                        value="✅ Active" if status["active"] else "❌ No API key", inline=True)
-        embed.add_field(name="Running",
-                        value="🔄 Yes" if status["running"] else "💤 Idle", inline=True)
-        embed.add_field(name="Total Improvements",
-                        value=str(status["total_improvements"]), inline=True)
-        if status["last_run"]:
-            embed.add_field(name="Last Run",
-                            value=status["last_run"][:16].replace("T", " "), inline=True)
-        if status["generated_features"]:
-            embed.add_field(name="Generated Content",
-                            value="\n".join(f"• {k}" for k in status["generated_features"]),
-                            inline=False)
-        recent = status["recent_improvements"][:5]
-        if recent:
-            lines = [f"`{r['timestamp'][:16].replace('T',' ')}` **{r['feature']}**: {r['content'][:50]}"
-                     for r in recent]
-            embed.add_field(name="Recent Improvements", value="\n".join(lines), inline=False)
-        embed.set_footer(text="Runs every 24h • Use /ai-coder-run to trigger now")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="ai-coder-run", description="Trigger an AI improvement cycle now")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def ai_coder_run(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        result = await self.run_cycle_now()
-        if result == "Started":
-            await interaction.followup.send(
-                "🤖 AI Coder improvement cycle started! Check `/ai-coder-status` in a few minutes.",
-                ephemeral=True)
-        else:
-            await interaction.followup.send(f"⚠️ {result}", ephemeral=True)
-
-    @app_commands.command(name="ai-coder-suggestions", description="View AI suggestions for bot improvements")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def ai_coder_suggestions(self, interaction: discord.Interaction):
-        suggestions = self.log.get("suggestions", {}).get("items", [])
-        if not suggestions:
-            return await interaction.response.send_message(
-                "No suggestions yet. Run `/ai-coder-run` to generate some.", ephemeral=True)
-        embed = discord.Embed(title="💡 AI Improvement Suggestions", color=0xf59e0b)
-        for s in suggestions[:8]:
-            priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
-                s.get("priority", "medium"), "⚪")
-            embed.add_field(
-                name=f"{priority_emoji} {s.get('feature', 'Unknown')}",
-                value=s.get("suggestion", "")[:200],
-                inline=False
-            )
-        updated = self.log.get("suggestions", {}).get("updated", "")
-        if updated:
-            embed.set_footer(text=f"Generated: {updated[:16].replace('T', ' ')}")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    # ai-coder commands removed to stay under 100 slash command limit
+    # Use the dashboard to view AI Coder status
 
 
 async def setup(bot):

@@ -14,8 +14,8 @@ class Utility(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="uptime")
-    async def uptime(self, ctx):
+    @app_commands.command(name="uptime", description="⏱️ Show bot uptime")
+    async def uptime(self, interaction: discord.Interaction):
         now = datetime.now(timezone.utc)
         start = self.bot.start_time
         if start.tzinfo is None:
@@ -24,12 +24,8 @@ class Utility(commands.Cog):
         days = delta.days
         hours, rem = divmod(delta.seconds, 3600)
         mins, secs = divmod(rem, 60)
-        embed = discord.Embed(
-            title="Bot Uptime",
-            description=f"**{days}d {hours}h {mins}m {secs}s**",
-            color=0x5865f2
-        )
-        await ctx.send(embed=embed)
+        embed = discord.Embed(title="⏱️ Bot Uptime", description=f"**{days}d {hours}h {mins}m {secs}s**", color=0x5865f2)
+        await interaction.response.send_message(embed=embed)
 
 
 async def setup(bot):

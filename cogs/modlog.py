@@ -242,22 +242,24 @@ class ModLog(commands.Cog):
         case = _add_case(data, ctx.guild.id, 'note', ctx.author, member, note)
         await ctx.send(f"Note added as Case #{case['id']}.")
 
-    @commands.command(name="modlog-setup")
-    async def modlog_setup(self, ctx, channel: discord.TextChannel):
+    @app_commands.command(name="modlog-setup", description="📋 Set the mod log channel")
+    @app_commands.describe(channel="Channel to send mod logs to")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def modlog_setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
         data = _load()
-        data['config'].setdefault(str(ctx.guild.id), {})['log_channel'] = str(channel.id)
+        data['config'].setdefault(str(interaction.guild.id), {})['log_channel'] = str(channel.id)
         _save(data)
-        await ctx.send(f"Mod log channel set to {channel.mention}.")
+        await interaction.response.send_message(f"✅ Mod log channel set to {channel.mention}.", ephemeral=True)
 
-    @commands.command(name="threshold-set")
-    async def threshold_set(self, ctx,
-                             warnings: int, action: str):
+    @app_commands.command(name="threshold-set", description="⚠️ Set auto-action on warn threshold")
+    @app_commands.describe(warnings="Number of warnings to trigger action", action="Action: kick, ban, timeout")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def threshold_set(self, interaction: discord.Interaction, warnings: int, action: str):
         data = _load()
-        cfg = data['config'].setdefault(str(ctx.guild.id), {})
+        cfg = data['config'].setdefault(str(interaction.guild.id), {})
         cfg.setdefault('thresholds', {})[str(warnings)] = action
         _save(data)
-        await ctx.send(
-            f"At **{warnings}** warnings → auto **{action}**.")
+        await interaction.response.send_message(f"✅ At **{warnings}** warnings → auto **{action}**.", ephemeral=True)
 
 
 async def setup(bot):
