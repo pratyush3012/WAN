@@ -1426,7 +1426,6 @@ def music_play(server_id):
                 if channel_id:
                     target_ch = guild.get_channel(int(channel_id))
                 if not target_ch:
-                    # Join first populated voice channel
                     for ch in guild.voice_channels:
                         if len(ch.members) > 0:
                             target_ch = ch
@@ -1435,9 +1434,12 @@ def music_play(server_id):
                     target_ch = guild.voice_channels[0]
                 if not target_ch:
                     return {'error': 'No voice channel available'}
-                vc = await target_ch.connect()
+                try:
+                    vc = await target_ch.connect()
+                except Exception as e:
+                    return {'error': f'Could not join voice channel: {e}'}
 
-            # Find a text channel to send now-playing to
+            # Find a text channel to send now-playing embed to
             text_ch = None
             for name in ('music', 'bot-commands', 'general', 'chat', 'lounge'):
                 text_ch = discord.utils.get(guild.text_channels, name=name)
@@ -1446,11 +1448,10 @@ def music_play(server_id):
             if not text_ch and guild.text_channels:
                 text_ch = guild.text_channels[0]
 
-            # Use bot owner as requester placeholder
             requester = guild.me
             song = await music_cog._fetch_song(query, requester)
             if not song:
-                return {'error': 'Song not found'}
+                return {'error': f'Song not found for: {query}. Try a YouTube URL directly.'}
 
             gp = music_cog._get_player(guild.id)
             gp.queue.append(song)
@@ -1458,6 +1459,7 @@ def music_play(server_id):
                 music_cog._play_next(text_ch, guild, gp)
                 return {'status': 'playing', 'title': song.title}
             else:
+                return {'status': 'queued', 'title': song.title}
                 return {'status': 'queued', 'title': song.title}
 
         future = asyncio.run_coroutine_threadsafe(_play(), bot_instance.loop)

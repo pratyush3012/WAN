@@ -1,8 +1,8 @@
 """
 WAN Bot - Music Cog (Lara-style)
-Slash commands: /play /skip /stop /pause /resume /volume /queue /np /join /leave /shuffle /loop
-Also works with prefix: !play !skip etc.
-Supports: song names, YouTube URLs, Spotify track/album/playlist URLs
+Slash: /play /skip /stop /pause /resume /volume /queue /np /shuffle /loop /join /leave
+Prefix: !play !skip etc.
+Supports: song names, YouTube URLs, Spotify URLs
 """
 import discord
 from discord import app_commands
@@ -16,25 +16,54 @@ from collections import deque
 
 logger = logging.getLogger("discord_bot.music")
 
+# ── yt-dlp options — tuned to bypass YouTube bot detection ────────────────────
 YTDL_OPTS = {
-    "format": "bestaudio/best",
+    "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
     "noplaylist": True,
     "quiet": True,
     "no_warnings": True,
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
     "extract_flat": False,
+    "skip_download": True,
+    # Bypass bot detection
+    "http_headers": {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+    },
+    "extractor_args": {
+        "youtube": {
+            "skip": ["dash", "hls"],
+            "player_skip": ["js", "configs", "webpage"],
+        }
+    },
+    # Use innertube API directly — more reliable on server IPs
+    "compat_opts": set(),
+    "age_limit": None,
+    "geo_bypass": True,
+    "geo_bypass_country": "US",
 }
 
 FFMPEG_OPTS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn",
+    "before_options": (
+        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
+        "-headers 'User-Agent: Mozilla/5.0'"
+    ),
+    "options": "-vn -bufsize 64k",
 }
 
-ytdl = yt_dlp.YoutubeDL(YTDL_OPTS)
+
+def _make_ytdl():
+    """Create a fresh yt-dlp instance."""
+    return yt_dlp.YoutubeDL(YTDL_OPTS)
 
 
 def _spotify_to_search(url: str) -> str:
+    """Convert Spotify URL to a search query string."""
     try:
         import spotipy
         from spotipy.oauth2 import SpotifyClientCredentials
@@ -56,13 +85,14 @@ def _spotify_to_search(url: str) -> str:
                 pid = url.split("/playlist/")[1].split("?")[0]
                 p = sp.playlist(pid)
                 return p["name"]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Spotify resolve error: {e}")
+    # Fallback: strip URL and use as-is
     return url
 
 
 class Song:
-    def __init__(self, data: dict, requester: discord.Member):
+    def __init__(self, data: dict, requester):
         self.stream_url = data.get("url", "")
         self.title      = data.get("title", "Unknown")
         self.duration   = data.get("duration", 0)
@@ -87,7 +117,9 @@ class Song:
         )
         e.add_field(name="Duration", value=self.duration_str, inline=True)
         e.add_field(name="Uploader", value=self.uploader, inline=True)
-        e.add_field(name="Requested by", value=self.requester.mention, inline=True)
+        if self.requester:
+            name = self.requester.mention if hasattr(self.requester, 'mention') else str(self.requester)
+            e.add_field(name="Requested by", value=name, inline=True)
         if self.thumbnail:
             e.set_thumbnail(url=self.thumbnail)
         return e
@@ -169,11 +201,8 @@ class Music(commands.Cog):
             self._players[guild_id] = GuildPlayer()
         return self._players[guild_id]
 
-    # ── shared helpers ─────────────────────────────────────────────────────────
-
-    async def _join_voice(self, guild: discord.Guild, author: discord.Member, send_fn) -> discord.VoiceClient:
-        """Join author's voice channel. send_fn is an async callable for error messages."""
-        if author.voice is None:
+    async def _join_voice(self, guild: discord.Guild, author, send_fn) -> discord.VoiceClient:
+        if not hasattr(author, 'voice') or author.voice is None:
             await send_fn("❌ Join a voice channel first.")
             return None
         vc = guild.voice_client
@@ -183,32 +212,56 @@ class Music(commands.Cog):
             await vc.move_to(author.voice.channel)
         return vc
 
-    async def _fetch_song(self, query: str, requester: discord.Member) -> Song:
+    async def _fetch_song(self, query: str, requester) -> Song:
+        """Fetch song info from YouTube. Returns Song or None."""
+        # Resolve Spotify URLs to search queries
         if "spotify.com" in query:
             query = _spotify_to_search(query)
-        if not query.startswith("http"):
-            query = f"ytsearch:{query}"
-        try:
-            loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(
-                None, lambda: ytdl.extract_info(query, download=False)
-            )
-            if not data:
-                return None
-            if "entries" in data:
-                entries = [e for e in data["entries"] if e]
-                if not entries:
+
+        # If not a URL, make it a YouTube search
+        is_url = query.startswith("http://") or query.startswith("https://")
+        if not is_url:
+            search_query = f"ytsearch:{query}"
+        else:
+            search_query = query
+
+        loop = asyncio.get_event_loop()
+
+        def _extract():
+            ytdl = _make_ytdl()
+            try:
+                info = ytdl.extract_info(search_query, download=False)
+                if not info:
                     return None
-                data = entries[0]
-            return Song(data, requester)
-        except yt_dlp.utils.DownloadError as e:
-            logger.warning(f"yt-dlp download error: {e}")
-            return None
+                # For search results, get first entry
+                if "entries" in info:
+                    entries = [e for e in info["entries"] if e]
+                    if not entries:
+                        return None
+                    info = entries[0]
+                    # Re-extract to get the actual stream URL
+                    info = ytdl.extract_info(info["webpage_url"], download=False)
+                return info
+            except Exception as e:
+                logger.warning(f"yt-dlp extract error for '{query}': {e}")
+                return None
+
+        try:
+            data = await loop.run_in_executor(None, _extract)
+            if not data:
+                logger.warning(f"No data returned for query: '{query}'")
+                return None
+            song = Song(data, requester)
+            if not song.stream_url:
+                logger.warning(f"No stream URL for: '{song.title}'")
+                return None
+            logger.info(f"Fetched: {song.title} ({song.duration_str})")
+            return song
         except Exception as e:
-            logger.error(f"yt-dlp fetch error: {e}")
+            logger.error(f"_fetch_song unexpected error: {e}")
             return None
 
-    def _play_next(self, channel: discord.TextChannel, guild: discord.Guild, gp: GuildPlayer):
+    def _play_next(self, channel, guild: discord.Guild, gp: GuildPlayer):
         vc = guild.voice_client
         if vc is None:
             return
@@ -227,14 +280,15 @@ class Music(commands.Cog):
                 volume=gp.volume
             )
         except Exception as e:
-            logger.error(f"FFmpeg source error for '{song.title}': {e}")
-            # Skip to next song
+            logger.error(f"FFmpeg error for '{song.title}': {e}")
             self._play_next(channel, guild, gp)
             return
+
         def _after(error):
             if error:
                 logger.error(f"Player error: {error}")
             self._play_next(channel, guild, gp)
+
         vc.play(source, after=_after)
         asyncio.run_coroutine_threadsafe(
             channel.send(embed=song.embed(), view=MusicControls(self, guild.id)),
@@ -253,25 +307,25 @@ class Music(commands.Cog):
         )
         if not vc:
             return
-        gp = self._get_player(interaction.guild.id)
+        await interaction.followup.send(f"🔍 Searching for **{query}**...")
         song = await self._fetch_song(query, interaction.user)
         if not song:
-            return await interaction.followup.send("❌ Couldn't find that song. Try a different name or URL.")
+            return await interaction.edit_original_response(
+                content="❌ Couldn't find that song. Try a more specific name or paste a YouTube URL directly.")
+        gp = self._get_player(interaction.guild.id)
         gp.queue.append(song)
         if not vc.is_playing() and not vc.is_paused():
             self._play_next(interaction.channel, interaction.guild, gp)
-            await interaction.followup.send("▶️ Starting playback...")
+            await interaction.edit_original_response(content=f"▶️ Now playing: **{song.title}**")
         else:
-            e = discord.Embed(
-                title="➕ Added to Queue",
-                description=f"[{song.title}]({song.webpage})" if song.webpage else song.title,
-                color=0x1DB954
-            )
+            e = discord.Embed(title="➕ Added to Queue",
+                              description=f"[{song.title}]({song.webpage})" if song.webpage else song.title,
+                              color=0x1DB954)
             e.add_field(name="Duration", value=song.duration_str, inline=True)
             e.add_field(name="Position", value=f"#{len(gp.queue)}", inline=True)
             if song.thumbnail:
                 e.set_thumbnail(url=song.thumbnail)
-            await interaction.followup.send(embed=e)
+            await interaction.edit_original_response(content=None, embed=e)
 
     @app_commands.command(name="skip", description="⏭ Skip the current song")
     async def slash_skip(self, interaction: discord.Interaction):
@@ -323,22 +377,19 @@ class Music(commands.Cog):
             vc.source.volume = gp.volume
         await interaction.response.send_message(f"🔊 Volume set to **{level}%**")
 
-    @app_commands.command(name="queue", description="📋 Show the music queue")
+    @app_commands.command(name="queue", description="� Show the music queue")
     async def slash_queue(self, interaction: discord.Interaction):
         gp = self._get_player(interaction.guild.id)
         if not gp.current and not gp.queue:
-            return await interaction.response.send_message("📭 Queue is empty.", ephemeral=True)
+            return await interaction.response.send_message("� Queue is empty.", ephemeral=True)
         e = discord.Embed(title="🎵 Music Queue", color=0x1DB954)
         if gp.current:
-            e.add_field(
-                name="Now Playing",
-                value=f"[{gp.current.title}]({gp.current.webpage}) `{gp.current.duration_str}`",
-                inline=False
-            )
+            e.add_field(name="Now Playing",
+                        value=f"[{gp.current.title}]({gp.current.webpage}) `{gp.current.duration_str}`",
+                        inline=False)
         if gp.queue:
-            lines = []
-            for i, s in enumerate(list(gp.queue)[:10], 1):
-                lines.append(f"`{i}.` [{s.title}]({s.webpage}) `{s.duration_str}`")
+            lines = [f"`{i}.` [{s.title}]({s.webpage}) `{s.duration_str}`"
+                     for i, s in enumerate(list(gp.queue)[:10], 1)]
             if len(gp.queue) > 10:
                 lines.append(f"... and {len(gp.queue) - 10} more")
             e.add_field(name=f"Up Next ({len(gp.queue)} songs)", value="\n".join(lines), inline=False)
@@ -388,19 +439,19 @@ class Music(commands.Cog):
         else:
             await interaction.response.send_message("❌ Not in a voice channel.", ephemeral=True)
 
-    # ── Prefix commands (kept as aliases) ─────────────────────────────────────
+    # ── Prefix aliases ─────────────────────────────────────────────────────────
 
     @commands.command(name="play", aliases=["p"])
     async def prefix_play(self, ctx, *, query: str):
         vc = await self._join_voice(ctx.guild, ctx.author, ctx.send)
         if not vc:
             return
-        gp = self._get_player(ctx.guild.id)
-        msg = await ctx.send("🔍 Searching...")
+        msg = await ctx.send(f"🔍 Searching for **{query}**...")
         song = await self._fetch_song(query, ctx.author)
         if not song:
-            return await msg.edit(content="❌ Couldn't find that song.")
+            return await msg.edit(content="❌ Couldn't find that song. Try a YouTube URL directly.")
         await msg.delete()
+        gp = self._get_player(ctx.guild.id)
         gp.queue.append(song)
         if not vc.is_playing() and not vc.is_paused():
             self._play_next(ctx.channel, ctx.guild, gp)
