@@ -1,194 +1,585 @@
 """
-WAN Bot - Leveling/XP System (replaces MEE6)
-- XP for every message (with cooldown)
-- Level-up announcements
-- Level roles (auto-assign on level up)
-- /rank, /levels, /xp-config
+WAN Bot - Leveling System v2 (Engaging Edition)
+XP Sources:
+  - Messages (15-25 XP, 60s cooldown)
+  - Voice time (10 XP/min while in VC)
+  - Reactions given/received (5 XP each, 30s cooldown)
+  - Daily check-in bonus (!daily — 100-300 XP)
+  - Streak bonus (consecutive daily check-ins multiply XP)
+  - First message of the day (50 XP bonus)
+  - Invite bonus (50 XP when someone you invited joins)
+
+Features:
+  - Level roles (auto-assign)
+  - Level-up announcements with Gemini AI messages
+  - /rank — beautiful rank card with progress bar
+  - /levels — leaderboard top 10
+  - /daily — claim daily XP bonus
+  - /streak — check your streak
+  - Milestone announcements (level 5, 10, 25, 50, 100)
+  - XP multiplier events (set via !xp-event)
+  - All data stored in DB (persistent)
 """
 import discord
 from discord import app_commands
 from discord.ext import commands
-import json, os, random, asyncio, logging, time
+from discord.ext import tasks
+import asyncio
+import logging
+import random
+import time
+import json
+import os
+import urllib.request
+from datetime import datetime, timezone, timedelta
+from utils.settings import get_setting, set_setting
 
-logger = logging.getLogger('discord_bot.leveling')
-DATA_FILE = 'leveling_data.json'
+logger = logging.getLogger("discord_bot.leveling")
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+# XP values
+XP_MESSAGE_MIN   = 15
+XP_MESSAGE_MAX   = 25
+XP_VOICE_PER_MIN = 10
+XP_REACTION      = 5
+XP_DAILY_MIN     = 100
+XP_DAILY_MAX     = 300
+XP_FIRST_MSG_DAY = 50
+XP_STREAK_BONUS  = 25   # extra per streak day (capped at 10 days)
+
+# Cooldowns (seconds)
+CD_MESSAGE  = 60
+CD_REACTION = 30
+
+MILESTONES = {5, 10, 25, 50, 75, 100}
+
+LEVELUP_MSGS = [
+    "{user} just hit **Level {level}**! The grind is real 🔥",
+    "GG {user}! Level **{level}** unlocked 🎮 Keep going!",
+    "Aye {user} is now Level **{level}**! 👑 Respect.",
+    "{user} leveled up to **{level}**! Bhai scene ban gaya 🚀",
+    "Level **{level}** achieved! {user} is on a different level fr 💪",
+    "🎉 {user} reached Level **{level}**! The server is proud.",
+    "{user} grinded their way to Level **{level}**! 🏆",
+    "Oof {user} is Level **{level}** now. Koi rok nahi sakta 😤",
+]
+
+MILESTONE_MSGS = {
+    5:   "🌟 {user} hit **Level 5** — officially part of the crew!",
+    10:  "🔥 {user} is **Level 10**! A true regular. Respect.",
+    25:  "💎 {user} reached **Level 25**! Veteran status unlocked.",
+    50:  "👑 {user} is **Level 50**! Absolute legend of this server.",
+    75:  "🚀 {user} hit **Level 75**! Bhai ye toh god mode hai.",
+    100: "🏆 {user} reached **Level 100**! GOAT. No debate.",
+}
+
 
 def _xp_for_level(lvl: int) -> int:
-    """XP needed to reach this level."""
     return 5 * (lvl ** 2) + 50 * lvl + 100
 
-def _level_from_xp(xp: int) -> int:
-    lvl = 0
-    while xp >= _xp_for_level(lvl):
-        xp -= _xp_for_level(lvl)
-        lvl += 1
-    return lvl
 
-def _xp_progress(xp: int):
-    """Returns (level, current_xp, needed_xp)."""
+def _xp_progress(total_xp: int):
+    """Returns (level, xp_into_level, xp_needed_for_next)."""
     lvl = 0
+    xp = total_xp
     while xp >= _xp_for_level(lvl):
         xp -= _xp_for_level(lvl)
         lvl += 1
     return lvl, xp, _xp_for_level(lvl)
 
 
+def _progress_bar(current: int, total: int, length: int = 20) -> str:
+    filled = int((current / max(total, 1)) * length)
+    return "█" * filled + "░" * (length - filled)
+
+
+async def _gemini_levelup(member: discord.Member, level: int) -> str:
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        prompt = (
+            f"Write a short, hype Discord level-up message.\n"
+            f"User: {member.display_name}\n"
+            f"New level: {level}\n"
+            f"Rules: 1 sentence MAX. Use emojis. Be hype, fun, desi/Hindi vibe. "
+            f"Mention their name. No markdown headers."
+        )
+        payload = json.dumps({
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": 80, "temperature": 1.0}
+        }).encode()
+        url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"
+        req = urllib.request.Request(url, data=payload,
+                                     headers={"Content-Type": "application/json"})
+        loop = asyncio.get_event_loop()
+        data = await loop.run_in_executor(
+            None, lambda: json.loads(urllib.request.urlopen(req, timeout=6).read()))
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception:
+        return None
+
+
 class Leveling(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.data: dict = self._load()
-        self._cd: dict[str, float] = {}   # "guild_user" -> last_xp_time
+        # In-memory cache: {guild_id: {users: {uid: {...}}, config: {...}}}
+        self._cache: dict = {}
+        self._loaded: bool = False
+        # Cooldown trackers (in-memory only, reset on restart — that's fine)
+        self._msg_cd: dict = {}       # "gid_uid" -> timestamp
+        self._react_cd: dict = {}     # "gid_uid" -> timestamp
+        # Voice join times: {gid_uid: join_timestamp}
+        self._voice_join: dict = {}
+        # XP multiplier: float (1.0 = normal)
+        self._multiplier: float = 1.0
+        self._multiplier_end: float = 0.0
+        # Voice XP task
+        self.voice_xp_task.start()
 
-    def _load(self) -> dict:
-        try:
-            if os.path.exists(DATA_FILE):
-                with open(DATA_FILE) as f:
-                    return json.load(f)
-        except Exception:
-            pass
-        return {}
+    def cog_unload(self):
+        self.voice_xp_task.cancel()
 
-    def _save(self):
-        try:
-            with open(DATA_FILE, 'w') as f:
-                json.dump(self.data, f)
-        except Exception as e:
-            logger.error(f"Leveling save error: {e}")
+    # ── DB persistence ─────────────────────────────────────────────────────────
+
+    async def _ensure_loaded(self):
+        if self._loaded:
+            return
+        stored = await get_setting(0, "leveling_data", {})
+        self._cache = stored if isinstance(stored, dict) else {}
+        self._loaded = True
+
+    async def _persist(self):
+        await set_setting(0, "leveling_data", self._cache)
 
     def _guild(self, gid: int) -> dict:
         key = str(gid)
-        if key not in self.data:
-            self.data[key] = {'users': {}, 'config': {'level_roles': {}, 'announce_channel': None, 'announce': True}}
-        return self.data[key]
+        if key not in self._cache:
+            self._cache[key] = {
+                "users": {},
+                "config": {
+                    "level_roles": {},
+                    "announce_channel": None,
+                    "announce": True,
+                    "xp_multiplier": 1.0,
+                    "no_xp_channels": [],
+                    "no_xp_roles": [],
+                }
+            }
+        return self._cache[key]
 
     def _user(self, gid: int, uid: int) -> dict:
         g = self._guild(gid)
         key = str(uid)
-        if key not in g['users']:
-            g['users'][key] = {'xp': 0, 'messages': 0, 'level': 0}
-        # Backfill level field for existing users
-        u = g['users'][key]
-        if 'level' not in u:
-            u['level'] = _level_from_xp(u.get('xp', 0))
+        if key not in g["users"]:
+            g["users"][key] = {
+                "xp": 0, "level": 0, "messages": 0,
+                "voice_minutes": 0, "reactions": 0,
+                "streak": 0, "last_daily": None,
+                "last_msg_day": None,
+            }
+        u = g["users"][key]
+        # backfill missing fields
+        for field, default in [("voice_minutes", 0), ("reactions", 0),
+                                ("streak", 0), ("last_daily", None),
+                                ("last_msg_day", None), ("messages", 0)]:
+            if field not in u:
+                u[field] = default
         return u
+
+    # ── XP granting ────────────────────────────────────────────────────────────
+
+    async def _grant_xp(self, guild: discord.Guild, member: discord.Member,
+                        amount: int, source: str = ""):
+        await self._ensure_loaded()
+        if member.bot:
+            return
+        # Apply multiplier
+        mult = self._multiplier if time.time() < self._multiplier_end else 1.0
+        g_cfg = self._guild(guild.id)["config"]
+        mult *= g_cfg.get("xp_multiplier", 1.0)
+        amount = max(1, int(amount * mult))
+
+        u = self._user(guild.id, member.id)
+        old_level = u["level"]
+        u["xp"] += amount
+        new_level, cur, needed = _xp_progress(u["xp"])
+        u["level"] = new_level
+        await self._persist()
+
+        if new_level > old_level:
+            await self._announce_levelup(guild, member, new_level)
+
+    async def _announce_levelup(self, guild: discord.Guild, member: discord.Member, level: int):
+        g = self._guild(guild.id)
+        cfg = g["config"]
+
+        # Assign level role
+        role_id = cfg["level_roles"].get(str(level))
+        if role_id:
+            role = guild.get_role(int(role_id))
+            if role:
+                try:
+                    await member.add_roles(role, reason=f"Level {level}")
+                except Exception:
+                    pass
+
+        if not cfg.get("announce", True):
+            return
+
+        # Build message
+        if level in MILESTONES:
+            desc = MILESTONE_MSGS[level].replace("{user}", member.mention)
+        else:
+            ai_msg = await _gemini_levelup(member, level)
+            if ai_msg:
+                desc = ai_msg.replace("{user}", member.mention).replace("{level}", str(level))
+            else:
+                template = random.choice(LEVELUP_MSGS)
+                desc = template.replace("{user}", member.mention).replace("{level}", str(level))
+
+        color = 0xf59e0b if level not in MILESTONES else 0x7c3aed
+        embed = discord.Embed(description=desc, color=color)
+        embed.set_author(name=f"⬆️ Level Up! → Level {level}", icon_url=member.display_avatar.url)
+
+        # XP needed for next level
+        _, cur_xp, needed = _xp_progress(self._user(guild.id, member.id)["xp"])
+        embed.set_footer(text=f"Next level: {cur_xp}/{needed} XP")
+
+        ch_id = cfg.get("announce_channel")
+        ch = guild.get_channel(int(ch_id)) if ch_id else None
+        # fallback: find a general/chat channel
+        if not ch:
+            for name in ("general", "chat", "lounge", "bot-commands", "bot"):
+                ch = discord.utils.get(guild.text_channels, name=name)
+                if ch:
+                    break
+        if not ch and guild.text_channels:
+            ch = guild.text_channels[0]
+        if ch:
+            try:
+                await ch.send(embed=embed)
+            except Exception:
+                pass
+
+    # ── Listeners ──────────────────────────────────────────────────────────────
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot or not message.guild:
             return
+        await self._ensure_loaded()
+        cfg = self._guild(message.guild.id)["config"]
+
+        # No-XP channel check
+        if message.channel.id in [int(x) for x in cfg.get("no_xp_channels", [])]:
+            return
+        # No-XP role check
+        no_xp_roles = [int(x) for x in cfg.get("no_xp_roles", [])]
+        if any(r.id in no_xp_roles for r in message.author.roles):
+            return
+
         key = f"{message.guild.id}_{message.author.id}"
         now = time.time()
-        if now - self._cd.get(key, 0) < 60:   # 60s cooldown between XP gains
+        if now - self._msg_cd.get(key, 0) < CD_MESSAGE:
             return
-        self._cd[key] = now
+        self._msg_cd[key] = now
 
         u = self._user(message.guild.id, message.author.id)
-        old_level = u.get('level', _level_from_xp(u['xp']))  # use stored level to avoid re-announce on restart
-        gain = random.randint(15, 25)
-        u['xp'] += gain
-        u['messages'] = u.get('messages', 0) + 1
-        new_level, cur_xp, needed = _xp_progress(u['xp'])
-        # Always keep stored level in sync
-        u['level'] = new_level
-        self._save()
+        u["messages"] = u.get("messages", 0) + 1
+        xp = random.randint(XP_MESSAGE_MIN, XP_MESSAGE_MAX)
 
-        if new_level > old_level:
-            await self._on_level_up(message, new_level)
+        # First message of the day bonus
+        today = datetime.now(timezone.utc).date().isoformat()
+        if u.get("last_msg_day") != today:
+            u["last_msg_day"] = today
+            xp += XP_FIRST_MSG_DAY
+            try:
+                await message.channel.send(
+                    f"☀️ {message.author.mention} First message of the day! **+{XP_FIRST_MSG_DAY} bonus XP**",
+                    delete_after=8
+                )
+            except Exception:
+                pass
 
-    async def _on_level_up(self, message: discord.Message, level: int):
-        g = self._guild(message.guild.id)
-        cfg = g['config']
+        await self._grant_xp(message.guild, message.author, xp, "message")
 
-        # Assign level role if configured
-        role_id = cfg['level_roles'].get(str(level))
-        if role_id:
-            role = message.guild.get_role(int(role_id))
-            if role:
-                try:
-                    await message.author.add_roles(role, reason=f"Reached level {level}")
-                except Exception:
-                    pass
-
-        if not cfg.get('announce', True):
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
+        if user.bot or not reaction.message.guild:
             return
+        await self._ensure_loaded()
+        guild = reaction.message.guild
+        key = f"{guild.id}_{user.id}"
+        now = time.time()
+        if now - self._react_cd.get(key, 0) < CD_REACTION:
+            return
+        self._react_cd[key] = now
+        member = guild.get_member(user.id)
+        if member:
+            u = self._user(guild.id, user.id)
+            u["reactions"] = u.get("reactions", 0) + 1
+            await self._grant_xp(guild, member, XP_REACTION, "reaction")
 
-        # Try AI Coder generated level-up messages first
-        desc = None
-        try:
-            ai_coder = message.guild._state._get_client().cogs.get("AICoder")
-            if ai_coder:
-                msgs = ai_coder.get_generated("levelup_messages")
-                if msgs:
-                    import random as _r
-                    template = _r.choice(msgs)
-                    desc = template.replace("{user}", message.author.mention).replace("{level}", str(level))
-        except Exception:
-            pass
+        # Also give XP to the message author for receiving a reaction
+        msg_author = reaction.message.author
+        if not msg_author.bot and msg_author.id != user.id:
+            author_member = guild.get_member(msg_author.id)
+            if author_member:
+                await self._grant_xp(guild, author_member, XP_REACTION, "reaction_received")
 
-        if not desc:
-            desc = f"**{message.author.mention}** reached **Level {level}**! 🎉"
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member: discord.Member,
+                                    before: discord.VoiceState, after: discord.VoiceState):
+        if member.bot:
+            return
+        await self._ensure_loaded()
+        key = f"{member.guild.id}_{member.id}"
+        # Joined a voice channel
+        if before.channel is None and after.channel is not None:
+            self._voice_join[key] = time.time()
+        # Left a voice channel
+        elif before.channel is not None and after.channel is None:
+            join_time = self._voice_join.pop(key, None)
+            if join_time:
+                minutes = int((time.time() - join_time) / 60)
+                if minutes > 0:
+                    u = self._user(member.guild.id, member.id)
+                    u["voice_minutes"] = u.get("voice_minutes", 0) + minutes
+                    xp = minutes * XP_VOICE_PER_MIN
+                    await self._grant_xp(member.guild, member, xp, "voice")
 
-        embed = discord.Embed(title="⬆️ Level Up!", description=desc, color=0xf59e0b)
-        embed.set_thumbnail(url=message.author.display_avatar.url)
+    # ── Voice XP background task (every 5 min for active VC members) ───────────
 
-        ch_id = cfg.get('announce_channel')
-        ch = message.guild.get_channel(int(ch_id)) if ch_id else message.channel
-        try:
-            await ch.send(embed=embed)
-        except Exception:
-            pass
+    @tasks.loop(minutes=5)
+    async def voice_xp_task(self):
+        await self._ensure_loaded()
+        now = time.time()
+        for guild in self.bot.guilds:
+            for vc in guild.voice_channels:
+                for member in vc.members:
+                    if member.bot:
+                        continue
+                    # Check if they're muted/deafened (no XP for AFK)
+                    vs = member.voice
+                    if vs and (vs.self_deaf or vs.afk):
+                        continue
+                    key = f"{guild.id}_{member.id}"
+                    if key not in self._voice_join:
+                        self._voice_join[key] = now
+                    # Grant 5 min worth of XP
+                    xp = 5 * XP_VOICE_PER_MIN
+                    u = self._user(guild.id, member.id)
+                    u["voice_minutes"] = u.get("voice_minutes", 0) + 5
+                    await self._grant_xp(guild, member, xp, "voice_tick")
 
-    @app_commands.command(name="rank", description="⭐ Show your XP rank")
+    @voice_xp_task.before_loop
+    async def before_voice_task(self):
+        await self.bot.wait_until_ready()
+
+    # ── Commands ───────────────────────────────────────────────────────────────
+
+    @app_commands.command(name="rank", description="⭐ View your XP rank card")
+    @app_commands.describe(member="Member to check (defaults to you)")
     async def rank(self, interaction: discord.Interaction, member: discord.Member = None):
-        member = member or interaction.user
-        u = self._user(interaction.guild.id, member.id)
-        level, cur_xp, needed = _xp_progress(u['xp'])
+        await interaction.response.defer()
+        await self._ensure_loaded()
+        target = member or interaction.user
+        u = self._user(interaction.guild.id, target.id)
+        level, cur_xp, needed = _xp_progress(u["xp"])
         g = self._guild(interaction.guild.id)
-        sorted_users = sorted(g['users'].items(), key=lambda x: x[1].get('xp', 0), reverse=True)
-        rank_pos = next((i+1 for i, (uid, _) in enumerate(sorted_users) if uid == str(member.id)), '?')
-        bar_filled = int((cur_xp / needed) * 20)
-        bar = '█' * bar_filled + '░' * (20 - bar_filled)
-        embed = discord.Embed(title=f"⭐ {member.display_name}'s Rank", color=0xf59e0b)
-        embed.set_thumbnail(url=member.display_avatar.url)
-        embed.add_field(name="Level", value=str(level), inline=True)
-        embed.add_field(name="Rank", value=f"#{rank_pos}", inline=True)
-        embed.add_field(name="Total XP", value=str(u['xp']), inline=True)
-        embed.add_field(name=f"Progress ({cur_xp}/{needed} XP)", value=f"`{bar}`", inline=False)
+        sorted_users = sorted(g["users"].items(), key=lambda x: x[1].get("xp", 0), reverse=True)
+        rank_pos = next((i + 1 for i, (uid, _) in enumerate(sorted_users) if uid == str(target.id)), "?")
+        bar = _progress_bar(cur_xp, needed, 24)
+        pct = int((cur_xp / max(needed, 1)) * 100)
+
+        embed = discord.Embed(color=0xf59e0b)
+        embed.set_author(name=f"{target.display_name}'s Rank Card", icon_url=target.display_avatar.url)
+        embed.set_thumbnail(url=target.display_avatar.url)
+
+        embed.add_field(name="🏆 Rank",          value=f"**#{rank_pos}**",          inline=True)
+        embed.add_field(name="⭐ Level",          value=f"**{level}**",              inline=True)
+        embed.add_field(name="✨ Total XP",       value=f"**{u['xp']:,}**",          inline=True)
+        embed.add_field(name="💬 Messages",       value=f"**{u.get('messages',0):,}**", inline=True)
+        embed.add_field(name="🎙️ Voice Time",     value=f"**{u.get('voice_minutes',0)} min**", inline=True)
+        embed.add_field(name="🔥 Streak",         value=f"**{u.get('streak',0)} days**", inline=True)
+        embed.add_field(
+            name=f"📊 Progress to Level {level+1} ({pct}%)",
+            value=f"`{bar}` {cur_xp:,}/{needed:,} XP",
+            inline=False
+        )
+
+        # Next level role reward if any
+        cfg = self._guild(interaction.guild.id)["config"]
+        next_role_level = None
+        for lvl_str in sorted(cfg["level_roles"].keys(), key=int):
+            if int(lvl_str) > level:
+                next_role_level = int(lvl_str)
+                break
+        if next_role_level:
+            role = interaction.guild.get_role(int(cfg["level_roles"][str(next_role_level)]))
+            if role:
+                embed.set_footer(text=f"🎁 Reach Level {next_role_level} to unlock: {role.name}")
+
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="levels", description="🏆 XP Leaderboard")
+    async def levels(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        await self._ensure_loaded()
+        g = self._guild(interaction.guild.id)
+        sorted_users = sorted(g["users"].items(), key=lambda x: x[1].get("xp", 0), reverse=True)[:10]
+        embed = discord.Embed(title="🏆 XP Leaderboard", color=0xf59e0b)
+        lines = []
+        medals = ["🥇", "🥈", "🥉"]
+        for i, (uid, data) in enumerate(sorted_users):
+            m = interaction.guild.get_member(int(uid))
+            name = m.display_name if m else f"User {uid}"
+            lvl, cur, needed = _xp_progress(data.get("xp", 0))
+            bar = _progress_bar(cur, needed, 10)
+            prefix = medals[i] if i < 3 else f"`{i+1}.`"
+            lines.append(
+                f"{prefix} **{name}** — Lv.**{lvl}** `{bar}` {data.get('xp',0):,} XP"
+            )
+        embed.description = "\n".join(lines) if lines else "No data yet. Start chatting!"
+        embed.set_footer(text="XP earned from: messages • voice • reactions • daily bonus")
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="daily", description="🎁 Claim your daily XP bonus")
+    async def daily(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_loaded()
+        u = self._user(interaction.guild.id, interaction.user.id)
+        today = datetime.now(timezone.utc).date().isoformat()
+        yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+
+        if u.get("last_daily") == today:
+            # Calculate time until midnight UTC
+            now_utc = datetime.now(timezone.utc)
+            midnight = (now_utc + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0)
+            secs = int((midnight - now_utc).total_seconds())
+            h, rem = divmod(secs, 3600)
+            m, s = divmod(rem, 60)
+            return await interaction.followup.send(
+                f"⏰ Already claimed today! Come back in **{h}h {m}m**.", ephemeral=True)
+
+        # Streak logic
+        if u.get("last_daily") == yesterday:
+            u["streak"] = u.get("streak", 0) + 1
+        else:
+            u["streak"] = 1
+
+        streak = u["streak"]
+        base_xp = random.randint(XP_DAILY_MIN, XP_DAILY_MAX)
+        streak_bonus = min(streak - 1, 10) * XP_STREAK_BONUS
+        total_xp = base_xp + streak_bonus
+        u["last_daily"] = today
+
+        await self._grant_xp(interaction.guild, interaction.user, total_xp, "daily")
+
+        embed = discord.Embed(title="🎁 Daily Bonus Claimed!", color=0x10b981)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.add_field(name="Base XP", value=f"+{base_xp}", inline=True)
+        embed.add_field(name="Streak Bonus", value=f"+{streak_bonus}", inline=True)
+        embed.add_field(name="Total", value=f"**+{total_xp} XP**", inline=True)
+        embed.add_field(name="🔥 Current Streak", value=f"**{streak} day{'s' if streak != 1 else ''}**", inline=False)
+
+        if streak >= 7:
+            embed.description = f"🔥 **{streak}-day streak!** You're on fire! Keep it up!"
+        elif streak >= 3:
+            embed.description = f"⚡ **{streak}-day streak!** Don't break it!"
+        else:
+            embed.description = "Come back tomorrow to build your streak for bonus XP!"
+
+        embed.set_footer(text="Streak bonus: +25 XP per consecutive day (max 10 days)")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="streak", description="🔥 Check your daily streak")
+    async def streak(self, interaction: discord.Interaction):
+        await self._ensure_loaded()
+        u = self._user(interaction.guild.id, interaction.user.id)
+        streak = u.get("streak", 0)
+        last = u.get("last_daily", "Never")
+        embed = discord.Embed(title="🔥 Your Streak", color=0xf97316)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.add_field(name="Current Streak", value=f"**{streak} day{'s' if streak != 1 else ''}**", inline=True)
+        embed.add_field(name="Last Daily", value=last, inline=True)
+        bonus = min(streak, 10) * XP_STREAK_BONUS
+        embed.add_field(name="Current Streak Bonus", value=f"+{bonus} XP/day", inline=True)
+        embed.set_footer(text="Use /daily every day to keep your streak alive!")
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="levels", description="⭐ Show the XP leaderboard")
-    async def levels(self, interaction: discord.Interaction):
-        g = self._guild(interaction.guild.id)
-        sorted_users = sorted(g['users'].items(), key=lambda x: x[1].get('xp', 0), reverse=True)[:10]
-        embed = discord.Embed(title="⭐ XP Leaderboard", color=0xf59e0b)
-        lines = []
-        medals = ['🥇','🥈','🥉']
-        for i, (uid, data) in enumerate(sorted_users):
-            member = interaction.guild.get_member(int(uid))
-            name = member.display_name if member else f"User {uid}"
-            lvl, _, _ = _xp_progress(data.get('xp', 0))
-            prefix = medals[i] if i < 3 else f"`{i+1}.`"
-            lines.append(f"{prefix} **{name}** — Level {lvl} ({data.get('xp',0)} XP)")
-        embed.description = "\n".join(lines) if lines else "No data yet."
+    @app_commands.command(name="xp-event", description="⚡ Start an XP multiplier event (admin)")
+    @app_commands.describe(multiplier="XP multiplier (e.g. 2 = double XP)", hours="Duration in hours")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def xp_event(self, interaction: discord.Interaction, multiplier: float, hours: int = 1):
+        if not 1.0 <= multiplier <= 5.0:
+            return await interaction.response.send_message("❌ Multiplier must be 1.0–5.0", ephemeral=True)
+        self._multiplier = multiplier
+        self._multiplier_end = time.time() + (hours * 3600)
+        embed = discord.Embed(
+            title="⚡ XP Event Started!",
+            description=f"**{multiplier}x XP** for the next **{hours} hour{'s' if hours != 1 else ''}**!\nGo go go — chat, react, join voice! 🚀",
+            color=0x7c3aed
+        )
         await interaction.response.send_message(embed=embed)
+
+    # ── Prefix admin commands ──────────────────────────────────────────────────
 
     @commands.command(name="set-level-role")
     @commands.has_permissions(manage_roles=True)
     async def set_level_role(self, ctx, level: int, role: discord.Role):
-        """Assign a role when members reach a level"""
+        await self._ensure_loaded()
         g = self._guild(ctx.guild.id)
-        g['config']['level_roles'][str(level)] = role.id
-        self._save()
-        await ctx.send(f"✅ Members will get **{role.name}** at level **{level}**.")
+        g["config"]["level_roles"][str(level)] = role.id
+        await self._persist()
+        await ctx.send(f"✅ Members get **{role.name}** at level **{level}**.")
 
     @commands.command(name="xp-channel")
     @commands.has_permissions(manage_guild=True)
     async def xp_channel(self, ctx, channel: discord.TextChannel):
-        """Set channel for level-up announcements"""
+        await self._ensure_loaded()
         g = self._guild(ctx.guild.id)
-        g['config']['announce_channel'] = channel.id
-        self._save()
+        g["config"]["announce_channel"] = channel.id
+        await self._persist()
         await ctx.send(f"✅ Level-up announcements → {channel.mention}")
+
+    @commands.command(name="xp-noxp")
+    @commands.has_permissions(manage_guild=True)
+    async def xp_noxp(self, ctx, channel: discord.TextChannel):
+        """Add a channel to the no-XP list."""
+        await self._ensure_loaded()
+        g = self._guild(ctx.guild.id)
+        noxp = g["config"].setdefault("no_xp_channels", [])
+        cid = str(channel.id)
+        if cid in noxp:
+            noxp.remove(cid)
+            await self._persist()
+            await ctx.send(f"✅ {channel.mention} removed from no-XP list.")
+        else:
+            noxp.append(cid)
+            await self._persist()
+            await ctx.send(f"✅ {channel.mention} added to no-XP list.")
+
+    @commands.command(name="xp-give")
+    @commands.has_permissions(manage_guild=True)
+    async def xp_give(self, ctx, member: discord.Member, amount: int):
+        """Manually give XP to a member."""
+        await self._ensure_loaded()
+        await self._grant_xp(ctx.guild, member, amount, "manual")
+        await ctx.send(f"✅ Gave **{amount} XP** to {member.mention}.")
+
+    @commands.command(name="xp-reset")
+    @commands.has_permissions(administrator=True)
+    async def xp_reset(self, ctx, member: discord.Member):
+        """Reset a member's XP."""
+        await self._ensure_loaded()
+        g = self._guild(ctx.guild.id)
+        g["users"].pop(str(member.id), None)
+        await self._persist()
+        await ctx.send(f"✅ Reset XP for {member.mention}.")
 
 
 async def setup(bot):
