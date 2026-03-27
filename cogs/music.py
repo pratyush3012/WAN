@@ -18,7 +18,7 @@ logger = logging.getLogger("discord_bot.music")
 
 # ── yt-dlp options — use android client to avoid JS runtime requirement ───────
 YTDL_OPTS = {
-    "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
+    "format": "bestaudio/best",
     "noplaylist": True,
     "quiet": True,
     "no_warnings": True,
@@ -26,18 +26,11 @@ YTDL_OPTS = {
     "source_address": "0.0.0.0",
     "extract_flat": False,
     "skip_download": True,
-    # Force android_vr client — works without JS runtime (no deno/node needed on Render)
+    # android_vr/android_music clients work without JS runtime (no Node/Deno needed on Render)
     "extractor_args": {
         "youtube": {
-            "player_client": ["android_vr"],
+            "player_client": ["android_vr", "android_music", "android_testsuite"],
         }
-    },
-    "http_headers": {
-        "User-Agent": (
-            "Mozilla/5.0 (Linux; Android 11; Pixel 5) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/90.0.4430.91 Mobile Safari/537.36"
-        ),
     },
     "geo_bypass": True,
     "geo_bypass_country": "US",
