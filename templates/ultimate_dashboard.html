@@ -388,6 +388,7 @@ select.form-control option{background:var(--surface2);}
     <button class="menu-item" onclick="show('autoresponder',this)"><i class="fas fa-robot"></i><span>Auto Responder</span></button>
     <button class="menu-item" onclick="show('chatbot',this)"><i class="fas fa-comment-dots"></i><span>Chatbot</span></button>
     <button class="menu-item" onclick="show('leveling',this)"><i class="fas fa-star"></i><span>Leveling</span></button>
+    <button class="menu-item" onclick="show('music',this)"><i class="fas fa-music"></i><span>Music</span></button>
     <button class="menu-item" onclick="show('translation',this)"><i class="fas fa-language"></i><span>Translation</span></button>
     <button class="menu-item" onclick="show('giveaways',this)"><i class="fas fa-gift"></i><span>Giveaways</span></button>
     <button class="menu-item" onclick="show('polls',this)"><i class="fas fa-poll"></i><span>Polls</span></button>
@@ -3737,8 +3738,11 @@ function initSocket(){
     const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;
     el.textContent=(h?h+':':'')+(h?String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0');
   },1000);
-  // Music sync every 5s
-  setInterval(()=>{if(currentServer)loadMusicStatus();},5000);
+  // Music sync every 5s — only when music tab is visible
+  setInterval(()=>{
+    if(currentServer && document.getElementById('sec-music') && document.getElementById('sec-music').classList.contains('active'))
+      loadMusicStatus();
+  }, 5000);
   initSocket();
 
 // ===== TICKETS =====
