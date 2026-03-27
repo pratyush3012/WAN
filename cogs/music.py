@@ -209,16 +209,11 @@ class Music(commands.Cog):
 
     async def _fetch_song(self, query: str, requester) -> Song:
         """Fetch song info from YouTube. Returns Song or None."""
-        # Resolve Spotify URLs to search queries
         if "spotify.com" in query:
             query = _spotify_to_search(query)
 
-        # If not a URL, make it a YouTube search
         is_url = query.startswith("http://") or query.startswith("https://")
-        if not is_url:
-            search_query = f"ytsearch:{query}"
-        else:
-            search_query = query
+        search_query = query if is_url else f"ytsearch:{query}"
 
         loop = asyncio.get_event_loop()
 
@@ -234,8 +229,10 @@ class Music(commands.Cog):
                     if not entries:
                         return None
                     info = entries[0]
-                    # Re-extract to get the actual stream URL
-                    info = ytdl.extract_info(info["webpage_url"], download=False)
+                    # If the entry already has a stream URL, use it directly
+                    # Otherwise re-extract (only for direct URLs)
+                    if not info.get("url") and info.get("webpage_url"):
+                        info = ytdl.extract_info(info["webpage_url"], download=False)
                 return info
             except Exception as e:
                 logger.warning(f"yt-dlp extract error for '{query}': {e}")
@@ -244,7 +241,7 @@ class Music(commands.Cog):
         try:
             data = await loop.run_in_executor(None, _extract)
             if not data:
-                logger.warning(f"No data returned for query: '{query}'")
+                logger.warning(f"No data returned for: '{query}'")
                 return None
             song = Song(data, requester)
             if not song.stream_url:
@@ -253,7 +250,7 @@ class Music(commands.Cog):
             logger.info(f"Fetched: {song.title} ({song.duration_str})")
             return song
         except Exception as e:
-            logger.error(f"_fetch_song unexpected error: {e}")
+            logger.error(f"_fetch_song error: {e}")
             return None
 
     def _play_next(self, channel, guild: discord.Guild, gp: GuildPlayer):
