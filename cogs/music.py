@@ -1,62 +1,70 @@
 """
-WAN Bot - Music Cog
-Slash: /play /skip /stop /pause /resume /volume /queue /np /shuffle /loop /join /leave /autoplay
-Prefix: !play !skip etc.
-Sources: SoundCloud (primary, works on Render) → YouTube fallback
-Autoplay: when queue empties, fetches related tracks from SoundCloud
+WAN Bot - Music Cog v3
+Features:
+- /play /skip /stop /pause /resume /volume /queue /np /shuffle /loop /autoplay
+- /music-setup  — creates a dedicated #music channel with a live player embed
+- /247          — toggle 24/7 mode (bot stays in VC, autoplay keeps music going)
+- Live player embed updates every 15s with animated progress bar
+- Autoplay: fetches related SoundCloud tracks when queue ends
 """
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio
 import yt_dlp
 import logging
 import random
 import os
+import time
 from collections import deque
+from utils.settings import get_setting, set_setting
 
 logger = logging.getLogger("discord_bot.music")
 
-# SoundCloud — primary source, not blocked on server IPs
+# ── yt-dlp configs ─────────────────────────────────────────────────────────────
 SC_OPTS = {
-    "format": "bestaudio/best",
-    "noplaylist": True,
-    "quiet": True,
-    "no_warnings": True,
-    "source_address": "0.0.0.0",
-    "skip_download": True,
+    "format": "bestaudio/best", "noplaylist": True,
+    "quiet": True, "no_warnings": True,
+    "source_address": "0.0.0.0", "skip_download": True,
 }
-
-# SoundCloud related tracks — fetch up to 5 related songs
 SC_RELATED_OPTS = {
-    "format": "bestaudio/best",
-    "noplaylist": False,
-    "playlistend": 5,
-    "quiet": True,
-    "no_warnings": True,
-    "source_address": "0.0.0.0",
-    "skip_download": True,
+    "format": "bestaudio/best", "noplaylist": False, "playlistend": 5,
+    "quiet": True, "no_warnings": True,
+    "source_address": "0.0.0.0", "skip_download": True,
 }
-
-# YouTube — fallback, uses android_vr client (no JS runtime needed)
 YT_OPTS = {
-    "format": "bestaudio/best",
-    "noplaylist": True,
-    "quiet": True,
-    "no_warnings": True,
-    "source_address": "0.0.0.0",
-    "skip_download": True,
+    "format": "bestaudio/best", "noplaylist": True,
+    "quiet": True, "no_warnings": True,
+    "source_address": "0.0.0.0", "skip_download": True,
     "extractor_args": {"youtube": {"player_client": ["android_vr"]}},
-    "geo_bypass": True,
-    "geo_bypass_country": "US",
+    "geo_bypass": True, "geo_bypass_country": "US",
 }
-
-# FFmpeg — no single-quoted headers (breaks on Linux)
 FFMPEG_OPTS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
 }
 
+# ── Progress bar animation frames ──────────────────────────────────────────────
+BAR_FILLED  = "▓"
+BAR_EMPTY   = "░"
+BAR_HEAD    = "🔘"
+
+def _progress_bar(elapsed: int, total: int, length: int = 18) -> str:
+    if not total:
+        return BAR_FILLED * length
+    pct = min(elapsed / total, 1.0)
+    filled = int(pct * length)
+    bar = BAR_FILLED * filled + BAR_HEAD + BAR_EMPTY * (length - filled)
+    return bar
+
+def _fmt_time(secs: int) -> str:
+    if not secs:
+        return "0:00"
+    m, s = divmod(int(secs), 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+# ── Spotify resolver ────────────────────────────────────────────────────────────
 def _spotify_to_search(url: str) -> str:
     try:
         import spotipy
@@ -78,28 +86,23 @@ def _spotify_to_search(url: str) -> str:
                 pid = url.split("/playlist/")[1].split("?")[0]
                 return sp.playlist(pid)["name"]
     except Exception as e:
-        logger.debug(f"Spotify resolve: {e}")
+        logger.debug(f"Spotify: {e}")
     return url
 
-
+# ── Search helpers ──────────────────────────────────────────────────────────────
 def _search_soundcloud(query: str) -> dict | None:
-    """Search SoundCloud. Returns info dict or None."""
     ytdl = yt_dlp.YoutubeDL(SC_OPTS)
     try:
         info = ytdl.extract_info(f"scsearch:{query}", download=False)
         if not info or not info.get("entries"):
             return None
-        entry = info["entries"][0]
-        if not entry or not entry.get("url"):
-            return None
-        return entry
-    except Exception as e:
-        logger.warning(f"SoundCloud search failed for '{query}': {e}")
+        e = info["entries"][0]
+        return e if e and e.get("url") else None
+    except Exception as ex:
+        logger.warning(f"SC search '{query}': {ex}")
         return None
 
-
 def _search_youtube(query: str, is_url: bool = False) -> dict | None:
-    """Search or fetch from YouTube. Returns info dict or None."""
     ytdl = yt_dlp.YoutubeDL(YT_OPTS)
     try:
         search = query if is_url else f"ytsearch:{query}"
@@ -111,58 +114,42 @@ def _search_youtube(query: str, is_url: bool = False) -> dict | None:
             if not entries:
                 return None
             entry = entries[0]
-            # Re-extract to get stream URL
             video_url = entry.get("webpage_url") or entry.get("url")
             if not video_url:
                 return None
             info = ytdl.extract_info(video_url, download=False)
-        if not info or not info.get("url"):
-            return None
-        return info
-    except Exception as e:
-        logger.warning(f"YouTube search failed for '{query}': {e}")
+        return info if info and info.get("url") else None
+    except Exception as ex:
+        logger.warning(f"YT search '{query}': {ex}")
         return None
 
-
-def _get_related_songs(sc_url: str, requester, limit: int = 3) -> list:
-    """Fetch related/recommended tracks from SoundCloud for a given track URL."""
+def _get_related_songs(sc_url: str, limit: int = 3) -> list:
     try:
         ytdl = yt_dlp.YoutubeDL(SC_RELATED_OPTS)
-        # SoundCloud related tracks endpoint
-        related_url = sc_url.rstrip("/") + "/recommended"
-        info = ytdl.extract_info(related_url, download=False)
+        info = ytdl.extract_info(sc_url.rstrip("/") + "/recommended", download=False)
         if not info:
             return []
-        entries = info.get("entries", [])
-        songs = []
-        for e in entries[:limit]:
-            if e and e.get("url"):
-                songs.append(Song(e, requester))
-        return songs
-    except Exception as e:
-        logger.debug(f"Related tracks fetch failed: {e}")
+        return [e for e in info.get("entries", [])[:limit] if e and e.get("url")]
+    except Exception as ex:
+        logger.debug(f"Related tracks: {ex}")
         return []
 
-
-def _search_related_by_title(title: str, uploader: str, requester, limit: int = 3) -> list:
-    """Search SoundCloud for similar songs based on title/artist — fallback for autoplay."""
+def _search_related_by_title(title: str, uploader: str, limit: int = 3) -> list:
     try:
-        ytdl = yt_dlp.YoutubeDL({**SC_OPTS, "noplaylist": False, "playlistend": limit + 2})
-        # Search for songs by same artist or similar title
-        query = f"scsearch{limit + 2}:{uploader} {title.split('-')[0].strip()}"
-        info = ytdl.extract_info(query, download=False)
+        opts = {**SC_OPTS, "noplaylist": False, "playlistend": limit + 2}
+        ytdl = yt_dlp.YoutubeDL(opts)
+        q = f"scsearch{limit + 2}:{uploader} {title.split('-')[0].strip()}"
+        info = ytdl.extract_info(q, download=False)
         if not info or not info.get("entries"):
             return []
-        songs = []
-        for e in info["entries"]:
-            if e and e.get("url") and e.get("title") != title:
-                songs.append(Song(e, requester))
-                if len(songs) >= limit:
-                    break
-        return songs
-    except Exception as e:
-        logger.debug(f"Related search failed: {e}")
+        return [e for e in info["entries"] if e and e.get("url") and e.get("title") != title][:limit]
+    except Exception as ex:
+        logger.debug(f"Related by title: {ex}")
         return []
+
+
+# ── Song ────────────────────────────────────────────────────────────────────────
+class Song:
     def __init__(self, data: dict, requester):
         self.stream_url = data.get("url", "")
         self.title      = data.get("title", "Unknown")
@@ -171,16 +158,57 @@ def _search_related_by_title(title: str, uploader: str, requester, limit: int = 
         self.uploader   = data.get("uploader") or data.get("channel") or data.get("artist", "Unknown")
         self.webpage    = data.get("webpage_url") or data.get("permalink_url", "")
         self.requester  = requester
+        self.started_at: float = 0.0   # set when playback begins
 
     @property
     def duration_str(self):
         if not self.duration:
-            return "Live"
-        m, s = divmod(int(self.duration), 60)
-        h, m = divmod(m, 60)
-        return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+            return "∞"
+        return _fmt_time(self.duration)
 
-    def embed(self, status="🎵 Now Playing"):
+    @property
+    def elapsed(self) -> int:
+        if not self.started_at:
+            return 0
+        return int(time.time() - self.started_at)
+
+    def player_embed(self, gp) -> discord.Embed:
+        """Rich now-playing embed with animated progress bar."""
+        elapsed = self.elapsed
+        total   = self.duration or 0
+        bar     = _progress_bar(elapsed, total)
+        pct     = int((elapsed / total * 100)) if total else 0
+
+        # Status line
+        status_icon = "▶️" if gp.vc_playing else "⏸"
+        loop_icon   = "🔁" if gp.loop else ""
+        ap_icon     = "✨" if gp.autoplay else ""
+        flags       = " ".join(filter(None, [loop_icon, ap_icon]))
+
+        e = discord.Embed(color=0x1DB954)
+        e.set_author(name=f"{status_icon} Now Playing  {flags}")
+        e.title = self.title[:200]
+        if self.webpage:
+            e.url = self.webpage
+        e.description = (
+            f"`{_fmt_time(elapsed)}` {bar} `{self.duration_str}`\n"
+            f"{'━' * 22}\n"
+        )
+        e.add_field(name="🎤 Artist", value=self.uploader[:50], inline=True)
+        e.add_field(name="🔊 Volume", value=f"{int(gp.volume * 100)}%", inline=True)
+        e.add_field(name="📋 Queue", value=f"{len(gp.queue)} song{'s' if len(gp.queue) != 1 else ''}", inline=True)
+        if self.requester:
+            name = self.requester.mention if hasattr(self.requester, "mention") else str(self.requester)
+            e.add_field(name="👤 Requested by", value=name, inline=True)
+        if gp.queue:
+            next_song = list(gp.queue)[0]
+            e.add_field(name="⏭ Up Next", value=next_song.title[:50], inline=True)
+        if self.thumbnail:
+            e.set_thumbnail(url=self.thumbnail)
+        e.set_footer(text="🎵 WAN Music  •  Use /play to add songs  •  Updates every 15s")
+        return e
+
+    def simple_embed(self, status="🎵 Now Playing"):
         e = discord.Embed(
             title=status,
             description=f"[{self.title}]({self.webpage})" if self.webpage else self.title,
@@ -196,18 +224,27 @@ def _search_related_by_title(title: str, uploader: str, requester, limit: int = 
         return e
 
 
+# ── GuildPlayer ─────────────────────────────────────────────────────────────────
 class GuildPlayer:
     def __init__(self):
-        self.queue: deque = deque()
-        self.current: Song = None
-        self.volume: float = 0.5
-        self.loop: bool = False
-        self.autoplay: bool = True   # on by default
+        self.queue: deque   = deque()
+        self.current: Song  = None
+        self.volume: float  = 0.5
+        self.loop: bool     = False
+        self.autoplay: bool = True
+        self.vc_playing: bool = False
+        # 24/7 mode
+        self.mode_247: bool = False
+        self.vc_channel_id: int = None   # voice channel to stay in
+        # Dashboard embed
+        self.dashboard_channel_id: int = None   # text channel with live embed
+        self.dashboard_message_id: int = None   # message to edit
 
 
+# ── Controls View ───────────────────────────────────────────────────────────────
 class MusicControls(discord.ui.View):
     def __init__(self, cog, guild_id: int):
-        super().__init__(timeout=180)
+        super().__init__(timeout=None)   # persistent
         self.cog = cog
         self.guild_id = guild_id
 
@@ -215,19 +252,31 @@ class MusicControls(discord.ui.View):
         guild = self.cog.bot.get_guild(self.guild_id)
         return guild.voice_client if guild else None
 
-    @discord.ui.button(emoji="⏸", style=discord.ButtonStyle.secondary)
+    def _gp(self):
+        return self.cog._get_player(self.guild_id)
+
+    @discord.ui.button(emoji="⏮", style=discord.ButtonStyle.secondary, row=0)
+    async def prev_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("⏮ No previous track (not supported yet)", ephemeral=True, delete_after=3)
+
+    @discord.ui.button(emoji="⏸", style=discord.ButtonStyle.primary, row=0)
     async def pause_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         vc = self._vc()
+        gp = self._gp()
         if vc and vc.is_playing():
             vc.pause()
+            gp.vc_playing = False
+            button.emoji = "▶️"
             await interaction.response.send_message("⏸ Paused.", ephemeral=True, delete_after=3)
         elif vc and vc.is_paused():
             vc.resume()
+            gp.vc_playing = True
+            button.emoji = "⏸"
             await interaction.response.send_message("▶️ Resumed.", ephemeral=True, delete_after=3)
         else:
             await interaction.response.defer()
 
-    @discord.ui.button(emoji="⏭", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="⏭", style=discord.ButtonStyle.primary, row=0)
     async def skip_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         vc = self._vc()
         if vc and (vc.is_playing() or vc.is_paused()):
@@ -236,53 +285,166 @@ class MusicControls(discord.ui.View):
         else:
             await interaction.response.defer()
 
-    @discord.ui.button(emoji="⏹", style=discord.ButtonStyle.danger)
+    @discord.ui.button(emoji="⏹", style=discord.ButtonStyle.danger, row=0)
     async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        gp = self.cog._get_player(self.guild_id)
+        gp = self._gp()
         gp.queue.clear()
         gp.loop = False
+        gp.vc_playing = False
         vc = self._vc()
         if vc:
             vc.stop()
-            await vc.disconnect()
+            if not gp.mode_247:
+                await vc.disconnect()
         await interaction.response.send_message("⏹ Stopped.", ephemeral=True, delete_after=3)
 
-    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, row=1)
     async def shuffle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        gp = self.cog._get_player(self.guild_id)
+        gp = self._gp()
         q = list(gp.queue)
         random.shuffle(q)
         gp.queue = deque(q)
         await interaction.response.send_message("🔀 Shuffled!", ephemeral=True, delete_after=3)
 
-    @discord.ui.button(emoji="🔁", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(emoji="🔁", style=discord.ButtonStyle.secondary, row=1)
     async def loop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        gp = self.cog._get_player(self.guild_id)
+        gp = self._gp()
         gp.loop = not gp.loop
+        button.style = discord.ButtonStyle.success if gp.loop else discord.ButtonStyle.secondary
         await interaction.response.send_message(
             f"🔁 Loop {'on' if gp.loop else 'off'}", ephemeral=True, delete_after=3)
 
-    @discord.ui.button(emoji="✨", style=discord.ButtonStyle.secondary, label="Auto")
+    @discord.ui.button(label="✨ Auto", style=discord.ButtonStyle.success, row=1)
     async def autoplay_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        gp = self.cog._get_player(self.guild_id)
+        gp = self._gp()
         gp.autoplay = not gp.autoplay
-        status = "on ✨" if gp.autoplay else "off"
         button.style = discord.ButtonStyle.success if gp.autoplay else discord.ButtonStyle.secondary
         await interaction.response.send_message(
-            f"✨ Autoplay {status}", ephemeral=True, delete_after=5)
+            f"✨ Autoplay {'on' if gp.autoplay else 'off'}", ephemeral=True, delete_after=3)
+
+    @discord.ui.button(label="🌙 24/7", style=discord.ButtonStyle.secondary, row=1)
+    async def mode247_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gp = self._gp()
+        gp.mode_247 = not gp.mode_247
+        button.style = discord.ButtonStyle.success if gp.mode_247 else discord.ButtonStyle.secondary
+        await interaction.response.send_message(
+            f"🌙 24/7 mode {'on' if gp.mode_247 else 'off'}", ephemeral=True, delete_after=5)
+
+    @discord.ui.button(label="🔉", style=discord.ButtonStyle.secondary, row=2)
+    async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gp = self._gp()
+        gp.volume = max(0.1, gp.volume - 0.1)
+        vc = self._vc()
+        if vc and vc.source:
+            vc.source.volume = gp.volume
+        await interaction.response.send_message(
+            f"🔉 Volume: **{int(gp.volume * 100)}%**", ephemeral=True, delete_after=3)
+
+    @discord.ui.button(label="🔊", style=discord.ButtonStyle.secondary, row=2)
+    async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gp = self._gp()
+        gp.volume = min(1.0, gp.volume + 0.1)
+        vc = self._vc()
+        if vc and vc.source:
+            vc.source.volume = gp.volume
+        await interaction.response.send_message(
+            f"🔊 Volume: **{int(gp.volume * 100)}%**", ephemeral=True, delete_after=3)
 
 
+# ── Idle embed (shown when nothing is playing) ──────────────────────────────────
+def _idle_embed() -> discord.Embed:
+    e = discord.Embed(
+        title="🎵 WAN Music Player",
+        description=(
+            "```\n"
+            "  ♪  Nothing is playing right now  ♪\n"
+            "```\n"
+            "Use `/play <song name>` to start listening!\n\n"
+            "**Supported sources:**\n"
+            "🎵 SoundCloud  •  📺 YouTube  •  🎧 Spotify URLs\n\n"
+            "**Commands:**\n"
+            "`/play` `/skip` `/queue` `/np` `/volume`\n"
+            "`/loop` `/shuffle` `/autoplay` `/247`"
+        ),
+        color=0x1DB954
+    )
+    e.set_footer(text="🎵 WAN Music  •  24/7 Mode Available  •  Autoplay Enabled")
+    return e
+
+
+# ── Music Cog ───────────────────────────────────────────────────────────────────
 class Music(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._players: dict = {}
+        self._update_task.start()
+
+    def cog_unload(self):
+        self._update_task.cancel()
 
     def _get_player(self, guild_id: int) -> GuildPlayer:
         if guild_id not in self._players:
             self._players[guild_id] = GuildPlayer()
         return self._players[guild_id]
 
-    async def _join_voice(self, guild: discord.Guild, author, send_fn) -> discord.VoiceClient:
+    # ── Live dashboard update task ──────────────────────────────────────────────
+
+    @tasks.loop(seconds=15)
+    async def _update_task(self):
+        """Update the live player embed in every guild's music channel."""
+        for guild_id, gp in list(self._players.items()):
+            if not gp.dashboard_channel_id or not gp.dashboard_message_id:
+                continue
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+            ch = guild.get_channel(gp.dashboard_channel_id)
+            if not ch:
+                continue
+            try:
+                msg = await ch.fetch_message(gp.dashboard_message_id)
+                if gp.current:
+                    embed = gp.current.player_embed(gp)
+                else:
+                    embed = _idle_embed()
+                await msg.edit(embed=embed, view=MusicControls(self, guild_id))
+            except discord.NotFound:
+                gp.dashboard_message_id = None
+            except Exception as ex:
+                logger.debug(f"Dashboard update error: {ex}")
+
+    @_update_task.before_loop
+    async def _before_update(self):
+        await self.bot.wait_until_ready()
+
+    # ── 24/7 reconnect task ─────────────────────────────────────────────────────
+
+    @tasks.loop(seconds=30)
+    async def _247_task(self):
+        """Reconnect to VC if 24/7 mode is on and bot got disconnected."""
+        for guild_id, gp in list(self._players.items()):
+            if not gp.mode_247 or not gp.vc_channel_id:
+                continue
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+            vc = guild.voice_client
+            if vc is None:
+                ch = guild.get_channel(gp.vc_channel_id)
+                if ch:
+                    try:
+                        await ch.connect()
+                        logger.info(f"24/7: Reconnected to {ch.name} in {guild.name}")
+                    except Exception as ex:
+                        logger.debug(f"24/7 reconnect failed: {ex}")
+
+    @_247_task.before_loop
+    async def _before_247(self):
+        await self.bot.wait_until_ready()
+
+    # ── Voice helpers ───────────────────────────────────────────────────────────
+
+    async def _join_voice(self, guild, author, send_fn):
         if not hasattr(author, "voice") or author.voice is None:
             await send_fn("❌ Join a voice channel first.")
             return None
@@ -294,69 +456,61 @@ class Music(commands.Cog):
         return vc
 
     async def _fetch_song(self, query: str, requester) -> Song:
-        """Resolve query → Song. SoundCloud first, YouTube fallback."""
-        # Resolve Spotify URLs
         if "spotify.com" in query:
             query = _spotify_to_search(query)
-
         is_url = query.startswith("http://") or query.startswith("https://")
         is_yt  = is_url and ("youtube.com" in query or "youtu.be" in query)
         is_sc  = is_url and "soundcloud.com" in query
-
-        loop = asyncio.get_running_loop()
-        data = None
-
+        loop   = asyncio.get_running_loop()
+        data   = None
         if is_yt:
-            # Direct YouTube URL — try YouTube only
             data = await loop.run_in_executor(None, lambda: _search_youtube(query, is_url=True))
         elif is_sc:
-            # Direct SoundCloud URL
             data = await loop.run_in_executor(None, lambda: _search_soundcloud(query))
         else:
-            # Song name search — SoundCloud first (reliable on Render), then YouTube
             data = await loop.run_in_executor(None, lambda: _search_soundcloud(query))
             if not data:
-                logger.info(f"SoundCloud miss, trying YouTube for: '{query}'")
                 data = await loop.run_in_executor(None, lambda: _search_youtube(query, is_url=False))
-
         if not data:
-            logger.warning(f"No results for: '{query}'")
             return None
-
         song = Song(data, requester)
-        if not song.stream_url:
-            logger.warning(f"No stream URL for: '{song.title}'")
-            return None
-        return song
+        return song if song.stream_url else None
 
-    def _play_next(self, channel, guild: discord.Guild, gp: GuildPlayer):
+    # ── Playback ────────────────────────────────────────────────────────────────
+
+    def _play_next(self, channel, guild, gp: GuildPlayer):
         vc = guild.voice_client
         if vc is None:
+            gp.vc_playing = False
             return
         if gp.loop and gp.current:
             gp.queue.appendleft(gp.current)
         if not gp.queue:
-            # Autoplay — fetch related songs in background
             if gp.autoplay and gp.current:
                 last = gp.current
                 gp.current = None
+                gp.vc_playing = False
                 asyncio.run_coroutine_threadsafe(
                     self._autoplay(channel, guild, gp, last), self.bot.loop)
             else:
                 gp.current = None
-                asyncio.run_coroutine_threadsafe(
-                    channel.send("✅ Queue finished. Use `/autoplay` to toggle autoplay."),
-                    self.bot.loop)
+                gp.vc_playing = False
+                if not gp.mode_247:
+                    asyncio.run_coroutine_threadsafe(
+                        channel.send("✅ Queue finished. Use `/play` to add more songs."),
+                        self.bot.loop)
             return
         song = gp.queue.popleft()
+        song.started_at = time.time()
         gp.current = song
+        gp.vc_playing = True
         try:
             source = discord.PCMVolumeTransformer(
                 discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTS),
                 volume=gp.volume
             )
         except Exception as e:
-            logger.error(f"FFmpeg error for '{song.title}': {e}")
+            logger.error(f"FFmpeg error '{song.title}': {e}")
             self._play_next(channel, guild, gp)
             return
 
@@ -366,45 +520,115 @@ class Music(commands.Cog):
             self._play_next(channel, guild, gp)
 
         vc.play(source, after=_after)
-        asyncio.run_coroutine_threadsafe(
-            channel.send(embed=song.embed(), view=MusicControls(self, guild.id)),
-            self.bot.loop
-        )
+        # Send now-playing to the text channel (not the dashboard channel)
+        if channel and (not gp.dashboard_channel_id or channel.id != gp.dashboard_channel_id):
+            asyncio.run_coroutine_threadsafe(
+                channel.send(embed=song.simple_embed()), self.bot.loop)
 
-    async def _autoplay(self, channel, guild: discord.Guild, gp: GuildPlayer, last_song: Song):
-        """Fetch and queue related songs when queue runs out."""
+    async def _autoplay(self, channel, guild, gp: GuildPlayer, last_song: Song):
         loop = asyncio.get_running_loop()
-        await channel.send(
-            f"🎵 Queue empty — fetching recommendations based on **{last_song.title}**...",
-            delete_after=10
-        )
-        # Try SoundCloud related tracks first
-        songs = []
+        songs_data = []
         if last_song.webpage and "soundcloud.com" in last_song.webpage:
-            songs = await loop.run_in_executor(
-                None, lambda: _get_related_songs(last_song.webpage, guild.me, limit=3))
-        # Fallback: search by artist/title
-        if not songs:
-            songs = await loop.run_in_executor(
-                None, lambda: _search_related_by_title(
-                    last_song.title, last_song.uploader, guild.me, limit=3))
-        if not songs:
-            await channel.send("✅ Queue finished — couldn't find recommendations.")
+            songs_data = await loop.run_in_executor(
+                None, lambda: _get_related_songs(last_song.webpage, limit=3))
+        if not songs_data:
+            songs_data = await loop.run_in_executor(
+                None, lambda: _search_related_by_title(last_song.title, last_song.uploader, limit=3))
+        if not songs_data:
+            if not gp.mode_247:
+                await channel.send("✅ Queue finished — no recommendations found.")
             return
+        songs = [Song(d, guild.me) for d in songs_data if d.get("url")]
         for s in songs:
             gp.queue.append(s)
-        # Start playing
         self._play_next(channel, guild, gp)
         titles = "\n".join(f"• {s.title}" for s in songs)
-        await channel.send(
-            embed=discord.Embed(
-                title="🎵 Autoplay — Recommended Songs",
-                description=f"Added **{len(songs)}** similar songs:\n{titles}",
-                color=0x1DB954
+        await channel.send(embed=discord.Embed(
+            title="✨ Autoplay — Recommended",
+            description=f"Added **{len(songs)}** similar songs:\n{titles}",
+            color=0x1DB954
+        ))
+
+    # ── Dashboard setup ─────────────────────────────────────────────────────────
+
+    async def _setup_dashboard(self, guild, channel: discord.TextChannel, gp: GuildPlayer):
+        """Post or update the live player embed in the music channel."""
+        # Clear old messages in channel (keep last 10 for context)
+        try:
+            await channel.purge(limit=50, check=lambda m: m.author == guild.me)
+        except Exception:
+            pass
+        embed = _idle_embed()
+        view  = MusicControls(self, guild.id)
+        msg   = await channel.send(embed=embed, view=view)
+        gp.dashboard_channel_id = channel.id
+        gp.dashboard_message_id = msg.id
+        # Persist
+        await set_setting(guild.id, "music_dashboard", {
+            "channel_id": channel.id,
+            "message_id": msg.id,
+        })
+        return msg
+
+    # ── Slash commands ──────────────────────────────────────────────────────────
+
+    @app_commands.command(name="music-setup", description="🎵 Create a dedicated music channel with live player")
+    @app_commands.describe(channel="Existing channel to use (leave blank to create #music)")
+    @app_commands.checks.has_permissions(manage_channels=True)
+    async def music_setup(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+        await interaction.response.defer(ephemeral=True)
+        gp = self._get_player(interaction.guild.id)
+        if not channel:
+            # Create #music channel
+            overwrites = {
+                interaction.guild.default_role: discord.PermissionOverwrite(
+                    send_messages=False, read_messages=True, add_reactions=False),
+                interaction.guild.me: discord.PermissionOverwrite(
+                    send_messages=True, manage_messages=True, embed_links=True),
+            }
+            channel = await interaction.guild.create_text_channel(
+                "🎵・music-player",
+                overwrites=overwrites,
+                topic="WAN Music Player — Use /play to add songs"
             )
+        msg = await self._setup_dashboard(interaction.guild, channel, gp)
+        await interaction.followup.send(
+            f"✅ Music player set up in {channel.mention}!\n"
+            f"The embed updates every 15 seconds with the current song and progress bar.",
+            ephemeral=True
         )
 
-    # ── Slash commands ─────────────────────────────────────────────────────────
+    @app_commands.command(name="247", description="🌙 Toggle 24/7 mode — bot stays in VC forever")
+    async def mode_247(self, interaction: discord.Interaction):
+        gp = self._get_player(interaction.guild.id)
+        gp.mode_247 = not gp.mode_247
+        vc = interaction.guild.voice_client
+        if gp.mode_247:
+            # Store current VC or user's VC
+            if vc:
+                gp.vc_channel_id = vc.channel.id
+            elif interaction.user.voice:
+                gp.vc_channel_id = interaction.user.voice.channel.id
+                vc = await interaction.user.voice.channel.connect()
+            if not self._247_task.is_running():
+                self._247_task.start()
+            embed = discord.Embed(
+                title="🌙 24/7 Mode ON",
+                description=(
+                    "Bot will stay in the voice channel forever.\n"
+                    "Autoplay will keep music going non-stop.\n"
+                    "Use `/247` again to disable."
+                ),
+                color=0x7c3aed
+            )
+        else:
+            gp.vc_channel_id = None
+            embed = discord.Embed(
+                title="🌙 24/7 Mode OFF",
+                description="Bot will leave the voice channel when the queue ends.",
+                color=0x6b7280
+            )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="play", description="🎵 Play a song — name, YouTube or Spotify URL")
     @app_commands.describe(query="Song name, YouTube URL, or Spotify URL")
@@ -416,12 +640,14 @@ class Music(commands.Cog):
         )
         if not vc:
             return
+        gp = self._get_player(interaction.guild.id)
+        if gp.mode_247:
+            gp.vc_channel_id = vc.channel.id
         song = await self._fetch_song(query, interaction.user)
         if not song:
             await interaction.followup.send(
-                "❌ Couldn't find that song. Try a more specific name or a direct YouTube/SoundCloud URL.")
+                "❌ Couldn't find that song. Try a more specific name or a direct URL.")
             return
-        gp = self._get_player(interaction.guild.id)
         gp.queue.append(song)
         if not vc.is_playing() and not vc.is_paused():
             self._play_next(interaction.channel, interaction.guild, gp)
@@ -445,22 +671,26 @@ class Music(commands.Cog):
         else:
             await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
 
-    @app_commands.command(name="stop", description="⏹ Stop music and disconnect")
+    @app_commands.command(name="stop", description="⏹ Stop music and clear queue")
     async def slash_stop(self, interaction: discord.Interaction):
         gp = self._get_player(interaction.guild.id)
         gp.queue.clear()
         gp.loop = False
+        gp.vc_playing = False
         vc = interaction.guild.voice_client
         if vc:
             vc.stop()
-            await vc.disconnect()
-        await interaction.response.send_message("⏹ Stopped and disconnected.")
+            if not gp.mode_247:
+                await vc.disconnect()
+        await interaction.response.send_message("⏹ Stopped.")
 
     @app_commands.command(name="pause", description="⏸ Pause the current song")
     async def slash_pause(self, interaction: discord.Interaction):
         vc = interaction.guild.voice_client
+        gp = self._get_player(interaction.guild.id)
         if vc and vc.is_playing():
             vc.pause()
+            gp.vc_playing = False
             await interaction.response.send_message("⏸ Paused.")
         else:
             await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
@@ -468,14 +698,16 @@ class Music(commands.Cog):
     @app_commands.command(name="resume", description="▶️ Resume the paused song")
     async def slash_resume(self, interaction: discord.Interaction):
         vc = interaction.guild.voice_client
+        gp = self._get_player(interaction.guild.id)
         if vc and vc.is_paused():
             vc.resume()
+            gp.vc_playing = True
             await interaction.response.send_message("▶️ Resumed.")
         else:
             await interaction.response.send_message("❌ Nothing is paused.", ephemeral=True)
 
     @app_commands.command(name="volume", description="🔊 Set volume (1–100)")
-    @app_commands.describe(level="Volume level between 1 and 100")
+    @app_commands.describe(level="Volume level 1–100")
     async def slash_volume(self, interaction: discord.Interaction, level: int):
         if not 1 <= level <= 100:
             return await interaction.response.send_message("❌ Volume must be 1–100.", ephemeral=True)
@@ -484,7 +716,7 @@ class Music(commands.Cog):
         vc = interaction.guild.voice_client
         if vc and vc.source:
             vc.source.volume = gp.volume
-        await interaction.response.send_message(f"🔊 Volume set to **{level}%**")
+        await interaction.response.send_message(f"🔊 Volume: **{level}%**")
 
     @app_commands.command(name="queue", description="📋 Show the music queue")
     async def slash_queue(self, interaction: discord.Interaction):
@@ -493,7 +725,7 @@ class Music(commands.Cog):
             return await interaction.response.send_message("📭 Queue is empty.", ephemeral=True)
         e = discord.Embed(title="🎵 Music Queue", color=0x1DB954)
         if gp.current:
-            e.add_field(name="Now Playing",
+            e.add_field(name="▶️ Now Playing",
                         value=f"[{gp.current.title}]({gp.current.webpage}) `{gp.current.duration_str}`",
                         inline=False)
         if gp.queue:
@@ -502,7 +734,7 @@ class Music(commands.Cog):
             if len(gp.queue) > 10:
                 lines.append(f"... and {len(gp.queue) - 10} more")
             e.add_field(name=f"Up Next ({len(gp.queue)} songs)", value="\n".join(lines), inline=False)
-        e.set_footer(text=f"Loop: {'on' if gp.loop else 'off'} • Volume: {int(gp.volume * 100)}% • Autoplay: {'on ✨' if gp.autoplay else 'off'}")
+        e.set_footer(text=f"Loop: {'on' if gp.loop else 'off'} • Vol: {int(gp.volume*100)}% • Autoplay: {'on ✨' if gp.autoplay else 'off'} • 24/7: {'on 🌙' if gp.mode_247 else 'off'}")
         await interaction.response.send_message(embed=e)
 
     @app_commands.command(name="np", description="🎵 Show what's currently playing")
@@ -511,7 +743,7 @@ class Music(commands.Cog):
         if not gp.current:
             return await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
         await interaction.response.send_message(
-            embed=gp.current.embed(), view=MusicControls(self, interaction.guild.id))
+            embed=gp.current.player_embed(gp), view=MusicControls(self, interaction.guild.id))
 
     @app_commands.command(name="shuffle", description="🔀 Shuffle the queue")
     async def slash_shuffle(self, interaction: discord.Interaction):
@@ -533,45 +765,27 @@ class Music(commands.Cog):
     async def slash_autoplay(self, interaction: discord.Interaction):
         gp = self._get_player(interaction.guild.id)
         gp.autoplay = not gp.autoplay
-        status = "on ✨" if gp.autoplay else "off"
         embed = discord.Embed(
-            title=f"✨ Autoplay {status}",
+            title=f"✨ Autoplay {'on' if gp.autoplay else 'off'}",
             description=(
-                "When the queue runs out, I'll automatically play similar songs based on what you were listening to."
-                if gp.autoplay else
-                "Autoplay disabled. Queue will stop when empty."
+                "When the queue runs out, I'll automatically play similar songs."
+                if gp.autoplay else "Autoplay disabled."
             ),
             color=0x1DB954 if gp.autoplay else 0x6b7280
         )
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="join", description="🎤 Join your voice channel")
-    async def slash_join(self, interaction: discord.Interaction):
-        vc = await self._join_voice(
-            interaction.guild, interaction.user,
-            lambda m: interaction.response.send_message(m, ephemeral=True)
-        )
-        if vc:
-            await interaction.response.send_message(f"✅ Joined **{vc.channel.name}**")
+    # /join and /leave removed to stay under 100 slash command limit
+    # /play auto-joins your voice channel; use /stop to disconnect
 
-    @app_commands.command(name="leave", description="👋 Leave the voice channel")
-    async def slash_leave(self, interaction: discord.Interaction):
-        vc = interaction.guild.voice_client
-        if vc:
-            self._get_player(interaction.guild.id).queue.clear()
-            await vc.disconnect()
-            await interaction.response.send_message("👋 Left the voice channel.")
-        else:
-            await interaction.response.send_message("❌ Not in a voice channel.", ephemeral=True)
-
-    # ── Prefix aliases ─────────────────────────────────────────────────────────
+    # ── Prefix aliases ──────────────────────────────────────────────────────────
 
     @commands.command(name="play", aliases=["p"])
     async def prefix_play(self, ctx, *, query: str):
         vc = await self._join_voice(ctx.guild, ctx.author, ctx.send)
         if not vc:
             return
-        msg = await ctx.send(f"🔍 Searching for **{query}**...")
+        msg = await ctx.send(f"🔍 Searching **{query}**...")
         song = await self._fetch_song(query, ctx.author)
         if not song:
             return await msg.edit(content="❌ Couldn't find that song.")
@@ -602,11 +816,11 @@ class Music(commands.Cog):
     async def prefix_stop(self, ctx):
         gp = self._get_player(ctx.guild.id)
         gp.queue.clear()
-        gp.loop = False
         vc = ctx.guild.voice_client
         if vc:
             vc.stop()
-            await vc.disconnect()
+            if not gp.mode_247:
+                await vc.disconnect()
         await ctx.send("⏹ Stopped.")
 
     @commands.command(name="pause")
@@ -636,7 +850,7 @@ class Music(commands.Cog):
         vc = ctx.guild.voice_client
         if vc and vc.source:
             vc.source.volume = gp.volume
-        await ctx.send(f"🔊 Volume set to **{vol}%**")
+        await ctx.send(f"🔊 Volume: **{vol}%**")
 
     @commands.command(name="queue", aliases=["q"])
     async def prefix_queue(self, ctx):
@@ -654,7 +868,7 @@ class Music(commands.Cog):
             if len(gp.queue) > 10:
                 lines.append(f"... and {len(gp.queue) - 10} more")
             e.add_field(name=f"Up Next ({len(gp.queue)} songs)", value="\n".join(lines), inline=False)
-        e.set_footer(text=f"Loop: {'on' if gp.loop else 'off'} • Volume: {int(gp.volume * 100)}%")
+        e.set_footer(text=f"Loop: {'on' if gp.loop else 'off'} • Vol: {int(gp.volume*100)}%")
         await ctx.send(embed=e)
 
     @commands.command(name="nowplaying", aliases=["np"])
@@ -662,7 +876,7 @@ class Music(commands.Cog):
         gp = self._get_player(ctx.guild.id)
         if not gp.current:
             return await ctx.send("❌ Nothing is playing.")
-        await ctx.send(embed=gp.current.embed(), view=MusicControls(self, ctx.guild.id))
+        await ctx.send(embed=gp.current.player_embed(gp), view=MusicControls(self, ctx.guild.id))
 
     @commands.command(name="shuffle")
     async def prefix_shuffle(self, ctx):
@@ -684,7 +898,9 @@ class Music(commands.Cog):
     async def prefix_leave(self, ctx):
         vc = ctx.guild.voice_client
         if vc:
-            self._get_player(ctx.guild.id).queue.clear()
+            gp = self._get_player(ctx.guild.id)
+            gp.queue.clear()
+            gp.mode_247 = False
             await vc.disconnect()
             await ctx.send("👋 Left.")
         else:
