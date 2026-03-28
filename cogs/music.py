@@ -135,14 +135,34 @@ def _get_related_songs(sc_url: str, limit: int = 3) -> list:
         return []
 
 def _search_related_by_title(title: str, uploader: str, limit: int = 3) -> list:
+    """Search SoundCloud for similar songs — language-aware using title/artist."""
     try:
-        opts = {**SC_OPTS, "noplaylist": False, "playlistend": limit + 2}
+        opts = {**SC_OPTS, "noplaylist": False, "playlistend": limit + 3}
         ytdl = yt_dlp.YoutubeDL(opts)
-        q = f"scsearch{limit + 2}:{uploader} {title.split('-')[0].strip()}"
-        info = ytdl.extract_info(q, download=False)
-        if not info or not info.get("entries"):
-            return []
-        return [e for e in info["entries"] if e and e.get("url") and e.get("title") != title][:limit]
+        # Use artist name as primary signal — keeps same language/genre
+        queries = [
+            f"scsearch{limit + 3}:{uploader}",           # same artist
+            f"scsearch{limit + 3}:{title.split('-')[0].strip()} similar",  # similar to title
+        ]
+        results = []
+        seen_titles = {title.lower()}
+        for q in queries:
+            if len(results) >= limit:
+                break
+            info = ytdl.extract_info(q, download=False)
+            if not info or not info.get("entries"):
+                continue
+            for e in info["entries"]:
+                if not e or not e.get("url"):
+                    continue
+                t = (e.get("title") or "").lower()
+                if t in seen_titles:
+                    continue
+                seen_titles.add(t)
+                results.append(e)
+                if len(results) >= limit:
+                    break
+        return results
     except Exception as ex:
         logger.debug(f"Related by title: {ex}")
         return []
@@ -573,28 +593,64 @@ class Music(commands.Cog):
     # ── Slash commands ──────────────────────────────────────────────────────────
 
     @app_commands.command(name="music-setup", description="🎵 Create a dedicated music channel with live player")
-    @app_commands.describe(channel="Existing channel to use (leave blank to create #music)")
+    @app_commands.describe(
+        text_channel="Text channel for the player embed (leave blank to create #music-player)",
+        voice_channel="Voice channel for the bot to join (leave blank to use your current VC)"
+    )
     @app_commands.checks.has_permissions(manage_channels=True)
-    async def music_setup(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
+    async def music_setup(self, interaction: discord.Interaction,
+                          text_channel: discord.TextChannel = None,
+                          voice_channel: discord.VoiceChannel = None):
         await interaction.response.defer(ephemeral=True)
         gp = self._get_player(interaction.guild.id)
-        if not channel:
-            # Create #music channel
+
+        # ── Text channel ──────────────────────────────────────────────────────
+        if not text_channel:
             overwrites = {
                 interaction.guild.default_role: discord.PermissionOverwrite(
                     send_messages=False, read_messages=True, add_reactions=False),
                 interaction.guild.me: discord.PermissionOverwrite(
                     send_messages=True, manage_messages=True, embed_links=True),
             }
-            channel = await interaction.guild.create_text_channel(
+            text_channel = await interaction.guild.create_text_channel(
                 "🎵・music-player",
                 overwrites=overwrites,
                 topic="WAN Music Player — Use /play to add songs"
             )
-        msg = await self._setup_dashboard(interaction.guild, channel, gp)
+
+        # ── Voice channel ─────────────────────────────────────────────────────
+        if not voice_channel:
+            # Use user's current VC, or find one named music/lounge/general
+            if interaction.user.voice:
+                voice_channel = interaction.user.voice.channel
+            else:
+                for name in ("music", "lounge", "general", "voice"):
+                    voice_channel = discord.utils.get(interaction.guild.voice_channels, name=name)
+                    if voice_channel:
+                        break
+                if not voice_channel and interaction.guild.voice_channels:
+                    voice_channel = interaction.guild.voice_channels[0]
+
+        # Join voice channel
+        if voice_channel:
+            vc = interaction.guild.voice_client
+            try:
+                if vc is None:
+                    await voice_channel.connect()
+                elif vc.channel != voice_channel:
+                    await vc.move_to(voice_channel)
+                gp.vc_channel_id = voice_channel.id
+            except Exception as e:
+                logger.warning(f"Could not join voice channel: {e}")
+
+        # ── Post player embed ─────────────────────────────────────────────────
+        await self._setup_dashboard(interaction.guild, text_channel, gp)
+
+        vc_info = f" and joined **{voice_channel.name}**" if voice_channel else ""
         await interaction.followup.send(
-            f"✅ Music player set up in {channel.mention}!\n"
-            f"The embed updates every 15 seconds with the current song and progress bar.",
+            f"✅ Music player set up in {text_channel.mention}{vc_info}!\n"
+            f"The embed updates every 15 seconds. Use `/play` to start music.\n"
+            f"Use `/247` to keep the bot in VC 24/7.",
             ephemeral=True
         )
 

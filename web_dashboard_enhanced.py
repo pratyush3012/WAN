@@ -2790,6 +2790,10 @@ def xp_leaderboard(server_id):
         if not lvl_cog:
             return jsonify({'error': 'Leveling cog not loaded'}), 503
 
+        # Ensure data is loaded
+        future = asyncio.run_coroutine_threadsafe(lvl_cog._ensure_loaded(), bot_instance.loop)
+        future.result(timeout=5)
+
         from cogs.leveling import _xp_progress
         g = lvl_cog._guild(int(server_id))
         users = g.get('users', {})
@@ -2804,8 +2808,11 @@ def xp_leaderboard(server_id):
                 'level': level,
                 'xp': data.get('xp', 0),
                 'messages': data.get('messages', 0),
+                'voice_minutes': data.get('voice_minutes', 0),
+                'streak': data.get('streak', 0),
                 'cur_xp': cur_xp,
-                'needed': needed
+                'needed': needed,
+                'progress_pct': int(cur_xp / max(needed, 1) * 100),
             })
         entries.sort(key=lambda x: x['xp'], reverse=True)
         return jsonify({'leaderboard': entries[:20], 'total': len(entries)})
@@ -2814,12 +2821,11 @@ def xp_leaderboard(server_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/server/<server_id>/xp/config', methods=['POST'])
+@app.route('/api/server/<server_id>/xp/config', methods=['GET', 'POST'])
 @require_auth
 def xp_config(server_id):
-    """Update XP config"""
+    """Get or update XP config"""
     try:
-        data = request.json
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
 
@@ -2827,12 +2833,38 @@ def xp_config(server_id):
         if not lvl_cog:
             return jsonify({'error': 'Leveling cog not loaded'}), 503
 
+        future = asyncio.run_coroutine_threadsafe(lvl_cog._ensure_loaded(), bot_instance.loop)
+        future.result(timeout=5)
+
         g = lvl_cog._guild(int(server_id))
-        if data.get('channel_id'):
-            g['config']['announce_channel'] = int(data['channel_id'])
-        if data.get('multiplier'):
+
+        if request.method == 'GET':
+            cfg = g.get('config', {})
+            guild = bot_instance.get_guild(int(server_id))
+            # Resolve channel name
+            ch_id = cfg.get('announce_channel')
+            ch_name = None
+            if ch_id and guild:
+                ch = guild.get_channel(int(ch_id))
+                ch_name = ch.name if ch else None
+            return jsonify({
+                'announce_channel': ch_id,
+                'announce_channel_name': ch_name,
+                'announce': cfg.get('announce', True),
+                'xp_multiplier': cfg.get('xp_multiplier', 1.0),
+                'level_roles': cfg.get('level_roles', {}),
+                'no_xp_channels': cfg.get('no_xp_channels', []),
+            })
+
+        data = request.json or {}
+        if 'channel_id' in data:
+            g['config']['announce_channel'] = int(data['channel_id']) if data['channel_id'] else None
+        if 'multiplier' in data:
             g['config']['xp_multiplier'] = float(data['multiplier'])
-        lvl_cog._save()
+        if 'announce' in data:
+            g['config']['announce'] = bool(data['announce'])
+        future2 = asyncio.run_coroutine_threadsafe(lvl_cog._persist(), bot_instance.loop)
+        future2.result(timeout=5)
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"XP config error: {e}")
@@ -2847,8 +2879,8 @@ def xp_level_role(server_id):
         data = request.json
         level = data.get('level')
         role_id = data.get('role_id')
-        if not level or not role_id:
-            return jsonify({'error': 'level and role_id required'}), 400
+        if not level:
+            return jsonify({'error': 'level required'}), 400
         if not bot_instance or not bot_instance.is_ready():
             return jsonify({'error': 'Bot not ready'}), 503
 
@@ -2856,9 +2888,16 @@ def xp_level_role(server_id):
         if not lvl_cog:
             return jsonify({'error': 'Leveling cog not loaded'}), 503
 
+        future = asyncio.run_coroutine_threadsafe(lvl_cog._ensure_loaded(), bot_instance.loop)
+        future.result(timeout=5)
+
         g = lvl_cog._guild(int(server_id))
-        g['config']['level_roles'][str(level)] = int(role_id)
-        lvl_cog._save()
+        if role_id:
+            g['config']['level_roles'][str(level)] = int(role_id)
+        else:
+            g['config']['level_roles'].pop(str(level), None)
+        future2 = asyncio.run_coroutine_threadsafe(lvl_cog._persist(), bot_instance.loop)
+        future2.result(timeout=5)
         return jsonify({'success': True})
     except Exception as e:
         logger.error(f"XP level role error: {e}")

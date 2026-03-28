@@ -145,9 +145,9 @@ class Leveling(commands.Cog):
     async def _ensure_loaded(self):
         if self._loaded:
             return
+        # Load per-guild data — each guild stored separately
         stored = await get_setting(0, "leveling_data", {})
         self._cache = stored if isinstance(stored, dict) else {}
-        # Restore active XP event if any
         event = await get_setting(0, "xp_event", {})
         if event and event.get("end", 0) > time.time():
             self._multiplier = event.get("multiplier", 1.0)
@@ -155,7 +155,12 @@ class Leveling(commands.Cog):
         self._loaded = True
 
     async def _persist(self):
+        """Save all guild data to DB."""
         await set_setting(0, "leveling_data", self._cache)
+
+    async def _persist_guild(self, guild_id: int):
+        """Save a single guild's data — more efficient than saving everything."""
+        await self._persist()  # For now persist all; can optimize later
 
     def _guild(self, gid: int) -> dict:
         key = str(gid)
