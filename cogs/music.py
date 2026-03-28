@@ -123,45 +123,113 @@ def _search_youtube(query: str, is_url: bool = False) -> dict | None:
         logger.warning(f"YT search '{query}': {ex}")
         return None
 
+def _clean_title(title: str) -> str:
+    """Remove file extensions and clean up raw filenames."""
+    import re
+    # Remove common audio extensions
+    title = re.sub(r'\.(mp3|wav|flac|m4a|ogg|aac)$', '', title, flags=re.IGNORECASE)
+    # Remove leading/trailing dashes and spaces
+    title = title.strip(" -_")
+    return title or "Unknown"
+
+
+def _is_hindi_urdu(text: str) -> bool:
+    """Detect if text contains Hindi/Urdu characters or common Hinglish words."""
+    import re
+    hindi_chars = re.compile(r'[\u0900-\u097F\u0600-\u06FF]')
+    hinglish = {'pyaar', 'dil', 'ishq', 'mohabbat', 'teri', 'meri', 'tere', 'mere',
+                'aaja', 'suno', 'baat', 'raat', 'yaad', 'zindagi', 'khwab', 'aankhein',
+                'jaan', 'sanam', 'woh', 'yeh', 'hai', 'hain', 'nahi', 'kya', 'toh'}
+    if hindi_chars.search(text):
+        return True
+    words = set(re.findall(r'[a-zA-Z]+', text.lower()))
+    return len(words & hinglish) >= 1
+
+
 def _get_related_songs(sc_url: str, limit: int = 3) -> list:
     try:
         ytdl = yt_dlp.YoutubeDL(SC_RELATED_OPTS)
         info = ytdl.extract_info(sc_url.rstrip("/") + "/recommended", download=False)
         if not info:
             return []
-        return [e for e in info.get("entries", [])[:limit] if e and e.get("url")]
+        results = []
+        for e in info.get("entries", []):
+            if not e or not e.get("url"):
+                continue
+            # Skip raw file uploads (title ends with extension)
+            title = e.get("title", "")
+            if title.lower().endswith(('.mp3', '.wav', '.flac', '.m4a')):
+                continue
+            results.append(e)
+            if len(results) >= limit:
+                break
+        return results
     except Exception as ex:
         logger.debug(f"Related tracks: {ex}")
         return []
 
+
 def _search_related_by_title(title: str, uploader: str, limit: int = 3) -> list:
-    """Search SoundCloud for similar songs — language-aware using title/artist."""
+    """
+    Smart related search — detects language and searches accordingly.
+    Hindi/Urdu song → searches Hindi music terms to stay in same language.
+    English song → searches by genre/mood.
+    """
+    import re
     try:
-        opts = {**SC_OPTS, "noplaylist": False, "playlistend": limit + 3}
+        opts = {**SC_OPTS, "noplaylist": False, "playlistend": limit + 5}
         ytdl = yt_dlp.YoutubeDL(opts)
-        # Use artist name as primary signal — keeps same language/genre
-        queries = [
-            f"scsearch{limit + 3}:{uploader}",           # same artist
-            f"scsearch{limit + 3}:{title.split('-')[0].strip()} similar",  # similar to title
-        ]
+
+        # Detect language from title
+        is_hindi = _is_hindi_urdu(title) or _is_hindi_urdu(uploader)
+
+        # Build smart queries
+        clean_title = title.split('-')[0].split('(')[0].strip()
+        if is_hindi:
+            queries = [
+                f"scsearch{limit + 5}:hindi songs like {clean_title}",
+                f"scsearch{limit + 5}:bollywood {clean_title}",
+                f"scsearch{limit + 5}:{uploader} hindi",
+            ]
+        else:
+            queries = [
+                f"scsearch{limit + 5}:{uploader}",
+                f"scsearch{limit + 5}:songs like {clean_title}",
+            ]
+
         results = []
-        seen_titles = {title.lower()}
+        seen = {title.lower(), clean_title.lower()}
+
         for q in queries:
             if len(results) >= limit:
                 break
-            info = ytdl.extract_info(q, download=False)
-            if not info or not info.get("entries"):
+            try:
+                info = ytdl.extract_info(q, download=False)
+                if not info or not info.get("entries"):
+                    continue
+                for e in info["entries"]:
+                    if not e or not e.get("url"):
+                        continue
+                    t = (e.get("title") or "").strip()
+                    # Skip raw file uploads
+                    if t.lower().endswith(('.mp3', '.wav', '.flac', '.m4a')):
+                        continue
+                    # Skip if title is too similar to already seen
+                    t_lower = t.lower()
+                    if t_lower in seen:
+                        continue
+                    # For Hindi songs, skip obviously English results
+                    if is_hindi and not _is_hindi_urdu(t):
+                        # Allow if uploader matches
+                        if e.get("uploader", "").lower() != uploader.lower():
+                            continue
+                    seen.add(t_lower)
+                    results.append(e)
+                    if len(results) >= limit:
+                        break
+            except Exception:
                 continue
-            for e in info["entries"]:
-                if not e or not e.get("url"):
-                    continue
-                t = (e.get("title") or "").lower()
-                if t in seen_titles:
-                    continue
-                seen_titles.add(t)
-                results.append(e)
-                if len(results) >= limit:
-                    break
+
         return results
     except Exception as ex:
         logger.debug(f"Related by title: {ex}")
@@ -172,13 +240,16 @@ def _search_related_by_title(title: str, uploader: str, limit: int = 3) -> list:
 class Song:
     def __init__(self, data: dict, requester):
         self.stream_url = data.get("url", "")
-        self.title      = data.get("title", "Unknown")
+        raw_title       = data.get("title", "Unknown")
+        self.title      = _clean_title(raw_title)
         self.duration   = data.get("duration", 0)
-        self.thumbnail  = data.get("thumbnail") or data.get("artwork_url")
+        # Try multiple thumbnail fields
+        self.thumbnail  = (data.get("thumbnail") or data.get("artwork_url") or
+                           data.get("thumbnails", [{}])[0].get("url") if data.get("thumbnails") else None)
         self.uploader   = data.get("uploader") or data.get("channel") or data.get("artist", "Unknown")
         self.webpage    = data.get("webpage_url") or data.get("permalink_url", "")
         self.requester  = requester
-        self.started_at: float = 0.0   # set when playback begins
+        self.started_at: float = 0.0
 
     @property
     def duration_str(self):
@@ -423,13 +494,17 @@ class Music(commands.Cog):
                 continue
             try:
                 msg = await ch.fetch_message(gp.dashboard_message_id)
-                if gp.current:
-                    embed = gp.current.player_embed(gp)
-                else:
-                    embed = _idle_embed()
+                embed = gp.current.player_embed(gp) if gp.current else _idle_embed()
+                # Validate thumbnail URL before sending
+                if embed.thumbnail and embed.thumbnail.url:
+                    url = embed.thumbnail.url
+                    if not (url.startswith("http://") or url.startswith("https://")):
+                        embed.set_thumbnail(url=None)
                 await msg.edit(embed=embed, view=MusicControls(self, guild_id))
             except discord.NotFound:
                 gp.dashboard_message_id = None
+            except discord.HTTPException as ex:
+                logger.debug(f"Dashboard HTTP error: {ex}")
             except Exception as ex:
                 logger.debug(f"Dashboard update error: {ex}")
 
@@ -540,34 +615,54 @@ class Music(commands.Cog):
             self._play_next(channel, guild, gp)
 
         vc.play(source, after=_after)
-        # Send now-playing to the text channel (not the dashboard channel)
-        if channel and (not gp.dashboard_channel_id or channel.id != gp.dashboard_channel_id):
+        # Only send now-playing message if NOT in dashboard channel and NOT autoplay
+        # Dashboard embed handles the display — no need for extra messages
+        if channel and gp.dashboard_channel_id and channel.id == gp.dashboard_channel_id:
+            pass  # Dashboard embed will update automatically via _update_task
+        elif channel:
             asyncio.run_coroutine_threadsafe(
                 channel.send(embed=song.simple_embed()), self.bot.loop)
 
     async def _autoplay(self, channel, guild, gp: GuildPlayer, last_song: Song):
         loop = asyncio.get_running_loop()
         songs_data = []
+
+        # Try SoundCloud /recommended endpoint first
         if last_song.webpage and "soundcloud.com" in last_song.webpage:
             songs_data = await loop.run_in_executor(
                 None, lambda: _get_related_songs(last_song.webpage, limit=3))
+
+        # Fallback: smart language-aware search
         if not songs_data:
             songs_data = await loop.run_in_executor(
                 None, lambda: _search_related_by_title(last_song.title, last_song.uploader, limit=3))
+
         if not songs_data:
             if not gp.mode_247:
-                await channel.send("✅ Queue finished — no recommendations found.")
+                await channel.send("✅ Queue finished — couldn't find recommendations. Use `/play` to add more.")
             return
+
         songs = [Song(d, guild.me) for d in songs_data if d.get("url")]
+        if not songs:
+            return
+
         for s in songs:
             gp.queue.append(s)
+
+        # Start playing — _play_next will handle the rest
         self._play_next(channel, guild, gp)
+
+        # Send ONE clean autoplay notification (not per-song)
         titles = "\n".join(f"• {s.title}" for s in songs)
-        await channel.send(embed=discord.Embed(
-            title="✨ Autoplay — Recommended",
-            description=f"Added **{len(songs)}** similar songs:\n{titles}",
+        lang_hint = "🎵 Hindi/Desi" if _is_hindi_urdu(last_song.title) else "🎵 Similar"
+        embed = discord.Embed(
+            title=f"✨ Autoplay — {lang_hint} Recommendations",
+            description=f"Based on **{last_song.title}**:\n{titles}",
             color=0x1DB954
-        ))
+        )
+        if last_song.thumbnail:
+            embed.set_thumbnail(url=last_song.thumbnail)
+        await channel.send(embed=embed, delete_after=30)
 
     # ── Dashboard setup ─────────────────────────────────────────────────────────
 
