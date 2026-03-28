@@ -1,8 +1,8 @@
 """
-WAN Bot - Music Cog (Lara-style)
+WAN Bot - Music Cog
 Slash: /play /skip /stop /pause /resume /volume /queue /np /shuffle /loop /join /leave
 Prefix: !play !skip etc.
-Supports: song names, YouTube URLs, Spotify URLs
+Sources: SoundCloud (primary, works on Render) → YouTube fallback
 """
 import discord
 from discord import app_commands
@@ -16,52 +16,36 @@ from collections import deque
 
 logger = logging.getLogger("discord_bot.music")
 
-# ── yt-dlp options — use android client to avoid JS runtime requirement ───────
-YTDL_OPTS = {
-    "format": "bestaudio/best",
-    "noplaylist": True,
-    "quiet": True,
-    "no_warnings": True,
-    "source_address": "0.0.0.0",
-    "extract_flat": False,
-    "skip_download": True,
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["android_vr"],
-        }
-    },
-    "geo_bypass": True,
-    "geo_bypass_country": "US",
-}
-
-# SoundCloud opts — works on all server IPs, no bot detection
+# SoundCloud — primary source, not blocked on server IPs
 SC_OPTS = {
     "format": "bestaudio/best",
     "noplaylist": True,
     "quiet": True,
     "no_warnings": True,
-    "default_search": "scsearch",
     "source_address": "0.0.0.0",
-    "extract_flat": False,
     "skip_download": True,
 }
 
-FFMPEG_OPTS = {
-    "before_options": (
-        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
-        "-headers 'User-Agent: Mozilla/5.0'"
-    ),
-    "options": "-vn -bufsize 64k",
+# YouTube — fallback, uses android_vr client (no JS runtime needed)
+YT_OPTS = {
+    "format": "bestaudio/best",
+    "noplaylist": True,
+    "quiet": True,
+    "no_warnings": True,
+    "source_address": "0.0.0.0",
+    "skip_download": True,
+    "extractor_args": {"youtube": {"player_client": ["android_vr"]}},
+    "geo_bypass": True,
+    "geo_bypass_country": "US",
 }
 
-
-def _make_ytdl(sc=False):
-    """Create a yt-dlp instance. sc=True for SoundCloud."""
-    return yt_dlp.YoutubeDL(SC_OPTS if sc else YTDL_OPTS)
-
+# FFmpeg — no single-quoted headers (breaks on Linux)
+FFMPEG_OPTS = {
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+    "options": "-vn",
+}
 
 def _spotify_to_search(url: str) -> str:
-    """Convert Spotify URL to a search query string."""
     try:
         import spotipy
         from spotipy.oauth2 import SpotifyClientCredentials
@@ -73,20 +57,59 @@ def _spotify_to_search(url: str) -> str:
             if "/track/" in url:
                 tid = url.split("/track/")[1].split("?")[0]
                 t = sp.track(tid)
-                artists = ", ".join(a["name"] for a in t["artists"])
-                return f"{t['name']} {artists}"
+                return f"{t['name']} {', '.join(a['name'] for a in t['artists'])}"
             elif "/album/" in url:
                 aid = url.split("/album/")[1].split("?")[0]
                 a = sp.album(aid)
                 return f"{a['name']} {a['artists'][0]['name']}"
             elif "/playlist/" in url:
                 pid = url.split("/playlist/")[1].split("?")[0]
-                p = sp.playlist(pid)
-                return p["name"]
+                return sp.playlist(pid)["name"]
     except Exception as e:
-        logger.debug(f"Spotify resolve error: {e}")
-    # Fallback: strip URL and use as-is
+        logger.debug(f"Spotify resolve: {e}")
     return url
+
+
+def _search_soundcloud(query: str) -> dict | None:
+    """Search SoundCloud. Returns info dict or None."""
+    ytdl = yt_dlp.YoutubeDL(SC_OPTS)
+    try:
+        info = ytdl.extract_info(f"scsearch:{query}", download=False)
+        if not info or not info.get("entries"):
+            return None
+        entry = info["entries"][0]
+        if not entry or not entry.get("url"):
+            return None
+        return entry
+    except Exception as e:
+        logger.warning(f"SoundCloud search failed for '{query}': {e}")
+        return None
+
+
+def _search_youtube(query: str, is_url: bool = False) -> dict | None:
+    """Search or fetch from YouTube. Returns info dict or None."""
+    ytdl = yt_dlp.YoutubeDL(YT_OPTS)
+    try:
+        search = query if is_url else f"ytsearch:{query}"
+        info = ytdl.extract_info(search, download=False)
+        if not info:
+            return None
+        if "entries" in info:
+            entries = [e for e in info["entries"] if e]
+            if not entries:
+                return None
+            entry = entries[0]
+            # Re-extract to get stream URL
+            video_url = entry.get("webpage_url") or entry.get("url")
+            if not video_url:
+                return None
+            info = ytdl.extract_info(video_url, download=False)
+        if not info or not info.get("url"):
+            return None
+        return info
+    except Exception as e:
+        logger.warning(f"YouTube search failed for '{query}': {e}")
+        return None
 
 
 class Song:
@@ -94,9 +117,9 @@ class Song:
         self.stream_url = data.get("url", "")
         self.title      = data.get("title", "Unknown")
         self.duration   = data.get("duration", 0)
-        self.thumbnail  = data.get("thumbnail")
-        self.uploader   = data.get("uploader") or data.get("channel", "Unknown")
-        self.webpage    = data.get("webpage_url", "")
+        self.thumbnail  = data.get("thumbnail") or data.get("artwork_url")
+        self.uploader   = data.get("uploader") or data.get("channel") or data.get("artist", "Unknown")
+        self.webpage    = data.get("webpage_url") or data.get("permalink_url", "")
         self.requester  = requester
 
     @property
@@ -114,9 +137,9 @@ class Song:
             color=0x1DB954
         )
         e.add_field(name="Duration", value=self.duration_str, inline=True)
-        e.add_field(name="Uploader", value=self.uploader, inline=True)
+        e.add_field(name="Source", value=self.uploader, inline=True)
         if self.requester:
-            name = self.requester.mention if hasattr(self.requester, 'mention') else str(self.requester)
+            name = self.requester.mention if hasattr(self.requester, "mention") else str(self.requester)
             e.add_field(name="Requested by", value=name, inline=True)
         if self.thumbnail:
             e.set_thumbnail(url=self.thumbnail)
@@ -200,7 +223,7 @@ class Music(commands.Cog):
         return self._players[guild_id]
 
     async def _join_voice(self, guild: discord.Guild, author, send_fn) -> discord.VoiceClient:
-        if not hasattr(author, 'voice') or author.voice is None:
+        if not hasattr(author, "voice") or author.voice is None:
             await send_fn("❌ Join a voice channel first.")
             return None
         vc = guild.voice_client
@@ -211,80 +234,39 @@ class Music(commands.Cog):
         return vc
 
     async def _fetch_song(self, query: str, requester) -> Song:
-        """Fetch song — tries YouTube first, falls back to SoundCloud."""
+        """Resolve query → Song. SoundCloud first, YouTube fallback."""
+        # Resolve Spotify URLs
         if "spotify.com" in query:
             query = _spotify_to_search(query)
 
         is_url = query.startswith("http://") or query.startswith("https://")
-        loop = asyncio.get_event_loop()
+        is_yt  = is_url and ("youtube.com" in query or "youtu.be" in query)
+        is_sc  = is_url and "soundcloud.com" in query
 
-        def _try_youtube():
-            ytdl = _make_ytdl(sc=False)
-            search = query if is_url else f"ytsearch:{query}"
-            info = ytdl.extract_info(search, download=False)
-            if not info:
-                return None
-            if "entries" in info:
-                entries = [e for e in info["entries"] if e]
-                if not entries:
-                    return None
-                entry = entries[0]
-                video_url = entry.get("webpage_url") or entry.get("url")
-                if not video_url:
-                    return None
-                info = ytdl.extract_info(video_url, download=False)
-            if not info or not info.get("url"):
-                return None
-            return info
-
-        def _try_soundcloud():
-            ytdl = _make_ytdl(sc=True)
-            search = query if is_url else f"scsearch:{query}"
-            info = ytdl.extract_info(search, download=False)
-            if not info:
-                return None
-            if "entries" in info:
-                entries = [e for e in info["entries"] if e]
-                if not entries:
-                    return None
-                info = entries[0]
-            if not info or not info.get("url"):
-                return None
-            return info
-
+        loop = asyncio.get_running_loop()
         data = None
-        # Try YouTube first (skip for non-URL queries on server — likely blocked)
-        if is_url and "youtube.com" in query or "youtu.be" in query:
-            try:
-                data = await loop.run_in_executor(None, _try_youtube)
-            except Exception as e:
-                logger.warning(f"YouTube failed for '{query}': {e}")
 
-        # Always try SoundCloud for song name searches (more reliable on Render)
-        if not data:
-            try:
-                data = await loop.run_in_executor(None, _try_soundcloud)
-                if data:
-                    logger.info(f"SoundCloud found: {data.get('title')}")
-            except Exception as e:
-                logger.warning(f"SoundCloud failed for '{query}': {e}")
-
-        # Last resort: try YouTube search
-        if not data and not is_url:
-            try:
-                data = await loop.run_in_executor(None, _try_youtube)
-            except Exception as e:
-                logger.warning(f"YouTube fallback failed for '{query}': {e}")
+        if is_yt:
+            # Direct YouTube URL — try YouTube only
+            data = await loop.run_in_executor(None, lambda: _search_youtube(query, is_url=True))
+        elif is_sc:
+            # Direct SoundCloud URL
+            data = await loop.run_in_executor(None, lambda: _search_soundcloud(query))
+        else:
+            # Song name search — SoundCloud first (reliable on Render), then YouTube
+            data = await loop.run_in_executor(None, lambda: _search_soundcloud(query))
+            if not data:
+                logger.info(f"SoundCloud miss, trying YouTube for: '{query}'")
+                data = await loop.run_in_executor(None, lambda: _search_youtube(query, is_url=False))
 
         if not data:
-            logger.warning(f"All sources failed for: '{query}'")
+            logger.warning(f"No results for: '{query}'")
             return None
 
         song = Song(data, requester)
         if not song.stream_url:
             logger.warning(f"No stream URL for: '{song.title}'")
             return None
-        logger.info(f"Playing: {song.title} ({song.duration_str})")
         return song
 
     def _play_next(self, channel, guild: discord.Guild, gp: GuildPlayer):
@@ -333,16 +315,16 @@ class Music(commands.Cog):
         )
         if not vc:
             return
-        await interaction.followup.send(f"🔍 Searching for **{query}**...")
         song = await self._fetch_song(query, interaction.user)
         if not song:
-            return await interaction.edit_original_response(
-                content="❌ Couldn't find that song. Try a more specific name or paste a YouTube URL directly.")
+            await interaction.followup.send(
+                "❌ Couldn't find that song. Try a more specific name or a direct YouTube/SoundCloud URL.")
+            return
         gp = self._get_player(interaction.guild.id)
         gp.queue.append(song)
         if not vc.is_playing() and not vc.is_paused():
             self._play_next(interaction.channel, interaction.guild, gp)
-            await interaction.edit_original_response(content=f"▶️ Now playing: **{song.title}**")
+            await interaction.followup.send(f"▶️ Now playing: **{song.title}**")
         else:
             e = discord.Embed(title="➕ Added to Queue",
                               description=f"[{song.title}]({song.webpage})" if song.webpage else song.title,
@@ -351,7 +333,7 @@ class Music(commands.Cog):
             e.add_field(name="Position", value=f"#{len(gp.queue)}", inline=True)
             if song.thumbnail:
                 e.set_thumbnail(url=song.thumbnail)
-            await interaction.edit_original_response(content=None, embed=e)
+            await interaction.followup.send(embed=e)
 
     @app_commands.command(name="skip", description="⏭ Skip the current song")
     async def slash_skip(self, interaction: discord.Interaction):
@@ -403,11 +385,11 @@ class Music(commands.Cog):
             vc.source.volume = gp.volume
         await interaction.response.send_message(f"🔊 Volume set to **{level}%**")
 
-    @app_commands.command(name="queue", description="� Show the music queue")
+    @app_commands.command(name="queue", description="📋 Show the music queue")
     async def slash_queue(self, interaction: discord.Interaction):
         gp = self._get_player(interaction.guild.id)
         if not gp.current and not gp.queue:
-            return await interaction.response.send_message("� Queue is empty.", ephemeral=True)
+            return await interaction.response.send_message("📭 Queue is empty.", ephemeral=True)
         e = discord.Embed(title="🎵 Music Queue", color=0x1DB954)
         if gp.current:
             e.add_field(name="Now Playing",
@@ -475,7 +457,7 @@ class Music(commands.Cog):
         msg = await ctx.send(f"🔍 Searching for **{query}**...")
         song = await self._fetch_song(query, ctx.author)
         if not song:
-            return await msg.edit(content="❌ Couldn't find that song. Try a YouTube URL directly.")
+            return await msg.edit(content="❌ Couldn't find that song.")
         await msg.delete()
         gp = self._get_player(ctx.guild.id)
         gp.queue.append(song)
