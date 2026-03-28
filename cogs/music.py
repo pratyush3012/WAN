@@ -1,8 +1,9 @@
 """
 WAN Bot - Music Cog
-Slash: /play /skip /stop /pause /resume /volume /queue /np /shuffle /loop /join /leave
+Slash: /play /skip /stop /pause /resume /volume /queue /np /shuffle /loop /join /leave /autoplay
 Prefix: !play !skip etc.
 Sources: SoundCloud (primary, works on Render) → YouTube fallback
+Autoplay: when queue empties, fetches related tracks from SoundCloud
 """
 import discord
 from discord import app_commands
@@ -20,6 +21,17 @@ logger = logging.getLogger("discord_bot.music")
 SC_OPTS = {
     "format": "bestaudio/best",
     "noplaylist": True,
+    "quiet": True,
+    "no_warnings": True,
+    "source_address": "0.0.0.0",
+    "skip_download": True,
+}
+
+# SoundCloud related tracks — fetch up to 5 related songs
+SC_RELATED_OPTS = {
+    "format": "bestaudio/best",
+    "noplaylist": False,
+    "playlistend": 5,
     "quiet": True,
     "no_warnings": True,
     "source_address": "0.0.0.0",
@@ -112,7 +124,45 @@ def _search_youtube(query: str, is_url: bool = False) -> dict | None:
         return None
 
 
-class Song:
+def _get_related_songs(sc_url: str, requester, limit: int = 3) -> list:
+    """Fetch related/recommended tracks from SoundCloud for a given track URL."""
+    try:
+        ytdl = yt_dlp.YoutubeDL(SC_RELATED_OPTS)
+        # SoundCloud related tracks endpoint
+        related_url = sc_url.rstrip("/") + "/recommended"
+        info = ytdl.extract_info(related_url, download=False)
+        if not info:
+            return []
+        entries = info.get("entries", [])
+        songs = []
+        for e in entries[:limit]:
+            if e and e.get("url"):
+                songs.append(Song(e, requester))
+        return songs
+    except Exception as e:
+        logger.debug(f"Related tracks fetch failed: {e}")
+        return []
+
+
+def _search_related_by_title(title: str, uploader: str, requester, limit: int = 3) -> list:
+    """Search SoundCloud for similar songs based on title/artist — fallback for autoplay."""
+    try:
+        ytdl = yt_dlp.YoutubeDL({**SC_OPTS, "noplaylist": False, "playlistend": limit + 2})
+        # Search for songs by same artist or similar title
+        query = f"scsearch{limit + 2}:{uploader} {title.split('-')[0].strip()}"
+        info = ytdl.extract_info(query, download=False)
+        if not info or not info.get("entries"):
+            return []
+        songs = []
+        for e in info["entries"]:
+            if e and e.get("url") and e.get("title") != title:
+                songs.append(Song(e, requester))
+                if len(songs) >= limit:
+                    break
+        return songs
+    except Exception as e:
+        logger.debug(f"Related search failed: {e}")
+        return []
     def __init__(self, data: dict, requester):
         self.stream_url = data.get("url", "")
         self.title      = data.get("title", "Unknown")
@@ -152,6 +202,7 @@ class GuildPlayer:
         self.current: Song = None
         self.volume: float = 0.5
         self.loop: bool = False
+        self.autoplay: bool = True   # on by default
 
 
 class MusicControls(discord.ui.View):
@@ -210,6 +261,15 @@ class MusicControls(discord.ui.View):
         gp.loop = not gp.loop
         await interaction.response.send_message(
             f"🔁 Loop {'on' if gp.loop else 'off'}", ephemeral=True, delete_after=3)
+
+    @discord.ui.button(emoji="✨", style=discord.ButtonStyle.secondary, label="Auto")
+    async def autoplay_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        gp = self.cog._get_player(self.guild_id)
+        gp.autoplay = not gp.autoplay
+        status = "on ✨" if gp.autoplay else "off"
+        button.style = discord.ButtonStyle.success if gp.autoplay else discord.ButtonStyle.secondary
+        await interaction.response.send_message(
+            f"✨ Autoplay {status}", ephemeral=True, delete_after=5)
 
 
 class Music(commands.Cog):
@@ -276,9 +336,17 @@ class Music(commands.Cog):
         if gp.loop and gp.current:
             gp.queue.appendleft(gp.current)
         if not gp.queue:
-            gp.current = None
-            asyncio.run_coroutine_threadsafe(
-                channel.send("✅ Queue finished."), self.bot.loop)
+            # Autoplay — fetch related songs in background
+            if gp.autoplay and gp.current:
+                last = gp.current
+                gp.current = None
+                asyncio.run_coroutine_threadsafe(
+                    self._autoplay(channel, guild, gp, last), self.bot.loop)
+            else:
+                gp.current = None
+                asyncio.run_coroutine_threadsafe(
+                    channel.send("✅ Queue finished. Use `/autoplay` to toggle autoplay."),
+                    self.bot.loop)
             return
         song = gp.queue.popleft()
         gp.current = song
@@ -301,6 +369,39 @@ class Music(commands.Cog):
         asyncio.run_coroutine_threadsafe(
             channel.send(embed=song.embed(), view=MusicControls(self, guild.id)),
             self.bot.loop
+        )
+
+    async def _autoplay(self, channel, guild: discord.Guild, gp: GuildPlayer, last_song: Song):
+        """Fetch and queue related songs when queue runs out."""
+        loop = asyncio.get_running_loop()
+        await channel.send(
+            f"🎵 Queue empty — fetching recommendations based on **{last_song.title}**...",
+            delete_after=10
+        )
+        # Try SoundCloud related tracks first
+        songs = []
+        if last_song.webpage and "soundcloud.com" in last_song.webpage:
+            songs = await loop.run_in_executor(
+                None, lambda: _get_related_songs(last_song.webpage, guild.me, limit=3))
+        # Fallback: search by artist/title
+        if not songs:
+            songs = await loop.run_in_executor(
+                None, lambda: _search_related_by_title(
+                    last_song.title, last_song.uploader, guild.me, limit=3))
+        if not songs:
+            await channel.send("✅ Queue finished — couldn't find recommendations.")
+            return
+        for s in songs:
+            gp.queue.append(s)
+        # Start playing
+        self._play_next(channel, guild, gp)
+        titles = "\n".join(f"• {s.title}" for s in songs)
+        await channel.send(
+            embed=discord.Embed(
+                title="🎵 Autoplay — Recommended Songs",
+                description=f"Added **{len(songs)}** similar songs:\n{titles}",
+                color=0x1DB954
+            )
         )
 
     # ── Slash commands ─────────────────────────────────────────────────────────
@@ -401,7 +502,7 @@ class Music(commands.Cog):
             if len(gp.queue) > 10:
                 lines.append(f"... and {len(gp.queue) - 10} more")
             e.add_field(name=f"Up Next ({len(gp.queue)} songs)", value="\n".join(lines), inline=False)
-        e.set_footer(text=f"Loop: {'on' if gp.loop else 'off'} • Volume: {int(gp.volume * 100)}%")
+        e.set_footer(text=f"Loop: {'on' if gp.loop else 'off'} • Volume: {int(gp.volume * 100)}% • Autoplay: {'on ✨' if gp.autoplay else 'off'}")
         await interaction.response.send_message(embed=e)
 
     @app_commands.command(name="np", description="🎵 Show what's currently playing")
@@ -427,6 +528,22 @@ class Music(commands.Cog):
         gp = self._get_player(interaction.guild.id)
         gp.loop = not gp.loop
         await interaction.response.send_message(f"🔁 Loop {'on' if gp.loop else 'off'}")
+
+    @app_commands.command(name="autoplay", description="✨ Toggle autoplay — plays similar songs when queue ends")
+    async def slash_autoplay(self, interaction: discord.Interaction):
+        gp = self._get_player(interaction.guild.id)
+        gp.autoplay = not gp.autoplay
+        status = "on ✨" if gp.autoplay else "off"
+        embed = discord.Embed(
+            title=f"✨ Autoplay {status}",
+            description=(
+                "When the queue runs out, I'll automatically play similar songs based on what you were listening to."
+                if gp.autoplay else
+                "Autoplay disabled. Queue will stop when empty."
+            ),
+            color=0x1DB954 if gp.autoplay else 0x6b7280
+        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="join", description="🎤 Join your voice channel")
     async def slash_join(self, interaction: discord.Interaction):
