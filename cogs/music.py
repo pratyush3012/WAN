@@ -110,15 +110,31 @@ def _yt_search(query: str, is_url: bool = False) -> dict | None:
         info = ytdl.extract_info(search, download=False)
         if not info:
             return None
+        
+        # Handle search results
         if "entries" in info:
-            entries = [e for e in info["entries"] if e]
+            entries = [e for e in info["entries"] if e and e.get("url")]
             if not entries:
                 return None
-            entry = entries[0]
-            url = entry.get("webpage_url") or entry.get("url")
-            if not url:
-                return None
-            info = ytdl.extract_info(url, download=False)
+            
+            # Try each entry until we get valid data
+            for entry in entries:
+                try:
+                    url = entry.get("webpage_url") or entry.get("url")
+                    if not url:
+                        continue
+                    
+                    # Try to extract full info from this entry
+                    full_info = ytdl.extract_info(url, download=False)
+                    if full_info and full_info.get("url"):
+                        return full_info
+                except Exception:
+                    continue
+            
+            # Fallback: return first entry even if extraction failed
+            return entries[0] if entries else None
+        
+        # Direct URL result
         return info if info and info.get("url") else None
     except Exception as ex:
         logger.warning(f"YT '{query}': {ex}")
@@ -282,6 +298,8 @@ class GuildPlayer:
         self.vc_channel_id: int  = None
         self.dash_channel_id: int = None   # text channel for live embed
         self.dash_message_id: int = None   # message ID to edit
+        self._played_songs: set = set()    # Track played songs for autoplay
+        self._skip_requested: bool = False # Flag to prevent double-skip
 
 
 # ── Persistent Controls View ────────────────────────────────────────────────────
@@ -316,9 +334,21 @@ class MusicControls(discord.ui.View):
                        custom_id="music_skip")
     async def skip_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         vc = self._vc()
+        gp = self._gp()
+        
+        # Prevent double-skip
+        if gp._skip_requested:
+            await interaction.response.defer()
+            return
+        
         if vc and (vc.is_playing() or vc.is_paused()):
+            gp._skip_requested = True
+            gp.vc_playing = False  # Update state immediately
             vc.stop()
             await interaction.response.send_message("⏭ Skipped.", ephemeral=True, delete_after=3)
+            # Reset skip flag after a short delay
+            await asyncio.sleep(0.5)
+            gp._skip_requested = False
         else:
             await interaction.response.defer()
 
@@ -507,9 +537,8 @@ class Music(commands.Cog):
             gp.vc_playing = False
             return
 
-        # ── LOOP FIX: re-queue current song BEFORE clearing it ─────────────────
-        # Only loop if queue is empty (so loop doesn't interfere with normal queue)
-        if gp.loop and gp.current and not gp.queue:
+        # ── LOOP: Replay current song if loop is enabled ─────────────────────────
+        if gp.loop and gp.current:
             # Re-fetch the same song to get a fresh stream URL (URLs expire)
             last = gp.current
             gp.current = None
@@ -518,30 +547,28 @@ class Music(commands.Cog):
                 self._loop_song(channel, guild, gp, last), self.bot.loop)
             return
 
-        if not gp.queue:
-            if gp.autoplay and gp.current:
-                last = gp.current
-                gp.current = None
-                gp.vc_playing = False
-                asyncio.run_coroutine_threadsafe(
-                    self._autoplay(channel, guild, gp, last), self.bot.loop)
-            else:
-                gp.current = None
-                gp.vc_playing = False
-                if not gp.mode_247:
-                    asyncio.run_coroutine_threadsafe(
-                        channel.send("✅ Queue finished."), self.bot.loop)
+        # ── QUEUE: Play next song from queue ──────────────────────────────────────
+        if gp.queue:
+            song = gp.queue.popleft()
+            self._start_song(channel, guild, gp, song)
             return
 
-        song = gp.queue.popleft()
-        self._start_song(channel, guild, gp, song)
-    
-    def _get_played_songs(self, gp: GuildPlayer) -> set:
-        """Get set of already-played song titles to avoid repeats in autoplay."""
-        if not hasattr(gp, '_played_songs'):
-            gp._played_songs = set()
-        return gp._played_songs
+        # ── AUTOPLAY: Get recommendations when queue is empty ────────────────────
+        if gp.autoplay and gp.current:
+            last = gp.current
+            gp.current = None
+            gp.vc_playing = False
+            asyncio.run_coroutine_threadsafe(
+                self._autoplay(channel, guild, gp, last), self.bot.loop)
+            return
 
+        # ── END: Queue finished ───────────────────────────────────────────────────
+        gp.current = None
+        gp.vc_playing = False
+        if not gp.mode_247:
+            asyncio.run_coroutine_threadsafe(
+                channel.send("✅ Queue finished."), self.bot.loop)
+    
     def _start_song(self, channel, guild, gp: GuildPlayer, song: Song):
         vc = guild.voice_client
         if not vc:
@@ -586,23 +613,27 @@ class Music(commands.Cog):
         """Fetch language-aware recommendations and queue them (no repeats)."""
         loop = asyncio.get_running_loop()
         
-        # Get played songs set
-        played = self._get_played_songs(gp)
-        played.add(last.title.lower())
+        # Add current song to played songs BEFORE fetching recommendations
+        gp._played_songs.add(last.title.lower())
         
         # Try to get recommendations that haven't been played
         max_attempts = 3
         songs_data = []
+        
         for attempt in range(max_attempts):
             candidates = await loop.run_in_executor(
                 None, lambda: _get_autoplay_songs(last.title, last.uploader, last.webpage, limit=5))
             
+            if not candidates:
+                await asyncio.sleep(0.5)
+                continue
+            
             # Filter out already-played songs
             for d in candidates:
                 title = (d.get("title") or "").lower()
-                if title not in played and d.get("url"):
+                if title not in gp._played_songs and d.get("url"):
                     songs_data.append(d)
-                    played.add(title)
+                    gp._played_songs.add(title)  # Add to played immediately
                     if len(songs_data) >= 3:
                         break
             
@@ -753,9 +784,21 @@ class Music(commands.Cog):
     @app_commands.command(name="skip", description="⏭ Skip the current song")
     async def slash_skip(self, interaction: discord.Interaction):
         vc = interaction.guild.voice_client
+        gp = self._get_player(interaction.guild.id)
+        
+        # Prevent double-skip
+        if gp._skip_requested:
+            await interaction.response.defer()
+            return
+        
         if vc and (vc.is_playing() or vc.is_paused()):
+            gp._skip_requested = True
+            gp.vc_playing = False  # Update state immediately
             vc.stop()
             await interaction.response.send_message("⏭ Skipped.")
+            # Reset skip flag after a short delay
+            await asyncio.sleep(0.5)
+            gp._skip_requested = False
         else:
             await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
 
@@ -879,8 +922,20 @@ class Music(commands.Cog):
     @commands.command(name="skip", aliases=["s"])
     async def prefix_skip(self, ctx):
         vc = ctx.guild.voice_client
+        gp = self._get_player(ctx.guild.id)
+        
+        # Prevent double-skip
+        if gp._skip_requested:
+            return
+        
         if vc and (vc.is_playing() or vc.is_paused()):
-            vc.stop(); await ctx.send("⏭ Skipped.")
+            gp._skip_requested = True
+            gp.vc_playing = False  # Update state immediately
+            vc.stop()
+            await ctx.send("⏭ Skipped.")
+            # Reset skip flag after a short delay
+            await asyncio.sleep(0.5)
+            gp._skip_requested = False
         else:
             await ctx.send("❌ Nothing is playing.")
 
