@@ -621,15 +621,19 @@ class Music(commands.Cog):
     # ── Slash commands ──────────────────────────────────────────────────────────
 
     @app_commands.command(name="music-setup",
-                          description="🎵 Set up the music player — select a voice channel")
-    @app_commands.describe(voice_channel="Voice channel where the bot will play music")
+                          description="🎵 Set up the music player in a voice channel")
+    @app_commands.describe(
+        voice_channel="Voice channel where the bot will play music",
+        text_channel="Text channel for the player embed (leave blank = use existing #music or bot-commands)"
+    )
     @app_commands.checks.has_permissions(manage_channels=True)
     async def music_setup(self, interaction: discord.Interaction,
-                          voice_channel: discord.VoiceChannel):
+                          voice_channel: discord.VoiceChannel,
+                          text_channel: discord.TextChannel = None):
         await interaction.response.defer(ephemeral=True)
         gp = self._get_player(interaction.guild.id)
 
-        # Join the voice channel
+        # ── Join the voice channel ────────────────────────────────────────────
         vc = interaction.guild.voice_client
         try:
             if vc is None:
@@ -638,39 +642,27 @@ class Music(commands.Cog):
                 await vc.move_to(voice_channel)
             gp.vc_channel_id = voice_channel.id
         except Exception as e:
-            await interaction.followup.send(f"❌ Could not join {voice_channel.name}: {e}", ephemeral=True)
+            await interaction.followup.send(f"❌ Could not join **{voice_channel.name}**: {e}", ephemeral=True)
             return
 
-        # Use the voice channel's linked text channel if it exists (Stage/Voice text chat)
-        # Otherwise create a dedicated #music-player text channel
-        text_ch = None
+        # ── Find text channel — NEVER create one ─────────────────────────────
+        if not text_channel:
+            # Priority: existing music/bot channel, then the channel where command was used
+            for name in ("music-player", "🎵・music-player", "music", "bot-commands", "bot-spam", "bots"):
+                text_channel = discord.utils.get(interaction.guild.text_channels, name=name)
+                if text_channel:
+                    break
+            # Fallback: use the channel where the command was run
+            if not text_channel:
+                text_channel = interaction.channel
 
-        # Check if voice channel has a linked text channel (Discord feature)
-        # For regular voice channels, create a dedicated text channel
-        for ch in interaction.guild.text_channels:
-            if ch.name in (f"music-player", "🎵・music-player", "music"):
-                text_ch = ch
-                break
-
-        if not text_ch:
-            overwrites = {
-                interaction.guild.default_role: discord.PermissionOverwrite(
-                    send_messages=False, read_messages=True),
-                interaction.guild.me: discord.PermissionOverwrite(
-                    send_messages=True, manage_messages=True, embed_links=True),
-            }
-            text_ch = await interaction.guild.create_text_channel(
-                "🎵・music-player",
-                overwrites=overwrites,
-                topic=f"WAN Music Player — playing in {voice_channel.name}"
-            )
-
-        await self._setup_dashboard(interaction.guild, text_ch, gp)
+        # ── Post the dashboard embed ──────────────────────────────────────────
+        await self._setup_dashboard(interaction.guild, text_channel, gp)
 
         await interaction.followup.send(
             f"✅ Music player ready!\n"
             f"🔊 Voice: **{voice_channel.name}**\n"
-            f"📋 Dashboard: {text_ch.mention}\n\n"
+            f"📋 Dashboard: {text_channel.mention}\n\n"
             f"Use `/play <song>` to start music!\n"
             f"Use `/247` to keep the bot in VC 24/7.",
             ephemeral=True

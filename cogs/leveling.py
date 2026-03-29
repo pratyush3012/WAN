@@ -112,7 +112,7 @@ async def _gemini_levelup(member: discord.Member, level: int) -> str:
         url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"
         req = urllib.request.Request(url, data=payload,
                                      headers={"Content-Type": "application/json"})
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(
             None, lambda: json.loads(urllib.request.urlopen(req, timeout=6).read()))
         return data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -200,11 +200,11 @@ class Leveling(commands.Cog):
     # ── XP granting ────────────────────────────────────────────────────────────
 
     async def _grant_xp(self, guild: discord.Guild, member: discord.Member,
-                        amount: int, source: str = ""):
+                        amount: int, source: str = "",
+                        source_channel: discord.TextChannel = None):
         await self._ensure_loaded()
         if member.bot:
             return
-        # Apply multiplier
         mult = self._multiplier if time.time() < self._multiplier_end else 1.0
         g_cfg = self._guild(guild.id)["config"]
         mult *= g_cfg.get("xp_multiplier", 1.0)
@@ -218,9 +218,10 @@ class Leveling(commands.Cog):
         await self._persist()
 
         if new_level > old_level:
-            await self._announce_levelup(guild, member, new_level)
+            await self._announce_levelup(guild, member, new_level, source_channel)
 
-    async def _announce_levelup(self, guild: discord.Guild, member: discord.Member, level: int):
+    async def _announce_levelup(self, guild: discord.Guild, member: discord.Member,
+                                level: int, source_channel: discord.TextChannel = None):
         g = self._guild(guild.id)
         cfg = g["config"]
 
@@ -251,26 +252,27 @@ class Leveling(commands.Cog):
         color = 0xf59e0b if level not in MILESTONES else 0x7c3aed
         embed = discord.Embed(description=desc, color=color)
         embed.set_author(name=f"⬆️ Level Up! → Level {level}", icon_url=member.display_avatar.url)
-
-        # XP needed for next level
         _, cur_xp, needed = _xp_progress(self._user(guild.id, member.id)["xp"])
         embed.set_footer(text=f"Next level: {cur_xp}/{needed} XP")
 
+        # Channel priority:
+        # 1. Configured announce channel
+        # 2. The channel where the message was sent (source_channel)
+        # 3. Never fall back to random channels by name — that causes wrong channel issues
         ch_id = cfg.get("announce_channel")
         ch = guild.get_channel(int(ch_id)) if ch_id else None
-        # fallback: find a general/chat channel
+
         if not ch:
-            for name in ("general", "chat", "lounge", "bot-commands", "bot"):
-                ch = discord.utils.get(guild.text_channels, name=name)
-                if ch:
-                    break
-        if not ch and guild.text_channels:
-            ch = guild.text_channels[0]
-        if ch:
-            try:
-                await ch.send(embed=embed)
-            except Exception:
-                pass
+            # Use the channel where the user was active
+            ch = source_channel
+
+        if not ch:
+            return  # No channel configured and no source — don't guess
+
+        try:
+            await ch.send(embed=embed)
+        except Exception:
+            pass
 
     # ── Listeners ──────────────────────────────────────────────────────────────
 
@@ -314,7 +316,8 @@ class Leveling(commands.Cog):
             except Exception as e:
                 logger.debug(f"First-msg-day notification failed: {e}")
 
-        await self._grant_xp(message.guild, message.author, xp, "message")
+        await self._grant_xp(message.guild, message.author, xp, "message",
+                             source_channel=message.channel)
 
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
