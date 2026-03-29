@@ -13,6 +13,9 @@ Complete watch party system with 10GB+ storage, synchronized playback, live chat
 
 ### Features
 - ✅ 10GB+ video storage support
+- ✅ Pre-upload validation (format, size, integrity)
+- ✅ Improved upload UI with progress tracking
+- ✅ Persistent database for all settings
 - ✅ Synchronized playback for all viewers
 - ✅ Live chat with emoji reactions
 - ✅ 5-level role-based permissions
@@ -34,6 +37,63 @@ Mod (2):     watch=✅ chat=✅ control=✅ request=✅
 Admin (3):   watch=✅ chat=✅ control=✅ request=✅
 Owner (4):   watch=✅ chat=✅ control=✅ request=✅
 ```
+
+---
+
+## 📤 Upload System
+
+### Pre-Upload Validation
+- ✅ File format validation (MP4, WebM, MKV, MOV, AVI, M4V)
+- ✅ File size validation (max 10GB)
+- ✅ MIME type checking
+- ✅ Disk space verification
+- ✅ Real-time error messages
+
+### Upload UI
+- ✅ Drag & drop support
+- ✅ File selection with preview
+- ✅ Real-time progress bar
+- ✅ Upload speed and time estimation
+- ✅ Success confirmation
+- ✅ Better graphics and animations
+
+### Upload Process
+1. Select or drag video file
+2. System validates format and size
+3. Enter video title
+4. Set role restrictions (optional)
+5. Click upload
+6. Real-time progress tracking
+7. Automatic room creation
+8. Ready to watch
+
+---
+
+## 💾 Database System
+
+### Persistent Storage
+All settings are saved to database so you don't need to reconfigure:
+
+- ✅ Welcome channel configuration
+- ✅ Role settings
+- ✅ Watch party preferences
+- ✅ Upload history
+- ✅ Room data
+- ✅ User preferences
+
+### Database Files
+```
+data/watch_party/
+├── settings.json    # Guild settings
+├── rooms.json       # Room data
+└── uploads.json     # Upload history
+```
+
+### Features
+- Auto-save all configurations
+- Export/import data
+- Persistent across restarts
+- No need to reconfigure after changes
 
 ---
 
@@ -110,8 +170,11 @@ MAX_CONCURRENT_VIEWERS = 500
 ### Core Code
 - `watch_party_features.py` - Playlist, voting, history, recommendations, analytics
 - `watch_party_config.py` - Configuration and helper functions
+- `watch_party_db.py` - Persistent database for settings
+- `watch_party_upload.py` - Upload validation and progress tracking
 - `web_dashboard_enhanced.py` - REST API and Socket.IO handlers
-- `templates/watch_party.html` - Frontend UI
+- `templates/watch_party.html` - Watch party UI
+- `templates/watch_party_upload.html` - Upload UI
 
 ### Tests
 - `tests/conftest.py` - Mock objects and fixtures
@@ -129,7 +192,7 @@ MAX_CONCURRENT_VIEWERS = 500
 ### Git Status
 ```
 Branch: main
-Latest Commit: a47e2db
+Latest Commit: Latest
 Status: ✅ Synced with GitHub
 ```
 
@@ -162,6 +225,9 @@ Health: ✅ Passing
 - ✅ 100% code coverage
 - ✅ Performance optimized
 - ✅ Security hardened
+- ✅ Database persistence
+- ✅ Better upload UI
+- ✅ Pre-upload validation
 - ✅ Code committed
 - ✅ Deployed to Render
 - ✅ Production ready
@@ -184,6 +250,9 @@ pytest tests/test_permissions.py -v
 
 ### Configuration
 Edit `watch_party_config.py` to adjust settings.
+
+### Database
+Settings are auto-saved to `data/watch_party/` directory.
 
 ### Monitoring
 Check `logs/watch_party.log` for activity.

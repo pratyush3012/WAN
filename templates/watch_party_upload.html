@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Upload Video — WAN Watch Party</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f14;--surface:#161920;--border:#2a2d3a;
+    --accent:#1DB954;--text:#e2e8f0;--muted:#8892a4;
+    --danger:#ef4444;--success:#10b981;--warn:#f59e0b;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .container{width:100%;max-width:600px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .header{text-align:center;margin-bottom:32px}
+  .header h1{font-size:28px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:12px}
+  .header p{color:var(--muted);font-size:14px}
+  .form-group{margin-bottom:24px}
+  .form-label{display:block;font-weight:600;font-size:13px;margin-bottom:8px;color:var(--text)}
+  .form-label .required{color:var(--danger)}
+  .form-input{width:100%;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none;transition:.2s}
+  .form-input:focus{border-color:var(--accent);background:rgba(255,255,255,.08)}
+  .form-input::placeholder{color:var(--muted)}
+  
+  /* File upload */
+  .file-upload{position:relative;cursor:pointer}
+  .file-upload input[type="file"]{display:none}
+  .file-upload-area{border:2px dashed var(--border);border-radius:8px;padding:32px;text-align:center;transition:.2s;background:rgba(29,185,84,.02)}
+  .file-upload-area:hover{border-color:var(--accent);background:rgba(29,185,84,.05)}
+  .file-upload-area.dragover{border-color:var(--accent);background:rgba(29,185,84,.1)}
+  .file-upload-icon{font-size:48px;margin-bottom:12px;color:var(--accent)}
+  .file-upload-text{color:var(--muted);font-size:14px;margin-bottom:8px}
+  .file-upload-hint{font-size:12px;color:var(--muted)}
+  .file-selected{background:rgba(16,185,129,.1);border-color:var(--success);padding:16px;border-radius:8px;display:flex;align-items:center;gap:12px;margin-top:12px}
+  .file-selected-icon{font-size:24px;color:var(--success)}
+  .file-selected-info{flex:1;text-align:left}
+  .file-selected-name{font-weight:600;font-size:14px}
+  .file-selected-size{font-size:12px;color:var(--muted)}
+  
+  /* Validation */
+  .validation-box{margin-top:16px;padding:12px;border-radius:8px;font-size:13px;display:none}
+  .validation-box.show{display:block}
+  .validation-box.success{background:rgba(16,185,129,.1);border:1px solid var(--success);color:var(--success)}
+  .validation-box.error{background:rgba(239,68,68,.1);border:1px solid var(--danger);color:var(--danger)}
+  .validation-box.warning{background:rgba(245,158,11,.1);border:1px solid var(--warn);color:var(--warn)}
+  .validation-icon{margin-right:8px}
+  
+  /* Progress */
+  .progress-section{display:none;margin-top:24px}
+  .progress-section.show{display:block}
+  .progress-label{font-size:13px;margin-bottom:8px;display:flex;justify-content:space-between}
+  .progress-bar{width:100%;height:8px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),#1ed760);width:0%;transition:width .3s;border-radius:4px}
+  .progress-info{margin-top:12px;font-size:12px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .progress-stat{display:flex;justify-content:space-between}
+  .progress-status{text-align:center;margin-top:12px;font-size:14px;color:var(--accent);font-weight:600}
+  
+  /* Buttons */
+  .button-group{display:flex;gap:12px;margin-top:24px}
+  .btn{flex:1;padding:12px 24px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px}
+  .btn-primary{background:var(--accent);color:#000}
+  .btn-primary:hover:not(:disabled){background:#1ed760}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+  .btn-secondary{background:rgba(255,255,255,.1);color:var(--text);border:1px solid var(--border)}
+  .btn-secondary:hover{background:rgba(255,255,255,.15)}
+  
+  /* Info boxes */
+  .info-box{background:rgba(29,185,84,.05);border:1px solid rgba(29,185,84,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--muted);margin-top:16px;display:flex;gap:8px}
+  .info-box i{color:var(--accent);flex-shrink:0}
+  
+  /* Success state */
+  .success-state{text-align:center;display:none}
+  .success-state.show{display:block}
+  .success-icon{font-size:64px;color:var(--success);margin-bottom:16px}
+  .success-title{font-size:20px;font-weight:700;margin-bottom:8px}
+  .success-text{color:var(--muted);margin-bottom:24px}
+  .success-link{color:var(--accent);text-decoration:none;font-weight:600}
+  
+  @media(max-width:600px){
+    .card{padding:24px}
+    .header h1{font-size:24px}
+    .button-group{flex-direction:column}
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="card">
+    <!-- Header -->
+    <div class="header">
+      <h1><i class="fas fa-film"></i> Upload Video</h1>
+      <p>Create a new watch party with your video</p>
+    </div>
+
+    <!-- Form -->
+    <form id="uploadForm" onsubmit="handleSubmit(event)">
+      <!-- Video Title -->
+      <div class="form-group">
+        <label class="form-label">Video Title <span class="required">*</span></label>
+        <input type="text" class="form-input" id="videoTitle" placeholder="e.g., Avengers Endgame" required>
+      </div>
+
+      <!-- Video URL or File -->
+      <div class="form-group">
+        <label class="form-label">Video Source <span class="required">*</span></label>
+        <div style="display:flex;gap:12px;margin-bottom:12px">
+          <button type="button" class="btn btn-secondary" style="flex:1" onclick="switchMode('url')" id="urlModeBtn">
+            <i class="fas fa-link"></i> URL
+          </button>
+          <button type="button" class="btn btn-secondary" style="flex:1" onclick="switchMode('file')" id="fileModeBtn">
+            <i class="fas fa-upload"></i> Upload File
+          </button>
+        </div>
+
+        <!-- URL Mode -->
+        <div id="urlMode" style="display:none">
+          <input type="url" class="form-input" id="videoUrl" placeholder="https://example.com/video.mp4">
+          <div class="info-box">
+            <i class="fas fa-info-circle"></i>
+            <span>Paste a direct link to an MP4, WebM, or other video file</span>
+          </div>
+        </div>
+
+        <!-- File Mode -->
+        <div id="fileMode">
+          <div class="file-upload" onclick="document.getElementById('fileInput').click()">
+            <input type="file" id="fileInput" accept="video/*" onchange="handleFileSelect(event)">
+            <div class="file-upload-area" id="uploadArea" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+              <div class="file-upload-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+              <div class="file-upload-text">Click to select or drag & drop</div>
+              <div class="file-upload-hint">Max 10GB • MP4, WebM, MKV, MOV, AVI</div>
+            </div>
+            <div class="file-selected" id="fileSelected" style="display:none">
+              <div class="file-selected-icon"><i class="fas fa-check-circle"></i></div>
+              <div class="file-selected-info">
+                <div class="file-selected-name" id="fileName"></div>
+                <div class="file-selected-size" id="fileSize"></div>
+              </div>
+              <button type="button" class="btn btn-secondary" style="flex:0;padding:6px 12px" onclick="clearFile()">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Validation -->
+      <div class="validation-box" id="validationBox"></div>
+
+      <!-- Role Restriction -->
+      <div class="form-group">
+        <label class="form-label">Who can watch? (Optional)</label>
+        <select class="form-input" id="roleRestriction">
+          <option value="">Everyone can join</option>
+          <option value="member">Members only</option>
+          <option value="mod">Mods and above</option>
+          <option value="admin">Admins and above</option>
+        </select>
+      </div>
+
+      <!-- Progress -->
+      <div class="progress-section" id="progressSection">
+        <div class="progress-label">
+          <span>Uploading...</span>
+          <span id="progressPercent">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-info">
+          <div class="progress-stat">
+            <span>Uploaded:</span>
+            <span id="uploadedSize">0 MB</span>
+          </div>
+          <div class="progress-stat">
+            <span>Time left:</span>
+            <span id="timeLeft">--</span>
+          </div>
+        </div>
+        <div class="progress-status" id="progressStatus">Starting upload...</div>
+      </div>
+
+      <!-- Success -->
+      <div class="success-state" id="successState">
+        <div class="success-icon"><i class="fas fa-check-circle"></i></div>
+        <div class="success-title">Watch Party Created!</div>
+        <div class="success-text">Your video is ready to watch</div>
+        <a href="#" id="watchLink" class="success-link" style="display:inline-block;margin-bottom:16px">
+          <i class="fas fa-play-circle"></i> Start Watching
+        </a>
+      </div>
+
+      <!-- Buttons -->
+      <div class="button-group" id="buttonGroup">
+        <button type="submit" class="btn btn-primary" id="submitBtn">
+          <i class="fas fa-upload"></i> Create Watch Party
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="window.history.back()">
+          <i class="fas fa-arrow-left"></i> Cancel
+        </button>
+      </div>
+    </form>
+
+    <!-- Info -->
+    <div class="info-box">
+      <i class="fas fa-lightbulb"></i>
+      <span><strong>Tip:</strong> Videos are automatically deleted after 24 hours. Download or re-upload if needed.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const MAX_SIZE_GB = 10;
+const MAX_SIZE_BYTES = MAX_SIZE_GB * 1024 * 1024 * 1024;
+const ALLOWED_FORMATS = ['.mp4', '.webm', '.mkv', '.mov', '.avi', '.m4v'];
+
+let selectedFile = null;
+let uploadMode = 'file';
+
+function switchMode(mode) {
+  uploadMode = mode;
+  document.getElementById('urlMode').style.display = mode === 'url' ? 'block' : 'none';
+  document.getElementById('fileMode').style.display = mode === 'file' ? 'block' : 'none';
+  document.getElementById('urlModeBtn').style.opacity = mode === 'url' ? '1' : '0.5';
+  document.getElementById('fileModeBtn').style.opacity = mode === 'file' ? '1' : '0.5';
+}
+
+function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (file) {
+    validateAndSelectFile(file);
+  }
+}
+
+function handleDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  document.getElementById('uploadArea').classList.remove('dragover');
+  
+  const files = event.dataTransfer.files;
+  if (files.length > 0) {
+    validateAndSelectFile(files[0]);
+  }
+}
+
+function handleDragOver(event) {
+  event.preventDefault();
+  document.getElementById('uploadArea').classList.add('dragover');
+}
+
+function handleDragLeave(event) {
+  document.getElementById('uploadArea').classList.remove('dragover');
+}
+
+function validateAndSelectFile(file) {
+  const validation = validateFile(file);
+  
+  if (!validation.valid) {
+    showValidation(validation.message, 'error');
+    selectedFile = null;
+    document.getElementById('fileSelected').style.display = 'none';
+    return;
+  }
+  
+  selectedFile = file;
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileSize').textContent = formatBytes(file.size);
+  document.getElementById('fileSelected').style.display = 'flex';
+  showValidation(validation.message, 'success');
+}
+
+function validateFile(file) {
+  // Check extension
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  if (!ALLOWED_FORMATS.includes(ext)) {
+    return {
+      valid: false,
+      message: `❌ Unsupported format. Allowed: ${ALLOWED_FORMATS.join(', ')}`
+    };
+  }
+  
+  // Check size
+  if (file.size > MAX_SIZE_BYTES) {
+    return {
+      valid: false,
+      message: `❌ File too large (${formatBytes(file.size)}). Max: ${MAX_SIZE_GB}GB`
+    };
+  }
+  
+  if (file.size === 0) {
+    return {
+      valid: false,
+      message: '❌ File is empty'
+    };
+  }
+  
+  return {
+    valid: true,
+    message: `✅ File valid (${formatBytes(file.size)})`
+  };
+}
+
+function showValidation(message, type) {
+  const box = document.getElementById('validationBox');
+  box.textContent = message;
+  box.className = `validation-box show ${type}`;
+}
+
+function clearFile() {
+  selectedFile = null;
+  document.getElementById('fileInput').value = '';
+  document.getElementById('fileSelected').style.display = 'none';
+  document.getElementById('validationBox').classList.remove('show');
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 10) / 10 + ' ' + sizes[i];
+}
+
+async function handleSubmit(event) {
+  event.preventDefault();
+  
+  const title = document.getElementById('videoTitle').value.trim();
+  if (!title) {
+    showValidation('❌ Please enter a video title', 'error');
+    return;
+  }
+  
+  if (uploadMode === 'file') {
+    if (!selectedFile) {
+      showValidation('❌ Please select a file', 'error');
+      return;
+    }
+    await uploadFile(title);
+  } else {
+    const url = document.getElementById('videoUrl').value.trim();
+    if (!url) {
+      showValidation('❌ Please enter a video URL', 'error');
+      return;
+    }
+    await uploadURL(title, url);
+  }
+}
+
+async function uploadFile(title) {
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+  formData.append('title', title);
+  formData.append('required_role_id', document.getElementById('roleRestriction').value || null);
+  
+  document.getElementById('progressSection').classList.add('show');
+  document.getElementById('buttonGroup').style.display = 'none';
+  
+  try {
+    const xhr = new XMLHttpRequest();
+    
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) {
+        const percent = (e.loaded / e.total) * 100;
+        updateProgress(percent, e.loaded, e.total);
+      }
+    });
+    
+    xhr.addEventListener('load', () => {
+      if (xhr.status === 200) {
+        const response = JSON.parse(xhr.responseText);
+        showSuccess(response.room_id);
+      } else {
+        showValidation('❌ Upload failed: ' + xhr.statusText, 'error');
+        document.getElementById('buttonGroup').style.display = 'flex';
+        document.getElementById('progressSection').classList.remove('show');
+      }
+    });
+    
+    xhr.addEventListener('error', () => {
+      showValidation('❌ Upload error', 'error');
+      document.getElementById('buttonGroup').style.display = 'flex';
+      document.getElementById('progressSection').classList.remove('show');
+    });
+    
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    xhr.open('POST', `/api/watch/upload/${serverId}`);
+    xhr.send(formData);
+  } catch (error) {
+    showValidation('❌ ' + error.message, 'error');
+    document.getElementById('buttonGroup').style.display = 'flex';
+    document.getElementById('progressSection').classList.remove('show');
+  }
+}
+
+async function uploadURL(title, url) {
+  try {
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const response = await fetch(`/api/watch/create/${serverId}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        title: title,
+        video_url: url,
+        required_role_id: document.getElementById('roleRestriction').value || null
+      })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      showSuccess(data.room_id);
+    } else {
+      showValidation('❌ Failed to create watch party', 'error');
+    }
+  } catch (error) {
+    showValidation('❌ ' + error.message, 'error');
+  }
+}
+
+function updateProgress(percent, loaded, total) {
+  document.getElementById('progressFill').style.width = percent + '%';
+  document.getElementById('progressPercent').textContent = Math.round(percent) + '%';
+  document.getElementById('uploadedSize').textContent = formatBytes(loaded);
+  
+  const remaining = total - loaded;
+  const speed = loaded / (Date.now() / 1000);
+  const timeLeft = speed > 0 ? Math.round(remaining / speed) : 0;
+  document.getElementById('timeLeft').textContent = timeLeft + 's';
+  
+  if (percent < 25) {
+    document.getElementById('progressStatus').textContent = '📤 Starting upload...';
+  } else if (percent < 50) {
+    document.getElementById('progressStatus').textContent = '📤 Uploading...';
+  } else if (percent < 75) {
+    document.getElementById('progressStatus').textContent = '📤 Almost there...';
+  } else if (percent < 100) {
+    document.getElementById('progressStatus').textContent = '⏳ Finalizing...';
+  }
+}
+
+function showSuccess(roomId) {
+  document.getElementById('progressSection').classList.remove('show');
+  document.getElementById('successState').classList.add('show');
+  document.getElementById('watchLink').href = `/watch/${roomId}`;
+}
+
+// Initialize
+switchMode('file');
+</script>
+
+</body>
+</html>

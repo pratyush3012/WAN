@@ -4202,29 +4202,40 @@ def watch_create_room(server_id):
 @require_auth
 @limiter.limit("5 per hour")
 def watch_upload_video(server_id):
-    """Upload a video file and create a watch room."""
+    """Upload a video file and create a watch room with validation."""
+    from watch_party_upload import UploadValidator
+    from watch_party_db import WatchPartyDB
+    
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
+    
     f = request.files["file"]
     if not f.filename:
         return jsonify({"error": "Empty filename"}), 400
 
-    ext = os.path.splitext(f.filename)[1].lower()
-    if ext not in ALLOWED_VIDEO_EXTS:
-        return jsonify({"error": f"Unsupported format. Use: {', '.join(ALLOWED_VIDEO_EXTS)}"}), 400
+    # Validate upload
+    is_valid, validation_result = UploadValidator.validate_upload(f, f.filename)
+    if not is_valid:
+        errors = validation_result.get("errors", [])
+        return jsonify({"error": errors[0] if errors else "Validation failed"}), 400
 
-    # Check size (read first 1 byte to get content-length)
-    f.seek(0, 2)
-    size_mb = f.tell() / (1024 * 1024)
-    f.seek(0)
-    if size_mb > MAX_UPLOAD_MB:
-        return jsonify({"error": f"File too large. Max {MAX_UPLOAD_MB}MB"}), 400
-
-    room_id   = secrets.token_urlsafe(8)
+    # Get file info
+    file_info = validation_result.get("file_info", {})
+    ext = file_info.get("extension", ".mp4")
+    
+    # Save file
+    room_id = secrets.token_urlsafe(8)
     safe_name = f"{room_id}{ext}"
     file_path = os.path.join(UPLOAD_FOLDER, safe_name)
-    f.save(file_path)
+    
+    try:
+        f.seek(0)
+        f.save(file_path)
+    except Exception as e:
+        logger.error(f"Failed to save file: {e}")
+        return jsonify({"error": "Failed to save file"}), 500
 
+    # Create room
     title = request.form.get("title", f.filename[:80])
     role_id = request.form.get("required_role_id") or None
 
@@ -4239,7 +4250,20 @@ def watch_upload_video(server_id):
     )
     room.file_path = file_path
     _watch_rooms[room_id] = room
-    logger.info(f"Watch upload: {room_id} ({size_mb:.1f}MB) by {session.get('username')}")
+    
+    # Save to database
+    upload_info = {
+        "room_id": room_id,
+        "filename": f.filename,
+        "size_bytes": file_info.get("size_bytes", 0),
+        "title": title,
+        "host_id": session.get("user_id"),
+        "guild_id": server_id,
+    }
+    WatchPartyDB.save_upload_info(room_id, upload_info)
+    WatchPartyDB.save_room_data(room_id, room.to_dict())
+    
+    logger.info(f"Watch upload: {room_id} ({file_info.get('size', 'unknown')}) by {session.get('username')}")
     return jsonify({"room": room.to_dict(), "room_id": room_id})
 
 
@@ -4323,6 +4347,12 @@ def watch_close_room(room_id):
     socketio.emit("room_closed", {"room_id": room_id}, room=f"watch_{room_id}")
     return jsonify({"success": True})
 
+
+@app.route("/watch/upload")
+@require_auth
+def watch_upload_page():
+    """Serve watch party upload page"""
+    return render_template("watch_party_upload.html")
 
 @app.route("/watch/<room_id>")
 @require_auth
