@@ -102,11 +102,12 @@
 <div class="main">
   <!-- Video -->
   <div class="video-side" id="videoWrap">
-    <video id="videoPlayer" preload="auto" playsinline
-           {% if room.video_url.startswith('/watch/stream/') %}
-           src="{{ room.video_url }}"
-           {% endif %}
-    ></video>
+    <video id="videoPlayer" preload="metadata" playsinline controls
+           crossorigin="anonymous"
+           style="width:100%;height:100%;background:#000">
+      <source id="videoSource" type="video/mp4">
+      Your browser does not support the video tag.
+    </video>
 
     {% if session.get('user_id') == room.host_id %}
     <div class="host-badge">👑 You are the host</div>
@@ -173,17 +174,28 @@ const syncToast = document.getElementById("syncToast");
 let isSyncing = false;
 let viewers   = {};
 
+// ── Initialize Video ─────────────────────────────────────────────────────────
+function initializeVideo() {
+  const videoSource = document.getElementById("videoSource");
+  if (VIDEO_URL && videoSource) {
+    videoSource.src = VIDEO_URL;
+    videoSource.type = "video/mp4";
+    video.load();
+  }
+}
+
 // ── Socket ────────────────────────────────────────────────────────────────────
 const socket = io({ transports: ["websocket", "polling"] });
 
 socket.on("connect", () => {
+  initializeVideo();
   socket.emit("watch_join", { room_id: ROOM_ID, username: MY_NAME, user_id: MY_ID });
 });
 
 socket.on("watch_state", d => {
-  // Set video source if not already set
-  if (VIDEO_URL && !video.src.includes(VIDEO_URL.replace(/^\//, ""))) {
-    video.src = VIDEO_URL;
+  // Ensure video source is set
+  if (VIDEO_URL && !video.src) {
+    initializeVideo();
   }
   video.currentTime = d.current_time;
   if (d.is_playing) video.play().catch(()=>{});

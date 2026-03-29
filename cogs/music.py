@@ -535,6 +535,12 @@ class Music(commands.Cog):
 
         song = gp.queue.popleft()
         self._start_song(channel, guild, gp, song)
+    
+    def _get_played_songs(self, gp: GuildPlayer) -> set:
+        """Get set of already-played song titles to avoid repeats in autoplay."""
+        if not hasattr(gp, '_played_songs'):
+            gp._played_songs = set()
+        return gp._played_songs
 
     def _start_song(self, channel, guild, gp: GuildPlayer, song: Song):
         vc = guild.voice_client
@@ -577,14 +583,36 @@ class Music(commands.Cog):
             self._start_song(channel, guild, gp, last)
 
     async def _autoplay(self, channel, guild, gp: GuildPlayer, last: Song):
-        """Fetch language-aware recommendations and queue them."""
+        """Fetch language-aware recommendations and queue them (no repeats)."""
         loop = asyncio.get_running_loop()
-        songs_data = await loop.run_in_executor(
-            None, lambda: _get_autoplay_songs(last.title, last.uploader, last.webpage, limit=3))
+        
+        # Get played songs set
+        played = self._get_played_songs(gp)
+        played.add(last.title.lower())
+        
+        # Try to get recommendations that haven't been played
+        max_attempts = 3
+        songs_data = []
+        for attempt in range(max_attempts):
+            candidates = await loop.run_in_executor(
+                None, lambda: _get_autoplay_songs(last.title, last.uploader, last.webpage, limit=5))
+            
+            # Filter out already-played songs
+            for d in candidates:
+                title = (d.get("title") or "").lower()
+                if title not in played and d.get("url"):
+                    songs_data.append(d)
+                    played.add(title)
+                    if len(songs_data) >= 3:
+                        break
+            
+            if len(songs_data) >= 3:
+                break
+            await asyncio.sleep(0.5)
 
         if not songs_data:
             if not gp.mode_247:
-                await channel.send("✅ Queue finished — no recommendations found.")
+                await channel.send("✅ Queue finished — no new recommendations found.")
             return
 
         songs = [Song(d, guild.me) for d in songs_data if d.get("url")]

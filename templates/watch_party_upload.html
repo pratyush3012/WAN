@@ -162,7 +162,7 @@
         </select>
       </div>
 
-      <!-- Progress -->
+    <!-- Progress -->
       <div class="progress-section" id="progressSection">
         <div class="progress-label">
           <span>Uploading...</span>
@@ -175,6 +175,10 @@
           <div class="progress-stat">
             <span>Uploaded:</span>
             <span id="uploadedSize">0 MB</span>
+          </div>
+          <div class="progress-stat">
+            <span>Speed:</span>
+            <span id="uploadSpeed">0 MB/s</span>
           </div>
           <div class="progress-stat">
             <span>Time left:</span>
@@ -359,13 +363,21 @@ async function uploadFile(title) {
   document.getElementById('progressSection').classList.add('show');
   document.getElementById('buttonGroup').style.display = 'none';
   
+  const startTime = Date.now();
+  let uploadedBytes = 0;
+  
   try {
     const xhr = new XMLHttpRequest();
     
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {
+        uploadedBytes = e.loaded;
         const percent = (e.loaded / e.total) * 100;
-        updateProgress(percent, e.loaded, e.total);
+        const elapsed = (Date.now() - startTime) / 1000;
+        const speed = e.loaded / elapsed / (1024 * 1024); // MB/s
+        const remaining = (e.total - e.loaded) / (speed * 1024 * 1024);
+        
+        updateProgress(percent, e.loaded, e.total, speed, remaining);
       }
     });
     
@@ -382,6 +394,12 @@ async function uploadFile(title) {
     
     xhr.addEventListener('error', () => {
       showValidation('❌ Upload error', 'error');
+      document.getElementById('buttonGroup').style.display = 'flex';
+      document.getElementById('progressSection').classList.remove('show');
+    });
+    
+    xhr.addEventListener('abort', () => {
+      showValidation('❌ Upload cancelled', 'error');
       document.getElementById('buttonGroup').style.display = 'flex';
       document.getElementById('progressSection').classList.remove('show');
     });
@@ -420,22 +438,19 @@ async function uploadURL(title, url) {
   }
 }
 
-function updateProgress(percent, loaded, total) {
+function updateProgress(percent, loaded, total, speed = 0, timeLeft = 0) {
   document.getElementById('progressFill').style.width = percent + '%';
   document.getElementById('progressPercent').textContent = Math.round(percent) + '%';
   document.getElementById('uploadedSize').textContent = formatBytes(loaded);
-  
-  const remaining = total - loaded;
-  const speed = loaded / (Date.now() / 1000);
-  const timeLeft = speed > 0 ? Math.round(remaining / speed) : 0;
-  document.getElementById('timeLeft').textContent = timeLeft + 's';
+  document.getElementById('uploadSpeed').textContent = speed.toFixed(1) + ' MB/s';
+  document.getElementById('timeLeft').textContent = timeLeft > 0 ? Math.round(timeLeft) + 's' : '--';
   
   if (percent < 25) {
     document.getElementById('progressStatus').textContent = '📤 Starting upload...';
   } else if (percent < 50) {
-    document.getElementById('progressStatus').textContent = '📤 Uploading...';
+    document.getElementById('progressStatus').textContent = '📤 Uploading... ' + Math.round(percent) + '%';
   } else if (percent < 75) {
-    document.getElementById('progressStatus').textContent = '📤 Almost there...';
+    document.getElementById('progressStatus').textContent = '📤 Almost there... ' + Math.round(percent) + '%';
   } else if (percent < 100) {
     document.getElementById('progressStatus').textContent = '⏳ Finalizing...';
   }
