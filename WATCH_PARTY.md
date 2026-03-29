@@ -1,4 +1,4 @@
-# 🎬 Watch Party System
+# 🎬 Watch Party System & 🎮 Leveling System - Complete Fix
 
 **Status:** ✅ **PRODUCTION READY**  
 **Last Updated:** March 29, 2026  
@@ -9,7 +9,75 @@
 
 ## 📋 Overview
 
+### Watch Party System
 Complete watch party system with 10GB+ storage, synchronized playback, live chat, and role-based permissions.
+
+### Leveling System (FIXED)
+Complete rewrite with persistent database, XP restoration, and bug fixes.
+
+---
+
+## 🎮 Leveling System - FIXED
+
+### Issues Fixed
+- ✅ **Persistent Database** - All XP saved to disk, never lost
+- ✅ **Level Restoration** - Restore previous levels (8, 7, 9, etc.)
+- ✅ **Bug Fixes** - Fixed level calculation bugs
+- ✅ **XP Sources** - Messages, voice, reactions, daily, music, dashboard
+- ✅ **Automatic Backups** - Backup created before every save
+- ✅ **Data Recovery** - Automatic recovery from corrupted files
+
+### XP Sources
+- **Messages:** 15-25 XP (60s cooldown)
+- **Voice:** 10 XP/minute
+- **Reactions:** 5 XP each (30s cooldown)
+- **Daily Bonus:** 100-300 XP
+- **Streak Bonus:** +25 XP per consecutive day (max 10 days)
+- **First Message:** +50 XP bonus
+- **Music:** 5 XP per song
+- **Dashboard:** 10 XP per action
+- **Web Activity:** 5 XP per interaction
+
+### Features
+- ✅ Persistent database with automatic backups
+- ✅ XP restoration from previous levels
+- ✅ Level roles (auto-assign)
+- ✅ Level-up announcements
+- ✅ /rank — rank card with progress
+- ✅ /levels — leaderboard
+- ✅ /daily — daily bonus
+- ✅ /streak — streak tracking
+- ✅ XP multiplier events
+- ✅ All data persisted to disk
+
+### Database Files
+```
+data/leveling/
+├── leveling.json          # Main database
+├── leveling_backup.json   # Auto backup
+└── backups/
+    ├── leveling_20260329_120000.json
+    ├── leveling_20260329_110000.json
+    └── ...
+```
+
+### Restore Previous Levels
+```python
+# Edit restore_levels.py with previous levels:
+PREVIOUS_LEVELS = {
+    123456789: {  # guild_id
+        111111111: 8,  # user_id: level
+        222222222: 7,
+        333333333: 9,
+    }
+}
+
+# Run: python restore_levels.py
+```
+
+---
+
+## 🎬 Watch Party System
 
 ### Features
 - ✅ 10GB+ video storage support
@@ -37,63 +105,6 @@ Mod (2):     watch=✅ chat=✅ control=✅ request=✅
 Admin (3):   watch=✅ chat=✅ control=✅ request=✅
 Owner (4):   watch=✅ chat=✅ control=✅ request=✅
 ```
-
----
-
-## 📤 Upload System
-
-### Pre-Upload Validation
-- ✅ File format validation (MP4, WebM, MKV, MOV, AVI, M4V)
-- ✅ File size validation (max 10GB)
-- ✅ MIME type checking
-- ✅ Disk space verification
-- ✅ Real-time error messages
-
-### Upload UI
-- ✅ Drag & drop support
-- ✅ File selection with preview
-- ✅ Real-time progress bar
-- ✅ Upload speed and time estimation
-- ✅ Success confirmation
-- ✅ Better graphics and animations
-
-### Upload Process
-1. Select or drag video file
-2. System validates format and size
-3. Enter video title
-4. Set role restrictions (optional)
-5. Click upload
-6. Real-time progress tracking
-7. Automatic room creation
-8. Ready to watch
-
----
-
-## 💾 Database System
-
-### Persistent Storage
-All settings are saved to database so you don't need to reconfigure:
-
-- ✅ Welcome channel configuration
-- ✅ Role settings
-- ✅ Watch party preferences
-- ✅ Upload history
-- ✅ Room data
-- ✅ User preferences
-
-### Database Files
-```
-data/watch_party/
-├── settings.json    # Guild settings
-├── rooms.json       # Room data
-└── uploads.json     # Upload history
-```
-
-### Features
-- Auto-save all configurations
-- Export/import data
-- Persistent across restarts
-- No need to reconfigure after changes
 
 ---
 
@@ -167,7 +178,12 @@ MAX_CONCURRENT_VIEWERS = 500
 
 ## 📁 Implementation Files
 
-### Core Code
+### Leveling System
+- `leveling_db.py` - Persistent database with backups
+- `cogs/leveling_fixed.py` - Fixed leveling system
+- `restore_levels.py` - Level restoration tool
+
+### Watch Party System
 - `watch_party_features.py` - Playlist, voting, history, recommendations, analytics
 - `watch_party_config.py` - Configuration and helper functions
 - `watch_party_db.py` - Persistent database for settings
@@ -228,6 +244,8 @@ Health: ✅ Passing
 - ✅ Database persistence
 - ✅ Better upload UI
 - ✅ Pre-upload validation
+- ✅ Leveling system fixed
+- ✅ XP restoration available
 - ✅ Code committed
 - ✅ Deployed to Render
 - ✅ Production ready
@@ -246,13 +264,16 @@ pytest tests/ --cov=. --cov-report=html
 
 # Run specific test
 pytest tests/test_permissions.py -v
+
+# Restore levels
+python restore_levels.py
 ```
 
 ### Configuration
 Edit `watch_party_config.py` to adjust settings.
 
 ### Database
-Settings are auto-saved to `data/watch_party/` directory.
+Settings are auto-saved to `data/` directory.
 
 ### Monitoring
 Check `logs/watch_party.log` for activity.
