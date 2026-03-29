@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ room.title }} — WAN Watch Party</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f14;--surface:#161920;--border:#2a2d3a;
+    --accent:#1DB954;--text:#e2e8f0;--muted:#8892a4;
+    --danger:#ef4444;--warn:#f59e0b;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  /* ── Top bar ── */
+  .topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+  .topbar-logo{font-size:20px}
+  .topbar-title{font-weight:700;font-size:15px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar-viewers{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+  .viewer-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .btn{padding:7px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:.15s}
+  .btn-primary{background:var(--accent);color:#000}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+  .btn-danger{background:var(--danger);color:#fff}
+  .btn:hover{opacity:.85}
+  /* ── Main layout ── */
+  .main{display:flex;flex:1;overflow:hidden}
+  /* ── Video side ── */
+  .video-side{flex:1;display:flex;flex-direction:column;background:#000;position:relative;min-width:0}
+  #videoPlayer{width:100%;height:100%;object-fit:contain;background:#000}
+  /* ── Controls overlay ── */
+  .controls{position:absolute;bottom:0;left:0;right:0;padding:12px 16px;background:linear-gradient(transparent,rgba(0,0,0,.85));display:flex;flex-direction:column;gap:8px;opacity:0;transition:.3s}
+  .video-side:hover .controls{opacity:1}
+  .progress-wrap{position:relative;height:4px;background:rgba(255,255,255,.2);border-radius:4px;cursor:pointer}
+  .progress-fill{height:100%;background:var(--accent);border-radius:4px;pointer-events:none;transition:width .1s}
+  .progress-wrap:hover{height:6px}
+  .ctrl-row{display:flex;align-items:center;gap:10px}
+  .ctrl-btn{background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:4px;opacity:.9;transition:.15s}
+  .ctrl-btn:hover{opacity:1;transform:scale(1.1)}
+  .time-display{font-size:12px;color:rgba(255,255,255,.8);font-variant-numeric:tabular-nums;min-width:90px}
+  .vol-slider{width:80px;accent-color:var(--accent);cursor:pointer}
+  .ctrl-spacer{flex:1}
+  .fullscreen-btn{margin-left:auto}
+  /* ── Host badge ── */
+  .host-badge{position:absolute;top:12px;left:12px;background:rgba(0,0,0,.7);border:1px solid var(--accent);border-radius:6px;padding:4px 10px;font-size:11px;color:var(--accent);font-weight:700}
+  /* ── Sync indicator ── */
+  .sync-toast{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);border:1px solid var(--accent);border-radius:10px;padding:10px 20px;font-size:14px;color:var(--accent);display:none;pointer-events:none}
+  /* ── Chat side ── */
+  .chat-side{width:320px;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--surface);flex-shrink:0}
+  .chat-header{padding:12px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px}
+  .viewers-list{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px;max-height:60px;overflow-y:auto}
+  .viewer-chip{display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.05);border-radius:20px;padding:3px 8px;font-size:11px}
+  .viewer-avatar{width:18px;height:18px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;overflow:hidden}
+  .viewer-avatar img{width:100%;height:100%;object-fit:cover}
+  .chat-messages{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;scroll-behavior:smooth}
+  .chat-msg{display:flex;gap:8px;align-items:flex-start}
+  .chat-msg-avatar{width:28px;height:28px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#000;flex-shrink:0;overflow:hidden}
+  .chat-msg-avatar img{width:100%;height:100%;object-fit:cover}
+  .chat-msg-body{flex:1;min-width:0}
+  .chat-msg-name{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:2px}
+  .chat-msg-text{font-size:13px;line-height:1.4;word-break:break-word}
+  .chat-msg-ts{font-size:10px;color:var(--muted);margin-top:2px}
+  .system-msg{text-align:center;font-size:11px;color:var(--muted);padding:4px 0;font-style:italic}
+  .chat-input-wrap{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px}
+  .chat-input{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;outline:none}
+  .chat-input:focus{border-color:var(--accent)}
+  .chat-send{background:var(--accent);border:none;border-radius:8px;padding:8px 12px;color:#000;cursor:pointer;font-weight:700;font-size:13px}
+  /* ── Reaction bar ── */
+  .reaction-bar{display:flex;gap:6px;padding:6px 12px;border-top:1px solid var(--border)}
+  .react-btn{background:none;border:1px solid var(--border);border-radius:20px;padding:3px 10px;cursor:pointer;font-size:16px;transition:.15s}
+  .react-btn:hover{background:rgba(255,255,255,.08);transform:scale(1.2)}
+  /* ── Floating reaction ── */
+  .float-react{position:fixed;font-size:28px;pointer-events:none;animation:floatUp 2s ease-out forwards;z-index:999}
+  @keyframes floatUp{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-120px) scale(1.4)}}
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+  /* ── Mobile ── */
+  @media(max-width:700px){.chat-side{display:none}.video-side{flex:1}}
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <span class="topbar-logo">🎬</span>
+  <span class="topbar-title">{{ room.title }}</span>
+  <div class="topbar-viewers">
+    <span class="viewer-dot"></span>
+    <span id="viewerCount">0</span> watching
+  </div>
+  <button class="btn btn-ghost" onclick="requestSync()" title="Re-sync with host"><i class="fas fa-sync"></i></button>
+  {% if session.get('user_id') == room.host_id %}
+  <button class="btn btn-danger" onclick="closeRoom()"><i class="fas fa-times"></i> End Party</button>
+  {% endif %}
+  <a href="/" class="btn btn-ghost"><i class="fas fa-arrow-left"></i></a>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <!-- Video -->
+  <div class="video-side" id="videoWrap">
+    <video id="videoPlayer" preload="auto" playsinline
+           {% if room.video_url.startswith('/watch/stream/') %}
+           src="{{ room.video_url }}"
+           {% endif %}
+    ></video>
+
+    {% if session.get('user_id') == room.host_id %}
+    <div class="host-badge">👑 You are the host</div>
+    {% endif %}
+
+    <div class="sync-toast" id="syncToast">⏳ Syncing...</div>
+
+    <!-- Controls -->
+    <div class="controls" id="controls">
+      <div class="progress-wrap" id="progressWrap" onclick="seekTo(event)">
+        <div class="progress-fill" id="progressFill" style="width:0%"></div>
+      </div>
+      <div class="ctrl-row">
+        <button class="ctrl-btn" onclick="togglePlay()" id="playBtn"><i class="fas fa-play"></i></button>
+        <button class="ctrl-btn" onclick="skip(-10)"><i class="fas fa-backward"></i></button>
+        <button class="ctrl-btn" onclick="skip(10)"><i class="fas fa-forward"></i></button>
+        <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+        <input type="range" class="vol-slider" id="volSlider" min="0" max="1" step="0.05" value="1" oninput="setVol(this.value)">
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn fullscreen-btn" onclick="toggleFullscreen()"><i class="fas fa-expand"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat -->
+  <div class="chat-side">
+    <div class="chat-header">
+      <i class="fas fa-comments" style="color:var(--accent)"></i>
+      Live Chat
+    </div>
+    <div class="viewers-list" id="viewersList"></div>
+    <div class="chat-messages" id="chatMessages"></div>
+    <div class="reaction-bar">
+      <button class="react-btn" onclick="sendReact('❤️')">❤️</button>
+      <button class="react-btn" onclick="sendReact('😂')">😂</button>
+      <button class="react-btn" onclick="sendReact('😮')">😮</button>
+      <button class="react-btn" onclick="sendReact('👏')">👏</button>
+      <button class="react-btn" onclick="sendReact('🔥')">🔥</button>
+      <button class="react-btn" onclick="sendReact('💀')">💀</button>
+    </div>
+    <div class="chat-input-wrap">
+      <input class="chat-input" id="chatInput" placeholder="Say something..." maxlength="500"
+             onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="chat-send" onclick="sendChat()"><i class="fas fa-paper-plane"></i></button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ROOM_ID   = "{{ room.room_id }}";
+const VIDEO_URL = {{ room.video_url | tojson }};
+const HOST_ID   = "{{ room.host_id }}";
+const MY_ID     = "{{ user_id }}";
+const MY_NAME   = "{{ username }}";
+const IS_HOST   = MY_ID === HOST_ID;
+
+const video     = document.getElementById("videoPlayer");
+const playBtn   = document.getElementById("playBtn");
+const progress  = document.getElementById("progressFill");
+const timeDisp  = document.getElementById("timeDisplay");
+const chatMsgs  = document.getElementById("chatMessages");
+const syncToast = document.getElementById("syncToast");
+
+let isSyncing = false;
+let viewers   = {};
+
+// ── Socket ────────────────────────────────────────────────────────────────────
+const socket = io({ transports: ["websocket", "polling"] });
+
+socket.on("connect", () => {
+  socket.emit("watch_join", { room_id: ROOM_ID, username: MY_NAME, user_id: MY_ID });
+});
+
+socket.on("watch_state", d => {
+  // Set video source if not already set
+  if (VIDEO_URL && !video.src.includes(VIDEO_URL.replace(/^\//, ""))) {
+    video.src = VIDEO_URL;
+  }
+  video.currentTime = d.current_time;
+  if (d.is_playing) video.play().catch(()=>{});
+  else video.pause();
+  updateViewerCount(d.viewer_count);
+  // Load chat history
+  chatMsgs.innerHTML = "";
+  (d.chat_history || []).forEach(addChatMsg);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+});
+
+socket.on("watch_sync", d => {
+  if (isSyncing) return;
+  isSyncing = true;
+  const diff = Math.abs(video.currentTime - d.current_time);
+  if (diff > 1.5) {
+    showSyncToast();
+    video.currentTime = d.current_time;
+  }
+  if (d.action === "play" || (d.is_playing && video.paused)) {
+    video.play().catch(()=>{});
+    playBtn.innerHTML = '<i class="fas fa-pause"></i>';
+  } else if (d.action === "pause" || (!d.is_playing && !video.paused)) {
+    video.pause();
+    playBtn.innerHTML = '<i class="fas fa-play"></i>';
+  }
+  if (d.action === "seek") video.currentTime = d.current_time;
+  setTimeout(() => isSyncing = false, 300);
+});
+
+socket.on("watch_chat_msg", addChatMsg);
+
+socket.on("viewer_joined", d => {
+  updateViewerCount(d.viewer_count);
+  addSystemMsg(`${d.name} joined 👋`);
+});
+
+socket.on("viewer_left", d => {
+  updateViewerCount(d.viewer_count);
+  addSystemMsg(`${d.name} left`);
+});
+
+socket.on("room_closed", () => {
+  addSystemMsg("🎬 The host ended the watch party.");
+  setTimeout(() => window.location.href = "/", 3000);
+});
+
+socket.on("error", d => addSystemMsg("⚠️ " + d.message));
+
+// ── Video controls ────────────────────────────────────────────────────────────
+function togglePlay() {
+  if (!IS_HOST) { addSystemMsg("Only the host can control playback"); return; }
+  if (video.paused) {
+    video.play();
+    socket.emit("watch_play", { room_id: ROOM_ID, current_time: video.currentTime });
+    playBtn.innerHTML = '<i class="fas fa-pause"></i>';
+  } else {
+    video.pause();
+    socket.emit("watch_pause", { room_id: ROOM_ID, current_time: video.currentTime });
+    playBtn.innerHTML = '<i class="fas fa-play"></i>';
+  }
+}
+
+function skip(secs) {
+  if (!IS_HOST) return;
+  video.currentTime = Math.max(0, video.currentTime + secs);
+  socket.emit("watch_seek", { room_id: ROOM_ID, current_time: video.currentTime });
+}
+
+function seekTo(e) {
+  if (!IS_HOST) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pct  = (e.clientX - rect.left) / rect.width;
+  video.currentTime = pct * (video.duration || 0);
+  socket.emit("watch_seek", { room_id: ROOM_ID, current_time: video.currentTime });
+}
+
+function setVol(v) { video.volume = v; }
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.getElementById("videoWrap").requestFullscreen();
+  else document.exitFullscreen();
+}
+
+function requestSync() {
+  socket.emit("watch_request_sync", { room_id: ROOM_ID });
+  showSyncToast();
+}
+
+// ── Progress bar update ───────────────────────────────────────────────────────
+video.addEventListener("timeupdate", () => {
+  if (!video.duration) return;
+  const pct = (video.currentTime / video.duration) * 100;
+  progress.style.width = pct + "%";
+  timeDisp.textContent = fmtTime(video.currentTime) + " / " + fmtTime(video.duration);
+});
+
+video.addEventListener("play",  () => { playBtn.innerHTML = '<i class="fas fa-pause"></i>'; });
+video.addEventListener("pause", () => { playBtn.innerHTML = '<i class="fas fa-play"></i>'; });
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function sendChat() {
+  const inp = document.getElementById("chatInput");
+  const msg = inp.value.trim();
+  if (!msg) return;
+  socket.emit("watch_chat", { room_id: ROOM_ID, message: msg, username: MY_NAME });
+  inp.value = "";
+}
+
+function addChatMsg(d) {
+  const div = document.createElement("div");
+  div.className = "chat-msg";
+  const initial = (d.user || "?")[0].toUpperCase();
+  const avatarHtml = d.avatar
+    ? `<img src="${d.avatar}" alt="">`
+    : initial;
+  div.innerHTML = `
+    <div class="chat-msg-avatar">${avatarHtml}</div>
+    <div class="chat-msg-body">
+      <div class="chat-msg-name">${escHtml(d.user)}</div>
+      <div class="chat-msg-text">${escHtml(d.msg)}</div>
+      <div class="chat-msg-ts">${d.ts || ""}</div>
+    </div>`;
+  chatMsgs.appendChild(div);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+function addSystemMsg(text) {
+  const div = document.createElement("div");
+  div.className = "system-msg";
+  div.textContent = text;
+  chatMsgs.appendChild(div);
+  chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+// ── Reactions ─────────────────────────────────────────────────────────────────
+function sendReact(emoji) {
+  socket.emit("watch_chat", { room_id: ROOM_ID, message: emoji, username: MY_NAME });
+  floatEmoji(emoji);
+}
+
+function floatEmoji(emoji) {
+  const el = document.createElement("div");
+  el.className = "float-react";
+  el.textContent = emoji;
+  el.style.left  = (20 + Math.random() * 60) + "%";
+  el.style.bottom = "80px";
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2100);
+}
+
+// ── Viewer count ──────────────────────────────────────────────────────────────
+function updateViewerCount(n) {
+  document.getElementById("viewerCount").textContent = n;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtTime(s) {
+  if (!s || isNaN(s)) return "0:00";
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return m + ":" + String(sec).padStart(2, "0");
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function showSyncToast() {
+  syncToast.style.display = "block";
+  setTimeout(() => syncToast.style.display = "none", 1500);
+}
+
+function closeRoom() {
+  if (!confirm("End the watch party for everyone?")) return;
+  fetch(`/api/watch/${ROOM_ID}/close`, { method: "POST" })
+    .then(() => window.location.href = "/");
+}
+
+// Keyboard shortcuts
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+  if (e.code === "ArrowLeft")  skip(-10);
+  if (e.code === "ArrowRight") skip(10);
+  if (e.code === "KeyF") toggleFullscreen();
+});
+
+// Cleanup on leave
+window.addEventListener("beforeunload", () => {
+  socket.emit("watch_leave", { room_id: ROOM_ID });
+});
+</script>
+</body>
+</html>

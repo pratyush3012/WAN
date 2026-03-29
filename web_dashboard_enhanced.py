@@ -19,6 +19,8 @@ import secrets
 import bcrypt
 import csv
 import io
+import uuid
+import time as _time
 from functools import wraps
 import logging
 
@@ -4046,3 +4048,410 @@ def bulk_mod(server_id):
         return jsonify(future.result(timeout=30))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WATCH PARTY — Synchronized video watching with live chat
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# In-memory watch party rooms: {room_id: WatchRoom}
+_watch_rooms: dict = {}
+
+UPLOAD_FOLDER = os.path.join(os.getenv("DATA_DIR", "."), "watch_uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v"}
+MAX_UPLOAD_MB = 500
+
+
+class WatchRoom:
+    def __init__(self, room_id: str, guild_id: str, title: str,
+                 video_url: str, host_id: str, host_name: str,
+                 required_role_id: str = None):
+        self.room_id        = room_id
+        self.guild_id       = guild_id
+        self.title          = title
+        self.video_url      = video_url      # URL or /watch/stream/<room_id>
+        self.host_id        = host_id
+        self.host_name      = host_name
+        self.required_role_id = required_role_id  # None = everyone
+        self.created_at     = datetime.now(timezone.utc).isoformat()
+        self.is_playing     = False
+        self.current_time   = 0.0            # seconds
+        self.last_sync      = _time.time()
+        self.viewers: dict  = {}             # {session_id: {name, avatar, joined_at}}
+        self.chat: list     = []             # [{user, msg, ts}]
+        self.file_path: str = None           # set if uploaded file
+
+    def sync_time(self) -> float:
+        """Return current playback position accounting for elapsed time."""
+        if self.is_playing:
+            return self.current_time + (_time.time() - self.last_sync)
+        return self.current_time
+
+    def to_dict(self):
+        return {
+            "room_id":    self.room_id,
+            "guild_id":   self.guild_id,
+            "title":      self.title,
+            "video_url":  self.video_url,
+            "host_id":    self.host_id,
+            "host_name":  self.host_name,
+            "is_playing": self.is_playing,
+            "current_time": self.sync_time(),
+            "viewer_count": len(self.viewers),
+            "viewers":    list(self.viewers.values()),
+            "created_at": self.created_at,
+            "required_role_id": self.required_role_id,
+        }
+
+
+def _check_watch_access(room: WatchRoom) -> bool:
+    """Check if current session user has access to this watch room."""
+    if not room.required_role_id:
+        return True
+    if not bot_instance or not bot_instance.is_ready():
+        return True
+    user_id = session.get("user_id")
+    if not user_id:
+        return False
+    guild = bot_instance.get_guild(int(room.guild_id))
+    if not guild:
+        return True
+    member = guild.get_member(int(user_id))
+    if not member:
+        return False
+    return any(str(r.id) == room.required_role_id for r in member.roles)
+
+
+# ── REST endpoints ─────────────────────────────────────────────────────────────
+
+@app.route("/api/server/<server_id>/watch/rooms")
+@require_auth
+def watch_list_rooms(server_id):
+    """List all active watch rooms for a server."""
+    rooms = [r.to_dict() for r in _watch_rooms.values()
+             if r.guild_id == server_id]
+    return jsonify({"rooms": rooms})
+
+
+@app.route("/api/server/<server_id>/watch/create", methods=["POST"])
+@require_auth
+def watch_create_room(server_id):
+    """Create a new watch party room with a video URL."""
+    data = request.json or {}
+    video_url = data.get("video_url", "").strip()
+    title     = data.get("title", "Watch Party").strip()[:100]
+    role_id   = data.get("required_role_id") or None
+
+    if not video_url:
+        return jsonify({"error": "video_url is required"}), 400
+
+    room_id = secrets.token_urlsafe(8)
+    room = WatchRoom(
+        room_id=room_id,
+        guild_id=server_id,
+        title=title,
+        video_url=video_url,
+        host_id=session.get("user_id", "unknown"),
+        host_name=session.get("username", "Host"),
+        required_role_id=role_id,
+    )
+    _watch_rooms[room_id] = room
+    logger.info(f"Watch room created: {room_id} by {session.get('username')} in guild {server_id}")
+    return jsonify({"room": room.to_dict(), "room_id": room_id})
+
+
+@app.route("/api/server/<server_id>/watch/upload", methods=["POST"])
+@require_auth
+@limiter.limit("5 per hour")
+def watch_upload_video(server_id):
+    """Upload a video file and create a watch room."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    f = request.files["file"]
+    if not f.filename:
+        return jsonify({"error": "Empty filename"}), 400
+
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in ALLOWED_VIDEO_EXTS:
+        return jsonify({"error": f"Unsupported format. Use: {', '.join(ALLOWED_VIDEO_EXTS)}"}), 400
+
+    # Check size (read first 1 byte to get content-length)
+    f.seek(0, 2)
+    size_mb = f.tell() / (1024 * 1024)
+    f.seek(0)
+    if size_mb > MAX_UPLOAD_MB:
+        return jsonify({"error": f"File too large. Max {MAX_UPLOAD_MB}MB"}), 400
+
+    room_id   = secrets.token_urlsafe(8)
+    safe_name = f"{room_id}{ext}"
+    file_path = os.path.join(UPLOAD_FOLDER, safe_name)
+    f.save(file_path)
+
+    title = request.form.get("title", f.filename[:80])
+    role_id = request.form.get("required_role_id") or None
+
+    room = WatchRoom(
+        room_id=room_id,
+        guild_id=server_id,
+        title=title,
+        video_url=f"/watch/stream/{room_id}",
+        host_id=session.get("user_id", "unknown"),
+        host_name=session.get("username", "Host"),
+        required_role_id=role_id,
+    )
+    room.file_path = file_path
+    _watch_rooms[room_id] = room
+    logger.info(f"Watch upload: {room_id} ({size_mb:.1f}MB) by {session.get('username')}")
+    return jsonify({"room": room.to_dict(), "room_id": room_id})
+
+
+@app.route("/watch/stream/<room_id>")
+@require_auth
+def watch_stream_file(room_id):
+    """Stream an uploaded video file with range support."""
+    room = _watch_rooms.get(room_id)
+    if not room or not room.file_path or not os.path.exists(room.file_path):
+        return jsonify({"error": "File not found"}), 404
+    if not _check_watch_access(room):
+        return jsonify({"error": "Access denied"}), 403
+
+    ext = os.path.splitext(room.file_path)[1].lower()
+    mime_map = {".mp4": "video/mp4", ".webm": "video/webm", ".mkv": "video/x-matroska",
+                ".mov": "video/quicktime", ".avi": "video/x-msvideo", ".m4v": "video/mp4"}
+    mime = mime_map.get(ext, "video/mp4")
+
+    file_size = os.path.getsize(room.file_path)
+    range_header = request.headers.get("Range")
+
+    if range_header:
+        # Byte-range streaming for seeking support
+        byte_start, byte_end = 0, file_size - 1
+        match = range_header.replace("bytes=", "").split("-")
+        if match[0]:
+            byte_start = int(match[0])
+        if len(match) > 1 and match[1]:
+            byte_end = int(match[1])
+        length = byte_end - byte_start + 1
+
+        def generate():
+            with open(room.file_path, "rb") as fh:
+                fh.seek(byte_start)
+                remaining = length
+                while remaining > 0:
+                    chunk = fh.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        from flask import Response
+        resp = Response(generate(), 206, mimetype=mime, direct_passthrough=True)
+        resp.headers["Content-Range"] = f"bytes {byte_start}-{byte_end}/{file_size}"
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Content-Length"] = str(length)
+        return resp
+
+    return send_file(room.file_path, mimetype=mime)
+
+
+@app.route("/api/watch/<room_id>")
+@require_auth
+def watch_get_room(room_id):
+    """Get room state."""
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return jsonify({"error": "Room not found"}), 404
+    if not _check_watch_access(room):
+        return jsonify({"error": "Access denied — you need the required role"}), 403
+    return jsonify(room.to_dict())
+
+
+@app.route("/api/watch/<room_id>/close", methods=["POST"])
+@require_auth
+def watch_close_room(room_id):
+    """Close a watch room (host only)."""
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return jsonify({"error": "Room not found"}), 404
+    if room.host_id != session.get("user_id"):
+        return jsonify({"error": "Only the host can close the room"}), 403
+    # Delete uploaded file if any
+    if room.file_path and os.path.exists(room.file_path):
+        try:
+            os.remove(room.file_path)
+        except Exception:
+            pass
+    del _watch_rooms[room_id]
+    socketio.emit("room_closed", {"room_id": room_id}, room=f"watch_{room_id}")
+    return jsonify({"success": True})
+
+
+@app.route("/watch/<room_id>")
+@require_auth
+def watch_party_page(room_id):
+    """Serve the watch party page."""
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return redirect(url_for("index"))
+    if not _check_watch_access(room):
+        return render_template("login.html", error="You need the required server role to join this watch party.")
+    return render_template("watch_party.html",
+                           room=room.to_dict(),
+                           username=session.get("username", "Viewer"),
+                           user_id=session.get("user_id", ""))
+
+
+# ── SocketIO events for watch party ───────────────────────────────────────────
+
+@socketio.on("watch_join")
+def on_watch_join(data):
+    room_id  = data.get("room_id")
+    username = session.get("username", data.get("username", "Viewer"))
+    user_id  = session.get("user_id", data.get("user_id", secrets.token_hex(4)))
+    avatar   = session.get("avatar_url", "")
+
+    room = _watch_rooms.get(room_id)
+    if not room:
+        emit("error", {"message": "Room not found"})
+        return
+
+    join_room(f"watch_{room_id}")
+    room.viewers[request.sid] = {
+        "name": username, "user_id": user_id,
+        "avatar": avatar, "joined_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    # Send current state to the new viewer
+    emit("watch_state", {
+        "is_playing":    room.is_playing,
+        "current_time":  room.sync_time(),
+        "video_url":     room.video_url,
+        "title":         room.title,
+        "host_id":       room.host_id,
+        "host_name":     room.host_name,
+        "viewer_count":  len(room.viewers),
+        "chat_history":  room.chat[-50:],
+    })
+
+    # Notify others
+    emit("viewer_joined", {
+        "name": username, "viewer_count": len(room.viewers)
+    }, room=f"watch_{room_id}", include_self=False)
+
+
+@socketio.on("watch_leave")
+def on_watch_leave(data):
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if room and request.sid in room.viewers:
+        name = room.viewers.pop(request.sid, {}).get("name", "Someone")
+        leave_room(f"watch_{room_id}")
+        emit("viewer_left", {
+            "name": name, "viewer_count": len(room.viewers)
+        }, room=f"watch_{room_id}")
+
+
+@socketio.on("watch_play")
+def on_watch_play(data):
+    """Host plays the video — sync all viewers."""
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    # Only host or admin can control
+    user_id = session.get("user_id", "")
+    if user_id != room.host_id and not data.get("force"):
+        emit("error", {"message": "Only the host can control playback"})
+        return
+    room.current_time = float(data.get("current_time", room.sync_time()))
+    room.is_playing   = True
+    room.last_sync    = _time.time()
+    emit("watch_sync", {
+        "action": "play", "current_time": room.current_time,
+        "is_playing": True
+    }, room=f"watch_{room_id}")
+
+
+@socketio.on("watch_pause")
+def on_watch_pause(data):
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    user_id = session.get("user_id", "")
+    if user_id != room.host_id and not data.get("force"):
+        emit("error", {"message": "Only the host can control playback"})
+        return
+    room.current_time = float(data.get("current_time", room.sync_time()))
+    room.is_playing   = False
+    room.last_sync    = _time.time()
+    emit("watch_sync", {
+        "action": "pause", "current_time": room.current_time,
+        "is_playing": False
+    }, room=f"watch_{room_id}")
+
+
+@socketio.on("watch_seek")
+def on_watch_seek(data):
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    user_id = session.get("user_id", "")
+    if user_id != room.host_id and not data.get("force"):
+        emit("error", {"message": "Only the host can seek"})
+        return
+    room.current_time = float(data.get("current_time", 0))
+    room.last_sync    = _time.time()
+    emit("watch_sync", {
+        "action": "seek", "current_time": room.current_time,
+        "is_playing": room.is_playing
+    }, room=f"watch_{room_id}")
+
+
+@socketio.on("watch_chat")
+def on_watch_chat(data):
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    username = session.get("username", data.get("username", "Viewer"))
+    msg = str(data.get("message", "")).strip()[:500]
+    if not msg:
+        return
+    avatar = session.get("avatar_url", "")
+    entry = {
+        "user":   username,
+        "avatar": avatar,
+        "msg":    msg,
+        "ts":     datetime.now(timezone.utc).strftime("%H:%M"),
+    }
+    room.chat.append(entry)
+    if len(room.chat) > 200:
+        room.chat = room.chat[-200:]
+    emit("watch_chat_msg", entry, room=f"watch_{room_id}")
+
+
+@socketio.on("watch_request_sync")
+def on_watch_request_sync(data):
+    """Viewer requests current state (e.g. after reconnect)."""
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    emit("watch_sync", {
+        "action": "sync",
+        "current_time": room.sync_time(),
+        "is_playing": room.is_playing,
+    })
+
+
+@socketio.on("disconnect")
+def on_watch_disconnect():
+    # Clean up viewer from any watch rooms
+    for room in list(_watch_rooms.values()):
+        if request.sid in room.viewers:
+            name = room.viewers.pop(request.sid, {}).get("name", "Someone")
+            emit("viewer_left", {
+                "name": name, "viewer_count": len(room.viewers)
+            }, room=f"watch_{room.room_id}")
