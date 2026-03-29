@@ -188,11 +188,13 @@ socket.on("watch_state", d => {
   video.currentTime = d.current_time;
   if (d.is_playing) video.play().catch(()=>{});
   else video.pause();
+  myRoleLevel = d.my_role_level || 0;
   updateViewerCount(d.viewer_count);
   // Load chat history
   chatMsgs.innerHTML = "";
   (d.chat_history || []).forEach(addChatMsg);
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  updateControlsUI();
 });
 
 socket.on("watch_sync", d => {
@@ -219,11 +221,13 @@ socket.on("watch_chat_msg", addChatMsg);
 socket.on("viewer_joined", d => {
   updateViewerCount(d.viewer_count);
   addSystemMsg(`${d.name} joined 👋`);
+  updateViewersList();
 });
 
 socket.on("viewer_left", d => {
   updateViewerCount(d.viewer_count);
   addSystemMsg(`${d.name} left`);
+  updateViewersList();
 });
 
 socket.on("room_closed", () => {
@@ -234,8 +238,17 @@ socket.on("room_closed", () => {
 socket.on("error", d => addSystemMsg("⚠️ " + d.message));
 
 // ── Video controls ────────────────────────────────────────────────────────────
+let myRoleLevel = 0;  // 0=Guest, 1=Member, 2=Mod, 3=Admin, 4=Owner
+
+function canControl() {
+  return myRoleLevel >= 2;  // Mods and above
+}
+
 function togglePlay() {
-  if (!IS_HOST) { addSystemMsg("Only the host can control playback"); return; }
+  if (!canControl()) { 
+    addSystemMsg("⛔ Only mods and above can control playback"); 
+    return; 
+  }
   if (video.paused) {
     video.play();
     socket.emit("watch_play", { room_id: ROOM_ID, current_time: video.currentTime });
@@ -248,13 +261,13 @@ function togglePlay() {
 }
 
 function skip(secs) {
-  if (!IS_HOST) return;
+  if (!canControl()) return;
   video.currentTime = Math.max(0, video.currentTime + secs);
   socket.emit("watch_seek", { room_id: ROOM_ID, current_time: video.currentTime });
 }
 
 function seekTo(e) {
-  if (!IS_HOST) return;
+  if (!canControl()) return;
   const rect = e.currentTarget.getBoundingClientRect();
   const pct  = (e.clientX - rect.left) / rect.width;
   video.currentTime = pct * (video.duration || 0);
@@ -289,6 +302,14 @@ function sendChat() {
   const inp = document.getElementById("chatInput");
   const msg = inp.value.trim();
   if (!msg) return;
+  
+  // Check if user can chat
+  if (myRoleLevel < 1) {
+    addSystemMsg("⛔ Guests cannot send messages. You need a role to chat.");
+    inp.value = "";
+    return;
+  }
+  
   socket.emit("watch_chat", { room_id: ROOM_ID, message: msg, username: MY_NAME });
   inp.value = "";
 }
@@ -340,6 +361,13 @@ function updateViewerCount(n) {
   document.getElementById("viewerCount").textContent = n;
 }
 
+function updateViewersList() {
+  const list = document.getElementById("viewersList");
+  list.innerHTML = "";
+  // This would need viewer data from the room state
+  // For now, just show count
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtTime(s) {
   if (!s || isNaN(s)) return "0:00";
@@ -354,6 +382,28 @@ function escHtml(s) {
 function showSyncToast() {
   syncToast.style.display = "block";
   setTimeout(() => syncToast.style.display = "none", 1500);
+}
+
+function updateControlsUI() {
+  const controls = document.getElementById("controls");
+  if (!canControl()) {
+    controls.style.opacity = "0.5";
+    controls.style.pointerEvents = "none";
+  } else {
+    controls.style.opacity = "1";
+    controls.style.pointerEvents = "auto";
+  }
+}
+
+function getRoleBadge(roleLevel) {
+  const badges = {
+    0: "👤 Guest",
+    1: "👥 Member",
+    2: "🛡️ Mod",
+    3: "⚙️ Admin",
+    4: "👑 Owner"
+  };
+  return badges[roleLevel] || "Unknown";
 }
 
 function closeRoom() {

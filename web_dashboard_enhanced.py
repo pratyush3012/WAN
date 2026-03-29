@@ -4077,9 +4077,11 @@ class WatchRoom:
         self.is_playing     = False
         self.current_time   = 0.0            # seconds
         self.last_sync      = _time.time()
-        self.viewers: dict  = {}             # {session_id: {name, avatar, joined_at}}
-        self.chat: list     = []             # [{user, msg, ts}]
+        self.viewers: dict  = {}             # {session_id: {name, avatar, joined_at, user_id, role_level}}
+        self.chat: list     = []             # [{user, msg, ts, user_id}]
         self.file_path: str = None           # set if uploaded file
+        self.volume         = 1.0
+        self.is_looping     = False
 
     def sync_time(self) -> float:
         """Return current playback position accounting for elapsed time."""
@@ -4101,8 +4103,44 @@ class WatchRoom:
             "viewers":    list(self.viewers.values()),
             "created_at": self.created_at,
             "required_role_id": self.required_role_id,
+            "volume": self.volume,
+            "is_looping": self.is_looping,
         }
 
+
+def _get_user_role_level(guild_id: int, user_id: int) -> int:
+    """
+    Determine user's role level in watch party.
+    Returns: 0=Guest, 1=Member, 2=Mod, 3=Admin, 4=Owner
+    """
+    if not bot_instance or not bot_instance.is_ready():
+        return 0
+    
+    guild = bot_instance.get_guild(guild_id)
+    if not guild:
+        return 0
+    
+    member = guild.get_member(user_id)
+    if not member:
+        return 0
+    
+    # Owner has highest level
+    if member.id == guild.owner_id:
+        return 4
+    
+    # Check for admin permissions
+    if member.guild_permissions.administrator:
+        return 3
+    
+    # Check for mod role (manage_messages or manage_guild)
+    if member.guild_permissions.manage_messages or member.guild_permissions.manage_guild:
+        return 2
+    
+    # Check if has any role (member vs guest)
+    if len(member.roles) > 1:  # More than @everyone
+        return 1
+    
+    return 0  # Guest
 
 def _check_watch_access(room: WatchRoom) -> bool:
     """Check if current session user has access to this watch room."""
@@ -4315,10 +4353,19 @@ def on_watch_join(data):
         emit("error", {"message": "Room not found"})
         return
 
+    # Get user's role level
+    try:
+        guild_id = int(room.guild_id)
+        user_id_int = int(user_id)
+        role_level = _get_user_role_level(guild_id, user_id_int)
+    except (ValueError, TypeError):
+        role_level = 0
+
     join_room(f"watch_{room_id}")
     room.viewers[request.sid] = {
         "name": username, "user_id": user_id,
-        "avatar": avatar, "joined_at": datetime.now(timezone.utc).isoformat()
+        "avatar": avatar, "joined_at": datetime.now(timezone.utc).isoformat(),
+        "role_level": role_level,
     }
 
     # Send current state to the new viewer
@@ -4331,6 +4378,9 @@ def on_watch_join(data):
         "host_name":     room.host_name,
         "viewer_count":  len(room.viewers),
         "chat_history":  room.chat[-50:],
+        "my_role_level": role_level,
+        "volume":        room.volume,
+        "is_looping":    room.is_looping,
     })
 
     # Notify others
@@ -4358,11 +4408,16 @@ def on_watch_play(data):
     room = _watch_rooms.get(room_id)
     if not room:
         return
-    # Only host or admin can control
+    
     user_id = session.get("user_id", "")
-    if user_id != room.host_id and not data.get("force"):
-        emit("error", {"message": "Only the host can control playback"})
+    viewer = room.viewers.get(request.sid, {})
+    role_level = viewer.get("role_level", 0)
+    
+    # Only host (role_level >= 2 = Mod+) or owner can control
+    if user_id != room.host_id and role_level < 2:
+        emit("error", {"message": "Only mods and above can control playback"})
         return
+    
     room.current_time = float(data.get("current_time", room.sync_time()))
     room.is_playing   = True
     room.last_sync    = _time.time()
@@ -4378,10 +4433,16 @@ def on_watch_pause(data):
     room = _watch_rooms.get(room_id)
     if not room:
         return
+    
     user_id = session.get("user_id", "")
-    if user_id != room.host_id and not data.get("force"):
-        emit("error", {"message": "Only the host can control playback"})
+    viewer = room.viewers.get(request.sid, {})
+    role_level = viewer.get("role_level", 0)
+    
+    # Only host or mods+ can control
+    if user_id != room.host_id and role_level < 2:
+        emit("error", {"message": "Only mods and above can control playback"})
         return
+    
     room.current_time = float(data.get("current_time", room.sync_time()))
     room.is_playing   = False
     room.last_sync    = _time.time()
@@ -4397,10 +4458,16 @@ def on_watch_seek(data):
     room = _watch_rooms.get(room_id)
     if not room:
         return
+    
     user_id = session.get("user_id", "")
-    if user_id != room.host_id and not data.get("force"):
-        emit("error", {"message": "Only the host can seek"})
+    viewer = room.viewers.get(request.sid, {})
+    role_level = viewer.get("role_level", 0)
+    
+    # Only host or mods+ can seek
+    if user_id != room.host_id and role_level < 2:
+        emit("error", {"message": "Only mods and above can skip/seek"})
         return
+    
     room.current_time = float(data.get("current_time", 0))
     room.last_sync    = _time.time()
     emit("watch_sync", {
@@ -4415,16 +4482,28 @@ def on_watch_chat(data):
     room = _watch_rooms.get(room_id)
     if not room:
         return
+    
     username = session.get("username", data.get("username", "Viewer"))
     msg = str(data.get("message", "")).strip()[:500]
     if not msg:
         return
+    
+    # Check if user can chat (members+ can, guests cannot)
+    viewer = room.viewers.get(request.sid, {})
+    role_level = viewer.get("role_level", 0)
+    
+    # Guests (role_level 0) cannot send chat messages
+    if role_level < 1:
+        emit("error", {"message": "Guests cannot send messages. Join with a role to chat."})
+        return
+    
     avatar = session.get("avatar_url", "")
     entry = {
         "user":   username,
         "avatar": avatar,
         "msg":    msg,
         "ts":     datetime.now(timezone.utc).strftime("%H:%M"),
+        "user_id": session.get("user_id", ""),
     }
     room.chat.append(entry)
     if len(room.chat) > 200:
