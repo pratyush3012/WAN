@@ -22,15 +22,8 @@ class PremiumWatchPartyAPI:
     @staticmethod
     def send_chat_message(room_id: str, user_id: str, username: str, 
                          message: str, user_role: str = "member") -> Dict[str, Any]:
-        """Send chat message"""
+        """Send chat message — everyone can chat, guests included"""
         try:
-            # Check if user has permission
-            if user_role == "guest":
-                return {
-                    "success": False,
-                    "error": "Guests cannot send messages"
-                }
-            
             # Check message length
             if len(message) > 500:
                 return {

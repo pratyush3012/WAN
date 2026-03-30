@@ -315,13 +315,7 @@ function sendChat() {
   const msg = inp.value.trim();
   if (!msg) return;
   
-  // Check if user can chat
-  if (myRoleLevel < 1) {
-    addSystemMsg("⛔ Guests cannot send messages. You need a role to chat.");
-    inp.value = "";
-    return;
-  }
-  
+  // Everyone can chat — no role restriction
   socket.emit("watch_chat", { room_id: ROOM_ID, message: msg, username: MY_NAME });
   inp.value = "";
 }

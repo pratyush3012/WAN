@@ -3,850 +3,493 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Premium Watch Party — WAN Bot</title>
+<title>WAN Watch Party</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#0a0e27;--surface:#1a1f3a;--surface-light:#252d4a;
-    --accent:#00d4ff;--accent-dark:#0099cc;--text:#e2e8f0;
-    --muted:#8892a4;--danger:#ff4757;--success:#2ed573;
-    --warning:#ffa502;--info:#0984e3;
-  }
-  
-  body{
-    background:linear-gradient(135deg, var(--bg) 0%, #1a1f3a 100%);
-    color:var(--text);
-    font-family:'Inter',system-ui,sans-serif;
-    min-height:100vh;
-    overflow:hidden;
-  }
-  
-  .container{
-    display:grid;
-    grid-template-columns:1fr 350px;
-    gap:16px;
-    padding:16px;
-    height:100vh;
-  }
-  
-  /* ── Player Section ────────────────────────────────────────────────────── */
-  
-  .player-section{
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-    overflow:hidden;
-  }
-  
-  .player-container{
-    position:relative;
-    background:var(--surface);
-    border-radius:16px;
-    overflow:hidden;
-    box-shadow:0 20px 60px rgba(0,212,255,.15);
-    flex:1;
-    display:flex;
-    flex-direction:column;
-  }
-  
-  .video-wrapper{
-    position:relative;
-    width:100%;
-    flex:1;
-    background:#000;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    overflow:hidden;
-  }
-  
-  .video-wrapper video{
-    width:100%;
-    height:100%;
-    object-fit:contain;
-  }
-  
-  .video-overlay{
-    position:absolute;
-    top:0;
-    left:0;
-    right:0;
-    bottom:0;
-    background:rgba(0,0,0,.3);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    opacity:0;
-    transition:.3s;
-  }
-  
-  .video-wrapper:hover .video-overlay{
-    opacity:1;
-  }
-  
-  .play-button{
-    width:80px;
-    height:80px;
-    border-radius:50%;
-    background:rgba(0,212,255,.9);
-    border:none;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:32px;
-    color:#000;
-    transition:.3s;
-  }
-  
-  .play-button:hover{
-    transform:scale(1.1);
-    background:var(--accent);
-  }
-  
-  .video-info{
-    padding:16px;
-    background:var(--surface-light);
-    border-top:1px solid rgba(0,212,255,.1);
-  }
-  
-  .video-title{
-    font-size:18px;
-    font-weight:700;
-    margin-bottom:8px;
-    background:linear-gradient(135deg, var(--accent), #00ffff);
-    -webkit-background-clip:text;
-    -webkit-text-fill-color:transparent;
-    background-clip:text;
-  }
-  
-  .video-meta{
-    display:flex;
-    gap:16px;
-    font-size:12px;
-    color:var(--muted);
-  }
-  
-  .meta-item{
-    display:flex;
-    align-items:center;
-    gap:4px;
-  }
-  
-  /* ── Controls ──────────────────────────────────────────────────────────── */
-  
-  .controls{
-    padding:12px 16px;
-    background:var(--surface-light);
-    border-radius:12px;
-    display:flex;
-    gap:8px;
-    align-items:center;
-  }
-  
-  .progress-bar{
-    flex:1;
-    height:6px;
-    background:rgba(0,212,255,.1);
-    border-radius:3px;
-    cursor:pointer;
-    position:relative;
-    overflow:hidden;
-  }
-  
-  .progress-fill{
-    height:100%;
-    background:linear-gradient(90deg, var(--accent), #00ffff);
-    width:0%;
-    border-radius:3px;
-    box-shadow:0 0 10px rgba(0,212,255,.5);
-  }
-  
-  .time-display{
-    font-size:12px;
-    color:var(--muted);
-    min-width:80px;
-    text-align:right;
-  }
-  
-  .control-buttons{
-    display:flex;
-    gap:8px;
-  }
-  
-  .control-btn{
-    width:36px;
-    height:36px;
-    border-radius:8px;
-    border:none;
-    background:rgba(0,212,255,.1);
-    color:var(--accent);
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    transition:.3s;
-    font-size:14px;
-  }
-  
-  .control-btn:hover{
-    background:rgba(0,212,255,.2);
-    transform:scale(1.05);
-  }
-  
-  .control-btn.active{
-    background:var(--accent);
-    color:#000;
-  }
-  
-  /* ── Schedule Section ──────────────────────────────────────────────────── */
-  
-  .schedule-section{
-    background:var(--surface);
-    border-radius:12px;
-    padding:12px;
-    border:1px solid rgba(0,212,255,.1);
-  }
-  
-  .schedule-title{
-    font-size:12px;
-    font-weight:700;
-    color:var(--accent);
-    margin-bottom:8px;
-    text-transform:uppercase;
-    letter-spacing:1px;
-  }
-  
-  .schedule-time{
-    font-size:14px;
-    color:var(--text);
-    margin-bottom:4px;
-  }
-  
-  .schedule-input{
-    width:100%;
-    padding:8px;
-    background:rgba(0,212,255,.05);
-    border:1px solid rgba(0,212,255,.2);
-    border-radius:6px;
-    color:var(--text);
-    font-size:12px;
-    margin-top:8px;
-  }
-  
-  .schedule-input:focus{
-    outline:none;
-    border-color:var(--accent);
-    background:rgba(0,212,255,.1);
-  }
-  
-  /* ── Sidebar ───────────────────────────────────────────────────────────── */
-  
-  .sidebar{
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-    overflow:hidden;
-  }
-  
-  .panel{
-    background:var(--surface);
-    border-radius:12px;
-    border:1px solid rgba(0,212,255,.1);
-    overflow:hidden;
-    display:flex;
-    flex-direction:column;
-    flex:1;
-    min-height:0;
-  }
-  
-  .panel-header{
-    padding:12px;
-    background:var(--surface-light);
-    border-bottom:1px solid rgba(0,212,255,.1);
-    display:flex;
-    align-items:center;
-    gap:8px;
-    font-weight:700;
-    font-size:13px;
-    color:var(--accent);
-    text-transform:uppercase;
-    letter-spacing:1px;
-  }
-  
-  .panel-content{
-    flex:1;
-    overflow-y:auto;
-    padding:12px;
-    display:flex;
-    flex-direction:column;
-    gap:8px;
-  }
-  
-  /* ── Chat ──────────────────────────────────────────────────────────────── */
-  
-  .chat-message{
-    padding:8px;
-    background:rgba(0,212,255,.05);
-    border-radius:6px;
-    border-left:3px solid var(--accent);
-    font-size:12px;
-    animation:slideIn .3s ease-out;
-  }
-  
-  @keyframes slideIn{
-    from{
-      opacity:0;
-      transform:translateY(10px);
-    }
-    to{
-      opacity:1;
-      transform:translateY(0);
-    }
-  }
-  
-  .chat-message.owner{
-    border-left-color:#ffd700;
-    background:rgba(255,215,0,.1);
-  }
-  
-  .chat-message.admin{
-    border-left-color:#ff4757;
-    background:rgba(255,71,87,.1);
-  }
-  
-  .chat-message.moderator{
-    border-left-color:#2ed573;
-    background:rgba(46,213,115,.1);
-  }
-  
-  .chat-username{
-    font-weight:700;
-    color:var(--accent);
-    font-size:11px;
-  }
-  
-  .chat-username.owner{
-    color:#ffd700;
-  }
-  
-  .chat-username.admin{
-    color:#ff4757;
-  }
-  
-  .chat-username.moderator{
-    color:#2ed573;
-  }
-  
-  .chat-text{
-    color:var(--text);
-    margin-top:4px;
-    word-break:break-word;
-  }
-  
-  .chat-input-wrapper{
-    padding:12px;
-    border-top:1px solid rgba(0,212,255,.1);
-    display:flex;
-    gap:8px;
-  }
-  
-  .chat-input{
-    flex:1;
-    padding:8px 12px;
-    background:rgba(0,212,255,.05);
-    border:1px solid rgba(0,212,255,.2);
-    border-radius:6px;
-    color:var(--text);
-    font-size:12px;
-  }
-  
-  .chat-input:focus{
-    outline:none;
-    border-color:var(--accent);
-    background:rgba(0,212,255,.1);
-  }
-  
-  .chat-send{
-    width:32px;
-    height:32px;
-    border-radius:6px;
-    background:var(--accent);
-    border:none;
-    color:#000;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    transition:.3s;
-  }
-  
-  .chat-send:hover{
-    transform:scale(1.05);
-  }
-  
-  /* ── Requests ──────────────────────────────────────────────────────────── */
-  
-  .request-item{
-    padding:8px;
-    background:rgba(0,212,255,.05);
-    border-radius:6px;
-    border-left:3px solid var(--warning);
-    font-size:11px;
-    animation:slideIn .3s ease-out;
-  }
-  
-  .request-user{
-    font-weight:700;
-    color:var(--accent);
-  }
-  
-  .request-type{
-    color:var(--warning);
-    font-weight:600;
-    margin-top:2px;
-  }
-  
-  .request-actions{
-    display:flex;
-    gap:4px;
-    margin-top:6px;
-  }
-  
-  .request-btn{
-    flex:1;
-    padding:4px;
-    border:none;
-    border-radius:4px;
-    font-size:10px;
-    font-weight:600;
-    cursor:pointer;
-    transition:.3s;
-  }
-  
-  .request-approve{
-    background:var(--success);
-    color:#000;
-  }
-  
-  .request-approve:hover{
-    transform:scale(1.05);
-  }
-  
-  .request-reject{
-    background:var(--danger);
-    color:#fff;
-  }
-  
-  .request-reject:hover{
-    transform:scale(1.05);
-  }
-  
-  /* ── Viewers ───────────────────────────────────────────────────────────── */
-  
-  .viewer-item{
-    padding:8px;
-    background:rgba(0,212,255,.05);
-    border-radius:6px;
-    display:flex;
-    align-items:center;
-    gap:8px;
-    font-size:12px;
-  }
-  
-  .viewer-avatar{
-    width:24px;
-    height:24px;
-    border-radius:50%;
-    background:linear-gradient(135deg, var(--accent), #00ffff);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    color:#000;
-    font-weight:700;
-    font-size:10px;
-  }
-  
-  .viewer-name{
-    flex:1;
-    color:var(--text);
-  }
-  
-  .viewer-role{
-    font-size:10px;
-    color:var(--muted);
-    background:rgba(0,212,255,.1);
-    padding:2px 6px;
-    border-radius:3px;
-  }
-  
-  /* ── Scrollbar ─────────────────────────────────────────────────────────── */
-  
-  ::-webkit-scrollbar{
-    width:6px;
-  }
-  
-  ::-webkit-scrollbar-track{
-    background:rgba(0,212,255,.05);
-  }
-  
-  ::-webkit-scrollbar-thumb{
-    background:rgba(0,212,255,.3);
-    border-radius:3px;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover{
-    background:rgba(0,212,255,.5);
-  }
-  
-  /* ── Responsive ────────────────────────────────────────────────────────── */
-  
-  @media(max-width:1024px){
-    .container{
-      grid-template-columns:1fr;
-    }
-    
-    .sidebar{
-      display:none;
-    }
-  }
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07090f;--s1:#0d1117;--s2:#161b22;--s3:#21262d;
+  --accent:#00e5ff;--accent2:#7c3aed;--gold:#ffd700;
+  --red:#ff4757;--green:#2ed573;--orange:#ffa502;
+  --text:#e6edf3;--muted:#8b949e;
+  --glow:0 0 20px rgba(0,229,255,.25);
+  --glow2:0 0 40px rgba(124,58,237,.2);
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* ── TOP BAR ── */
+.topbar{height:48px;background:var(--s1);border-bottom:1px solid rgba(0,229,255,.12);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0;z-index:10}
+.topbar-logo{font-weight:800;font-size:15px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.topbar-title{font-size:13px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:5px}
+.badge-live{background:rgba(255,71,87,.15);color:var(--red);border:1px solid rgba(255,71,87,.3)}
+.badge-viewers{background:rgba(0,229,255,.1);color:var(--accent);border:1px solid rgba(0,229,255,.2)}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--red);animation:pulse-dot 1.5s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+
+/* ── MAIN LAYOUT ── */
+.main{display:grid;grid-template-columns:1fr 320px;flex:1;overflow:hidden;gap:0}
+
+/* ── PLAYER SIDE ── */
+.player-side{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.video-area{position:relative;flex:1;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center}
+video{width:100%;height:100%;object-fit:contain;display:block}
+
+/* Cinematic overlay */
+.vid-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.7) 0%,transparent 40%,transparent 60%,rgba(0,0,0,.3) 100%);pointer-events:none;opacity:0;transition:.4s}
+.video-area:hover .vid-overlay{opacity:1}
+.vid-center-btn{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.8);width:72px;height:72px;border-radius:50%;background:rgba(0,229,255,.9);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:28px;color:#000;opacity:0;transition:.3s;backdrop-filter:blur(4px)}
+.video-area:hover .vid-center-btn{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.vid-center-btn:hover{background:var(--accent);box-shadow:var(--glow)}
+
+/* Bottom info bar */
+.vid-info{padding:10px 16px;background:linear-gradient(to right,var(--s1),var(--s2));border-top:1px solid rgba(0,229,255,.08);display:flex;align-items:center;gap:12px}
+.vid-title{font-size:14px;font-weight:700;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:linear-gradient(90deg,var(--accent),#fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.vid-stats{display:flex;gap:10px;font-size:11px;color:var(--muted)}
+.vid-stat{display:flex;align-items:center;gap:4px}
+
+/* ── CONTROLS ── */
+.controls{background:var(--s1);border-top:1px solid rgba(0,229,255,.08);padding:10px 16px;display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+.progress-wrap{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:2px;cursor:pointer;transition:.2s}
+.progress-wrap:hover{height:6px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:2px;width:0%;transition:width .1s linear;box-shadow:0 0 8px rgba(0,229,255,.4)}
+.progress-thumb{position:absolute;top:50%;right:0;transform:translate(50%,-50%);width:12px;height:12px;border-radius:50%;background:var(--accent);opacity:0;transition:.2s;box-shadow:var(--glow)}
+.progress-wrap:hover .progress-thumb{opacity:1}
+.ctrl-row{display:flex;align-items:center;gap:8px}
+.ctrl-time{font-size:11px;color:var(--muted);min-width:90px}
+.ctrl-btns{display:flex;gap:6px;flex:1;justify-content:center}
+.cbtn{width:34px;height:34px;border-radius:8px;border:1px solid rgba(0,229,255,.15);background:rgba(0,229,255,.06);color:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:.2s}
+.cbtn:hover{background:rgba(0,229,255,.15);border-color:rgba(0,229,255,.4);transform:translateY(-1px);box-shadow:var(--glow)}
+.cbtn.primary{background:rgba(0,229,255,.2);border-color:var(--accent)}
+.cbtn.danger{color:var(--red);border-color:rgba(255,71,87,.3);background:rgba(255,71,87,.06)}
+.cbtn.danger:hover{background:rgba(255,71,87,.15)}
+.vol-wrap{display:flex;align-items:center;gap:6px;min-width:100px}
+.vol-slider{-webkit-appearance:none;width:70px;height:3px;border-radius:2px;background:rgba(255,255,255,.1);outline:none;cursor:pointer}
+.vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--accent);cursor:pointer}
 </style>
+
+<style>
+/* ── SIDEBAR ── */
+.sidebar{background:var(--s1);border-left:1px solid rgba(0,229,255,.08);display:flex;flex-direction:column;overflow:hidden}
+.tabs{display:flex;border-bottom:1px solid rgba(0,229,255,.08);flex-shrink:0}
+.tab{flex:1;padding:10px 4px;text-align:center;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:.2s;text-transform:uppercase;letter-spacing:.5px}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:hover:not(.active){color:var(--text)}
+.tab-panel{display:none;flex:1;flex-direction:column;overflow:hidden}
+.tab-panel.active{display:flex}
+
+/* ── CHAT ── */
+.chat-msgs{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:6px;scroll-behavior:smooth}
+.chat-msgs::-webkit-scrollbar{width:4px}
+.chat-msgs::-webkit-scrollbar-track{background:transparent}
+.chat-msgs::-webkit-scrollbar-thumb{background:rgba(0,229,255,.2);border-radius:2px}
+.msg{padding:7px 10px;border-radius:8px;font-size:12px;line-height:1.5;animation:msgIn .25s ease-out;border-left:3px solid transparent}
+@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg.owner{border-left-color:var(--gold);background:rgba(255,215,0,.06)}
+.msg.admin{border-left-color:var(--red);background:rgba(255,71,87,.06)}
+.msg.moderator{border-left-color:var(--green);background:rgba(46,213,115,.06)}
+.msg.member{border-left-color:rgba(0,229,255,.4);background:rgba(0,229,255,.04)}
+.msg.guest{border-left-color:rgba(255,255,255,.1);background:rgba(255,255,255,.02)}
+.msg-author{font-weight:700;font-size:10px;margin-bottom:2px;display:flex;align-items:center;gap:5px}
+.msg-author.owner{color:var(--gold)}
+.msg-author.admin{color:var(--red)}
+.msg-author.moderator{color:var(--green)}
+.msg-author.member{color:var(--accent)}
+.msg-author.guest{color:var(--muted)}
+.role-badge{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:600}
+.rb-owner{background:rgba(255,215,0,.2);color:var(--gold)}
+.rb-admin{background:rgba(255,71,87,.2);color:var(--red)}
+.rb-moderator{background:rgba(46,213,115,.2);color:var(--green)}
+.rb-member{background:rgba(0,229,255,.15);color:var(--accent)}
+.rb-guest{background:rgba(255,255,255,.08);color:var(--muted)}
+.msg-text{color:var(--text);word-break:break-word}
+.msg-time{font-size:9px;color:var(--muted);margin-top:2px}
+.chat-input-row{padding:10px;border-top:1px solid rgba(0,229,255,.08);display:flex;gap:8px;flex-shrink:0;background:var(--s2)}
+.chat-input-row input{flex:1;background:var(--s3);border:1px solid rgba(0,229,255,.15);border-radius:8px;color:var(--text);padding:8px 12px;font-size:12px;outline:none;transition:.2s}
+.chat-input-row input:focus{border-color:var(--accent);background:rgba(0,229,255,.05);box-shadow:0 0 0 2px rgba(0,229,255,.1)}
+.chat-input-row input::placeholder{color:var(--muted)}
+.send-btn{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,var(--accent2),var(--accent));border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:.2s;flex-shrink:0}
+.send-btn:hover{transform:scale(1.05);box-shadow:var(--glow)}
+
+/* ── REQUESTS ── */
+.req-list{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+.req-item{background:var(--s2);border:1px solid rgba(255,165,2,.2);border-radius:10px;padding:10px;animation:msgIn .25s ease-out}
+.req-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.req-user{font-weight:700;font-size:12px;color:var(--accent)}
+.req-type{font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(255,165,2,.15);color:var(--orange);font-weight:600}
+.req-actions{display:flex;gap:6px;margin-top:8px}
+.req-btn{flex:1;padding:5px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:700;transition:.2s}
+.req-approve{background:rgba(46,213,115,.2);color:var(--green);border:1px solid rgba(46,213,115,.3)}
+.req-approve:hover{background:rgba(46,213,115,.35)}
+.req-reject{background:rgba(255,71,87,.15);color:var(--red);border:1px solid rgba(255,71,87,.25)}
+.req-reject:hover{background:rgba(255,71,87,.3)}
+.req-raise{display:flex;flex-wrap:wrap;gap:6px;padding:10px;border-top:1px solid rgba(0,229,255,.08);flex-shrink:0}
+.raise-btn{flex:1;min-width:60px;padding:7px 4px;border-radius:8px;border:1px solid rgba(0,229,255,.2);background:rgba(0,229,255,.06);color:var(--accent);cursor:pointer;font-size:11px;font-weight:700;transition:.2s;text-align:center}
+.raise-btn:hover{background:rgba(0,229,255,.15);border-color:var(--accent);transform:translateY(-1px)}
+
+/* ── VIEWERS ── */
+.viewers-list{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:6px}
+.viewer-item{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--s2);border-radius:8px;border:1px solid rgba(0,229,255,.06)}
+.viewer-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0}
+.va-owner{background:linear-gradient(135deg,#b8860b,var(--gold));color:#000}
+.va-admin{background:linear-gradient(135deg,#c0392b,var(--red));color:#fff}
+.va-moderator{background:linear-gradient(135deg,#27ae60,var(--green));color:#000}
+.va-member{background:linear-gradient(135deg,#0099cc,var(--accent));color:#000}
+.va-guest{background:var(--s3);color:var(--muted)}
+.viewer-info{flex:1;min-width:0}
+.viewer-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer-role-tag{font-size:10px;color:var(--muted)}
+.online-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);flex-shrink:0}
+
+/* ── SCHEDULE ── */
+.schedule-panel{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.sched-card{background:var(--s2);border:1px solid rgba(0,229,255,.12);border-radius:10px;padding:12px}
+.sched-movie{font-weight:700;font-size:13px;margin-bottom:4px}
+.sched-time{font-size:12px;color:var(--accent);display:flex;align-items:center;gap:5px}
+.countdown{font-size:11px;color:var(--orange);margin-top:4px;font-weight:600}
+.sched-form{padding:10px;border-top:1px solid rgba(0,229,255,.08);flex-shrink:0}
+.sched-form input{width:100%;background:var(--s3);border:1px solid rgba(0,229,255,.15);border-radius:8px;color:var(--text);padding:8px 12px;font-size:12px;outline:none;margin-bottom:8px}
+.sched-form input:focus{border-color:var(--accent)}
+.sched-submit{width:100%;padding:8px;border-radius:8px;background:linear-gradient(135deg,var(--accent2),var(--accent));border:none;color:#fff;font-weight:700;font-size:12px;cursor:pointer;transition:.2s}
+.sched-submit:hover{opacity:.9;transform:translateY(-1px)}
+
+/* ── EMPTY STATE ── */
+.empty{text-align:center;padding:30px 16px;color:var(--muted);font-size:12px}
+.empty i{font-size:28px;margin-bottom:8px;display:block;opacity:.4}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--s2);border:1px solid rgba(0,229,255,.3);border-radius:10px;padding:10px 20px;font-size:13px;color:var(--text);opacity:0;transition:.3s;z-index:999;pointer-events:none;box-shadow:var(--glow)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+
 </head>
 <body>
 
-<div class="container">
-  <!-- Player Section -->
-  <div class="player-section">
-    <!-- Video Player -->
-    <div class="player-container">
-      <div class="video-wrapper" id="videoWrapper">
-        <video id="videoPlayer" controls></video>
-        <div class="video-overlay">
-          <button class="play-button" onclick="togglePlay()">
-            <i class="fas fa-play"></i>
-          </button>
-        </div>
-      </div>
-      
-      <div class="video-info">
-        <div class="video-title" id="videoTitle">Loading...</div>
-        <div class="video-meta">
-          <div class="meta-item">
-            <i class="fas fa-users"></i>
-            <span id="viewerCount">0</span> watching
-          </div>
-          <div class="meta-item">
-            <i class="fas fa-comments"></i>
-            <span id="messageCount">0</span> messages
-          </div>
-          <div class="meta-item">
-            <i class="fas fa-clock"></i>
-            <span id="duration">00:00</span>
-          </div>
-        </div>
+<!-- TOP BAR -->
+<div class="topbar">
+  <span class="topbar-logo">⚡ WAN</span>
+  <span class="topbar-title" id="topTitle">Watch Party</span>
+  <span class="topbar-badge badge-live"><span class="live-dot"></span>LIVE</span>
+  <span class="topbar-badge badge-viewers"><i class="fas fa-eye"></i> <span id="viewerCount">0</span></span>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- PLAYER SIDE -->
+  <div class="player-side">
+    <div class="video-area" id="videoArea">
+      <video id="vid" preload="metadata"></video>
+      <div class="vid-overlay"></div>
+      <button class="vid-center-btn" id="centerBtn" onclick="togglePlay()">
+        <i class="fas fa-play" id="centerIcon"></i>
+      </button>
+    </div>
+
+    <div class="vid-info">
+      <div class="vid-title" id="vidTitle">Loading...</div>
+      <div class="vid-stats">
+        <div class="vid-stat"><i class="fas fa-comments"></i><span id="msgCount">0</span></div>
+        <div class="vid-stat"><i class="fas fa-clock"></i><span id="durDisplay">0:00</span></div>
       </div>
     </div>
-    
-    <!-- Controls -->
+
+    <!-- CONTROLS -->
     <div class="controls">
-      <div class="progress-bar" id="progressBar">
+      <div class="progress-wrap" id="progressWrap">
         <div class="progress-fill" id="progressFill"></div>
+        <div class="progress-thumb" id="progressThumb"></div>
       </div>
-      <div class="time-display" id="timeDisplay">0:00 / 0:00</div>
-      <div class="control-buttons">
-        <button class="control-btn" onclick="togglePlay()" title="Play/Pause">
-          <i class="fas fa-play"></i>
-        </button>
-        <button class="control-btn" onclick="requestAction('skip')" title="Request Skip">
-          <i class="fas fa-forward"></i>
-        </button>
-        <button class="control-btn" onclick="toggleFullscreen()" title="Fullscreen">
-          <i class="fas fa-expand"></i>
-        </button>
+      <div class="ctrl-row">
+        <span class="ctrl-time" id="timeDisplay">0:00 / 0:00</span>
+        <div class="ctrl-btns">
+          <button class="cbtn" onclick="skip(-10)" title="Back 10s"><i class="fas fa-backward"></i></button>
+          <button class="cbtn primary" id="playBtn" onclick="togglePlay()" title="Play/Pause"><i class="fas fa-play"></i></button>
+          <button class="cbtn" onclick="skip(10)" title="Forward 10s"><i class="fas fa-forward"></i></button>
+          <button class="cbtn" onclick="toggleMute()" id="muteBtn" title="Mute"><i class="fas fa-volume-up"></i></button>
+          <button class="cbtn" onclick="toggleFullscreen()" title="Fullscreen"><i class="fas fa-expand"></i></button>
+        </div>
+        <div class="vol-wrap">
+          <i class="fas fa-volume-down" style="font-size:11px;color:var(--muted)"></i>
+          <input type="range" class="vol-slider" id="volSlider" min="0" max="100" value="80" oninput="setVolume(this.value)">
+        </div>
       </div>
-    </div>
-    
-    <!-- Schedule -->
-    <div class="schedule-section">
-      <div class="schedule-title">📅 Schedule</div>
-      <div class="schedule-time" id="scheduleTime">No schedule set</div>
-      <input type="datetime-local" class="schedule-input" id="scheduleInput" onchange="setSchedule()">
     </div>
   </div>
-  
-  <!-- Sidebar -->
+
+  <!-- SIDEBAR -->
   <div class="sidebar">
-    <!-- Chat Panel -->
-    <div class="panel">
-      <div class="panel-header">
-        <i class="fas fa-comments"></i> Live Chat
-      </div>
-      <div class="panel-content" id="chatMessages"></div>
-      <div class="chat-input-wrapper">
-        <input type="text" class="chat-input" id="chatInput" placeholder="Say something..." onkeypress="handleChatKeypress(event)">
-        <button class="chat-send" onclick="sendMessage()">
-          <i class="fas fa-paper-plane"></i>
-        </button>
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('chat',this)"><i class="fas fa-comments"></i> Chat</div>
+      <div class="tab" onclick="switchTab('requests',this)"><i class="fas fa-list"></i> Requests</div>
+      <div class="tab" onclick="switchTab('viewers',this)"><i class="fas fa-users"></i> Viewers</div>
+      <div class="tab" onclick="switchTab('schedule',this)"><i class="fas fa-calendar"></i> Schedule</div>
+    </div>
+
+    <!-- CHAT TAB -->
+    <div class="tab-panel active" id="tab-chat">
+      <div class="chat-msgs" id="chatMsgs"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="Say something..." maxlength="500" onkeydown="if(event.key==='Enter')sendMsg()">
+        <button class="send-btn" onclick="sendMsg()"><i class="fas fa-paper-plane"></i></button>
       </div>
     </div>
-    
-    <!-- Requests Panel -->
-    <div class="panel">
-      <div class="panel-header">
-        <i class="fas fa-list"></i> Requests
-      </div>
-      <div class="panel-content" id="requestsList">
-        <div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">
-          No pending requests
-        </div>
+
+    <!-- REQUESTS TAB -->
+    <div class="tab-panel" id="tab-requests">
+      <div class="req-list" id="reqList"><div class="empty"><i class="fas fa-inbox"></i>No pending requests</div></div>
+      <div class="req-raise">
+        <button class="raise-btn" onclick="raiseReq('play')">▶ Play</button>
+        <button class="raise-btn" onclick="raiseReq('pause')">⏸ Pause</button>
+        <button class="raise-btn" onclick="raiseReq('skip')">⏭ Skip</button>
+        <button class="raise-btn" onclick="raiseReq('rewind')">⏮ Rewind</button>
+        <button class="raise-btn" onclick="raiseReq('forward')">⏩ +30s</button>
       </div>
     </div>
-    
-    <!-- Viewers Panel -->
-    <div class="panel">
-      <div class="panel-header">
-        <i class="fas fa-users"></i> Viewers
+
+    <!-- VIEWERS TAB -->
+    <div class="tab-panel" id="tab-viewers">
+      <div class="viewers-list" id="viewersList"></div>
+    </div>
+
+    <!-- SCHEDULE TAB -->
+    <div class="tab-panel" id="tab-schedule">
+      <div class="schedule-panel" id="schedList"><div class="empty"><i class="fas fa-calendar-alt"></i>No movies scheduled</div></div>
+      <div class="sched-form">
+        <input type="datetime-local" id="schedInput">
+        <button class="sched-submit" onclick="setSchedule()"><i class="fas fa-calendar-check"></i> Schedule Movie</button>
       </div>
-      <div class="panel-content" id="viewersList"></div>
     </div>
   </div>
 </div>
 
+<div class="toast" id="toast"></div>
+
 <script>
-const roomId = new URLSearchParams(window.location.search).get('room_id');
-const userId = new URLSearchParams(window.location.search).get('user_id');
-const userName = new URLSearchParams(window.location.search).get('user_name');
-const userRole = new URLSearchParams(window.location.search).get('user_role') || 'member';
+const params = new URLSearchParams(location.search);
+const roomId   = params.get('room_id')  || '';
+const userId   = params.get('user_id')  || '';
+const userName = params.get('user_name')|| 'Viewer';
+const userRole = params.get('user_role')|| 'guest';
+const vid = document.getElementById('vid');
+let msgCount = 0;
 
-let messageCount = 0;
-let viewerCount = 0;
+// ── TOAST ──────────────────────────────────────────────────────────────────
+function toast(msg, dur=2500){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), dur);
+}
 
-// ── Video Controls ────────────────────────────────────────────────────────
+// ── TABS ───────────────────────────────────────────────────────────────────
+function switchTab(name, el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+}
 
+// ── VIDEO PLAYER ───────────────────────────────────────────────────────────
 function togglePlay(){
-  const video = document.getElementById('videoPlayer');
-  if(video.paused){
-    video.play();
-  } else {
-    video.pause();
-  }
+  if(vid.paused){ vid.play(); } else { vid.pause(); }
 }
-
+function skip(s){ vid.currentTime = Math.max(0, Math.min(vid.duration||0, vid.currentTime+s)); }
+function setVolume(v){ vid.volume = v/100; }
+function toggleMute(){
+  vid.muted = !vid.muted;
+  document.getElementById('muteBtn').innerHTML = vid.muted
+    ? '<i class="fas fa-volume-mute"></i>'
+    : '<i class="fas fa-volume-up"></i>';
+}
 function toggleFullscreen(){
-  const video = document.getElementById('videoPlayer');
-  if(video.requestFullscreen){
-    video.requestFullscreen();
-  }
+  if(!document.fullscreenElement){ vid.requestFullscreen(); }
+  else { document.exitFullscreen(); }
+}
+function fmt(s){
+  if(!s||isNaN(s)) return '0:00';
+  const m=Math.floor(s/60), sec=Math.floor(s%60);
+  return `${m}:${sec.toString().padStart(2,'0')}`;
 }
 
-function formatTime(seconds){
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
+vid.addEventListener('play', ()=>{
+  document.getElementById('playBtn').innerHTML='<i class="fas fa-pause"></i>';
+  document.getElementById('centerIcon').className='fas fa-pause';
+});
+vid.addEventListener('pause', ()=>{
+  document.getElementById('playBtn').innerHTML='<i class="fas fa-play"></i>';
+  document.getElementById('centerIcon').className='fas fa-play';
+});
+vid.addEventListener('timeupdate', ()=>{
+  const pct = vid.duration ? (vid.currentTime/vid.duration)*100 : 0;
+  document.getElementById('progressFill').style.width = pct+'%';
+  document.getElementById('progressThumb').style.left = pct+'%';
+  document.getElementById('timeDisplay').textContent = `${fmt(vid.currentTime)} / ${fmt(vid.duration)}`;
+  document.getElementById('durDisplay').textContent = fmt(vid.duration);
+});
+document.getElementById('progressWrap').addEventListener('click', e=>{
+  const r = e.currentTarget.getBoundingClientRect();
+  vid.currentTime = ((e.clientX-r.left)/r.width) * (vid.duration||0);
+});
+vid.volume = 0.8;
 
-// ── Chat ───────────────────────────────────────────────────────────────────
-
-function sendMessage(){
-  const input = document.getElementById('chatInput');
-  const message = input.value.trim();
-  
-  if(!message) return;
-  
-  // Check if user has permission
-  if(userRole === 'guest'){
-    alert('Guests cannot send messages. You need a role to chat.');
-    return;
-  }
-  
-  // Send to server
+// ── CHAT ───────────────────────────────────────────────────────────────────
+function sendMsg(){
+  const inp = document.getElementById('chatInput');
+  const msg = inp.value.trim();
+  if(!msg) return;
+  inp.value = '';
+  // Everyone can chat — no role restriction
   fetch(`/api/watch/chat/${roomId}`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      user_id: userId,
-      username: userName,
-      message: message,
-      user_role: userRole
-    })
-  }).then(r => r.json()).then(data => {
-    if(data.success){
-      input.value = '';
-      addChatMessage(data.message);
-    }
-  });
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({user_id:userId, username:userName, message:msg, user_role:userRole})
+  }).then(r=>r.json()).then(d=>{
+    if(d.success) appendMsg(d.message);
+    else toast('❌ '+d.error);
+  }).catch(()=>toast('❌ Failed to send'));
 }
 
-function handleChatKeypress(event){
-  if(event.key === 'Enter'){
-    sendMessage();
-  }
+function appendMsg(m){
+  const role = m.role||'guest';
+  const badges = {owner:'rb-owner',admin:'rb-admin',moderator:'rb-moderator',member:'rb-member',guest:'rb-guest'};
+  const labels = {owner:'OWNER',admin:'ADMIN',moderator:'MOD',member:'MEMBER',guest:'GUEST'};
+  const c = document.getElementById('chatMsgs');
+  const d = document.createElement('div');
+  d.className = `msg ${role}`;
+  d.innerHTML = `
+    <div class="msg-author ${role}">
+      ${escHtml(m.username)}
+      <span class="role-badge ${badges[role]||'rb-guest'}">${labels[role]||'GUEST'}</span>
+    </div>
+    <div class="msg-text">${escHtml(m.message)}</div>
+    <div class="msg-time">${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>`;
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
+  msgCount++;
+  document.getElementById('msgCount').textContent = msgCount;
 }
 
-function addChatMessage(msg){
-  const container = document.getElementById('chatMessages');
-  const div = document.createElement('div');
-  div.className = `chat-message ${msg.role}`;
-  div.innerHTML = `
-    <div class="chat-username ${msg.role}">${msg.username}</div>
-    <div class="chat-text">${escapeHtml(msg.message)}</div>
-  `;
-  container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
-  messageCount++;
-  document.getElementById('messageCount').textContent = messageCount;
-}
+function escHtml(t){ const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
 
-// ── Requests ───────────────────────────────────────────────────────────────
-
-function requestAction(type){
+// ── REQUESTS ───────────────────────────────────────────────────────────────
+function raiseReq(type){
+  // Members+ can raise requests; guests see a friendly message
   if(userRole === 'guest'){
-    alert('Guests cannot make requests. You need a role.');
+    toast('👋 Join with a role to raise requests');
     return;
   }
-  
   fetch(`/api/watch/request/${roomId}`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      user_id: userId,
-      username: userName,
-      request_type: type
-    })
-  }).then(r => r.json()).then(data => {
-    if(data.success){
-      alert(`Request sent: ${type}`);
-    }
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({user_id:userId, username:userName, request_type:type})
+  }).then(r=>r.json()).then(d=>{
+    if(d.success) toast(`✅ ${type} request sent!`);
+    else toast('❌ '+d.error);
   });
 }
 
-function approveRequest(requestId){
-  fetch(`/api/watch/request/${roomId}/${requestId}/approve`, {
-    method: 'POST'
-  }).then(r => r.json()).then(data => {
-    if(data.success){
-      loadRequests();
-    }
-  });
+function approveReq(id){
+  fetch(`/api/watch/request/${roomId}/${id}/approve`,{method:'POST'})
+    .then(r=>r.json()).then(()=>{ toast('✅ Approved'); loadRequests(); });
 }
-
-function rejectRequest(requestId){
-  fetch(`/api/watch/request/${roomId}/${requestId}/reject`, {
-    method: 'POST'
-  }).then(r => r.json()).then(data => {
-    if(data.success){
-      loadRequests();
-    }
-  });
+function rejectReq(id){
+  fetch(`/api/watch/request/${roomId}/${id}/reject`,{method:'POST'})
+    .then(r=>r.json()).then(()=>{ toast('❌ Rejected'); loadRequests(); });
 }
 
 function loadRequests(){
-  fetch(`/api/watch/requests/${roomId}`)
-    .then(r => r.json())
-    .then(data => {
-      const container = document.getElementById('requestsList');
-      
-      if(!data.requests || data.requests.length === 0){
-        container.innerHTML = '<div style="color:var(--muted);font-size:12px;text-align:center;padding:20px;">No pending requests</div>';
-        return;
-      }
-      
-      container.innerHTML = data.requests.map(req => `
-        <div class="request-item">
-          <div class="request-user">${req.username}</div>
-          <div class="request-type">Requested: ${req.type}</div>
-          ${userRole === 'owner' || userRole === 'admin' ? `
-            <div class="request-actions">
-              <button class="request-btn request-approve" onclick="approveRequest('${req.id}')">
-                <i class="fas fa-check"></i> Approve
-              </button>
-              <button class="request-btn request-reject" onclick="rejectRequest('${req.id}')">
-                <i class="fas fa-times"></i> Reject
-              </button>
-            </div>
-          ` : ''}
+  fetch(`/api/watch/requests/${roomId}`).then(r=>r.json()).then(d=>{
+    const c = document.getElementById('reqList');
+    const reqs = d.requests||[];
+    if(!reqs.length){ c.innerHTML='<div class="empty"><i class="fas fa-inbox"></i>No pending requests</div>'; return; }
+    const canApprove = ['owner','admin','moderator'].includes(userRole);
+    c.innerHTML = reqs.map(r=>`
+      <div class="req-item">
+        <div class="req-header">
+          <span class="req-user">${escHtml(r.username)}</span>
+          <span class="req-type">${r.type||r.request_type}</span>
         </div>
-      `).join('');
-    });
+        ${canApprove ? `<div class="req-actions">
+          <button class="req-btn req-approve" onclick="approveReq('${r.id}')">✓ Approve</button>
+          <button class="req-btn req-reject" onclick="rejectReq('${r.id}')">✗ Reject</button>
+        </div>` : ''}
+      </div>`).join('');
+  });
 }
 
-// ── Viewers ────────────────────────────────────────────────────────────────
-
+// ── VIEWERS ────────────────────────────────────────────────────────────────
 function loadViewers(){
-  fetch(`/api/watch/viewers/${roomId}`)
-    .then(r => r.json())
-    .then(data => {
-      const container = document.getElementById('viewersList');
-      viewerCount = data.viewers ? data.viewers.length : 0;
-      document.getElementById('viewerCount').textContent = viewerCount;
-      
-      container.innerHTML = (data.viewers || []).map(viewer => `
-        <div class="viewer-item">
-          <div class="viewer-avatar">${viewer.username.charAt(0).toUpperCase()}</div>
-          <div class="viewer-name">${viewer.username}</div>
-          <div class="viewer-role">${viewer.role}</div>
+  fetch(`/api/watch/viewers/${roomId}`).then(r=>r.json()).then(d=>{
+    const viewers = d.viewers||[];
+    document.getElementById('viewerCount').textContent = viewers.length;
+    const vaClass = {owner:'va-owner',admin:'va-admin',moderator:'va-moderator',member:'va-member',guest:'va-guest'};
+    document.getElementById('viewersList').innerHTML = viewers.map(v=>`
+      <div class="viewer-item">
+        <div class="viewer-avatar ${vaClass[v.role]||'va-guest'}">${(v.username||'?')[0].toUpperCase()}</div>
+        <div class="viewer-info">
+          <div class="viewer-name">${escHtml(v.username)}</div>
+          <div class="viewer-role-tag">${v.role||'guest'}</div>
         </div>
-      `).join('');
-    });
+        <div class="online-dot"></div>
+      </div>`).join('') || '<div class="empty"><i class="fas fa-users"></i>No viewers yet</div>';
+  });
 }
 
-// ── Schedule ───────────────────────────────────────────────────────────────
-
+// ── SCHEDULE ───────────────────────────────────────────────────────────────
 function setSchedule(){
-  const input = document.getElementById('scheduleInput');
-  const time = input.value;
-  
-  if(!time) return;
-  
-  fetch(`/api/watch/schedule/${roomId}`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({start_time: time})
-  }).then(r => r.json()).then(data => {
-    if(data.success){
-      document.getElementById('scheduleTime').textContent = `Scheduled for: ${new Date(time).toLocaleString()}`;
+  const t = document.getElementById('schedInput').value;
+  if(!t){ toast('Pick a time first'); return; }
+  fetch(`/api/watch/schedule/${roomId}`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({start_time:t})
+  }).then(r=>r.json()).then(d=>{
+    if(d.success){ toast('📅 Scheduled!'); loadSchedule(); }
+    else toast('❌ '+d.error);
+  });
+}
+
+function loadSchedule(){
+  fetch(`/api/watch/schedule/${roomId}`).then(r=>r.json()).then(d=>{
+    const c = document.getElementById('schedList');
+    const items = d.schedules||[];
+    if(!items.length){ c.innerHTML='<div class="empty"><i class="fas fa-calendar-alt"></i>No movies scheduled</div>'; return; }
+    c.innerHTML = items.map(s=>{
+      const dt = new Date(s.start_time);
+      const diff = dt - Date.now();
+      const countdown = diff > 0
+        ? `Starts in ${Math.floor(diff/3600000)}h ${Math.floor((diff%3600000)/60000)}m`
+        : 'Starting now!';
+      return `<div class="sched-card">
+        <div class="sched-movie">${escHtml(s.movie_title||'Movie')}</div>
+        <div class="sched-time"><i class="fas fa-clock"></i>${dt.toLocaleString()}</div>
+        <div class="countdown">⏱ ${countdown}</div>
+      </div>`;
+    }).join('');
+  });
+}
+
+// ── LOAD ROOM ──────────────────────────────────────────────────────────────
+function loadRoom(){
+  if(!roomId) return;
+  fetch(`/api/watch/room/${roomId}`).then(r=>r.json()).then(d=>{
+    if(d.room){
+      const title = d.room.title||'Watch Party';
+      document.getElementById('vidTitle').textContent = title;
+      document.getElementById('topTitle').textContent = title;
+      document.title = title+' — WAN Watch Party';
+      if(d.room.video_url) vid.src = d.room.video_url;
     }
   });
+  fetch(`/api/watch/chat/${roomId}`).then(r=>r.json()).then(d=>{
+    (d.messages||[]).forEach(m=>appendMsg(m));
+  });
 }
 
-// ── Utilities ──────────────────────────────────────────────────────────────
-
-function escapeHtml(text){
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-// ── Initialize ─────────────────────────────────────────────────────────────
-
-document.addEventListener('DOMContentLoaded', () => {
-  // Load initial data
-  loadRequests();
-  loadViewers();
-  
-  // Refresh every 2 seconds
-  setInterval(() => {
-    loadRequests();
-    loadViewers();
-  }, 2000);
-  
-  // Update progress bar
-  const video = document.getElementById('videoPlayer');
-  video.addEventListener('timeupdate', () => {
-    const percent = (video.currentTime / video.duration) * 100;
-    document.getElementById('progressFill').style.width = percent + '%';
-    document.getElementById('timeDisplay').textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
-  });
-  
-  // Click progress bar to seek
-  document.getElementById('progressBar').addEventListener('click', (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    video.currentTime = percent * video.duration;
-  });
-});
+// ── POLL ───────────────────────────────────────────────────────────────────
+setInterval(()=>{ loadRequests(); loadViewers(); loadSchedule(); }, 3000);
+loadRoom();
+loadRequests();
+loadViewers();
+loadSchedule();
 </script>
-
 </body>
 </html>

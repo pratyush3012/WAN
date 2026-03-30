@@ -4264,6 +4264,31 @@ def watch_upload_video(server_id):
     WatchPartyDB.save_room_data(room_id, room.to_dict())
     
     logger.info(f"Watch upload: {room_id} ({file_info.get('size', 'unknown')}) by {session.get('username')}")
+
+    # ── Fire Discord @everyone announcement + schedule poll ──────────────────
+    try:
+        from watch_party_upload_fixed import GuildUploadManager
+        _upload_mgr = GuildUploadManager(bot_instance)
+        uploader_name = session.get("username", "Unknown")
+        file_size = file_info.get("size_bytes", 0)
+
+        async def _announce():
+            uid = await _upload_mgr.start_upload(
+                guild_id=server_id,
+                user_id=session.get("user_id", "unknown"),
+                username=uploader_name,
+                title=title,
+                file_path=file_path,
+                file_size=file_size,
+            )
+            if uid:
+                await _upload_mgr.complete_upload(uid, room_id)
+
+        import asyncio
+        asyncio.run_coroutine_threadsafe(_announce(), bot_instance.loop)
+    except Exception as _e:
+        logger.warning(f"Could not fire upload announcement: {_e}")
+
     return jsonify({"room": room.to_dict(), "room_id": room_id})
 
 
@@ -4518,15 +4543,7 @@ def on_watch_chat(data):
     if not msg:
         return
     
-    # Check if user can chat (members+ can, guests cannot)
-    viewer = room.viewers.get(request.sid, {})
-    role_level = viewer.get("role_level", 0)
-    
-    # Guests (role_level 0) cannot send chat messages
-    if role_level < 1:
-        emit("error", {"message": "Guests cannot send messages. Join with a role to chat."})
-        return
-    
+    # Everyone can chat — guests included
     avatar = session.get("avatar_url", "")
     entry = {
         "user":   username,
