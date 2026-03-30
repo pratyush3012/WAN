@@ -337,28 +337,47 @@ class GamingBot(commands.Bot):
         except Exception as e:
             logger.error(f'❌ Failed to sync commands: {e}')
         
-        await self.change_presence(
-            activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name="your community 🎮"
+        try:
+            await self.change_presence(
+                activity=discord.Activity(
+                    type=discord.ActivityType.watching,
+                    name="your community 🎮"
+                )
             )
-        )
+        except Exception as e:
+            logger.error(f'❌ Failed to set presence: {e}')
 
         # Keep-alive: ping own health endpoint every 10 min so Render never sleeps
         dashboard_url = os.getenv('DASHBOARD_URL', '').rstrip('/')
         if dashboard_url:
             async def _keep_alive():
                 import aiohttp
+                consecutive_failures = 0
                 while not self.is_closed():
                     try:
                         async with aiohttp.ClientSession() as s:
                             async with s.get(f"{dashboard_url}/api/health", timeout=aiohttp.ClientTimeout(total=10)) as r:
-                                logger.debug(f"Keep-alive ping: {r.status}")
+                                if r.status == 200:
+                                    consecutive_failures = 0
+                                    logger.debug(f"Keep-alive ping: {r.status}")
+                                else:
+                                    consecutive_failures += 1
+                                    logger.warning(f"Keep-alive ping returned {r.status}")
                     except Exception as e:
+                        consecutive_failures += 1
                         logger.debug(f"Keep-alive ping failed: {e}")
+                    
+                    # If too many consecutive failures, log warning
+                    if consecutive_failures > 5:
+                        logger.warning(f"⚠️ Keep-alive pinger has failed {consecutive_failures} times")
+                    
                     await asyncio.sleep(600)  # every 10 minutes
-            self.loop.create_task(_keep_alive())
-            logger.info(f"✅ Keep-alive pinger started → {dashboard_url}/api/health")
+            
+            try:
+                self.loop.create_task(_keep_alive())
+                logger.info(f"✅ Keep-alive pinger started → {dashboard_url}/api/health")
+            except Exception as e:
+                logger.error(f"❌ Failed to start keep-alive pinger: {e}")
     
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Global error handler for slash commands"""
@@ -383,6 +402,11 @@ class GamingBot(commands.Bot):
                 await interaction.response.send_message(message, ephemeral=True)
         except:
             logger.error("Failed to send error message to user")
+    
+    async def on_error(self, event_method, *args, **kwargs):
+        """Global error handler for events"""
+        logger.error(f"Error in {event_method}", exc_info=True)
+        # Don't crash on event errors, just log them
     
     async def close(self):
         """Cleanup on shutdown"""
@@ -417,19 +441,40 @@ async def main():
         else:
             logger.info("✅ Dashboard is up and serving")
 
-    try:
-        async with bot:
-            token = os.getenv('DISCORD_TOKEN')
-            if not token:
-                logger.critical("❌ DISCORD_TOKEN not found in environment variables")
-                return
-            await bot.start(token)
-    except KeyboardInterrupt:
-        logger.info("⚠️ Received keyboard interrupt")
-    except Exception as e:
-        logger.critical(f"❌ Fatal error: {e}", exc_info=True)
-    finally:
-        logger.info("👋 Bot shutdown complete")
+    max_retries = 5
+    retry_count = 0
+    retry_delay = 5  # Start with 5 seconds
+
+    while retry_count < max_retries:
+        try:
+            async with bot:
+                token = os.getenv('DISCORD_TOKEN')
+                if not token:
+                    logger.critical("❌ DISCORD_TOKEN not found in environment variables")
+                    return
+                logger.info(f"🚀 Starting bot (attempt {retry_count + 1}/{max_retries})...")
+                await bot.start(token)
+        except KeyboardInterrupt:
+            logger.info("⚠️ Received keyboard interrupt")
+            break
+        except Exception as e:
+            retry_count += 1
+            logger.error(f"❌ Bot error (attempt {retry_count}/{max_retries}): {e}", exc_info=True)
+            
+            if retry_count < max_retries:
+                logger.info(f"🔄 Restarting bot in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 60)  # Exponential backoff, max 60 seconds
+                bot = GamingBot()  # Create new bot instance
+            else:
+                logger.critical(f"❌ Bot failed {max_retries} times. Giving up.")
+                break
+    
+    logger.info("👋 Bot shutdown complete")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.critical(f"❌ Fatal error in main: {e}", exc_info=True)
+        sys.exit(1)
