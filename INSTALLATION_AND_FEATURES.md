@@ -43,33 +43,55 @@ Bot will automatically create data directories on first run.
 ## Core Features
 
 ### 1. Watch Party System
-**Premium video watching experience with chat, requests, and scheduling**
+**Premium video watching experience with chat, requests, scheduling, and auto-registration**
 
-#### Features:
-- Upload movies to Discord
-- Create watch rooms with real-time viewers
-- Live chat with role-based permissions
-- Request system (Play, Pause, Skip, Rewind, Forward)
-- Movie scheduling with auto-start countdown
-- Owner approval system for watch requests
-- Persistent storage (survives bot restarts)
+#### New Features:
+- **Auto-Registration**: Mods/Admins automatically registered when promoted
+- **Account System**: Each user gets account with Discord username as primary ID
+- **Password Protection**: Users set passwords for dashboard access
+- **Movie Upload Notifications**: Discord announcements when movies upload
+- **Schedule Voting**: Community votes on best time to watch
+- **Advanced UI**: Modern dark theme with cyan accents, smooth animations
+- **Live Chat**: Everyone can chat with role-based colors
+- **Request System**: Members+ can request Play, Pause, Skip, Rewind, Forward
+- **Permission Levels**:
+  - **Owner**: Full control, approves uploads, manages schedule
+  - **Admin**: Can upload, schedule, manage users
+  - **Moderator**: Can moderate chat, approve requests
+  - **Member**: Can chat, raise requests
+  - **Guest**: Can watch, cannot chat or request
 
 #### Database Structure:
 ```
 ./data/watch_party/
 ├── movies.json          # Uploaded movies
 ├── movie_rooms.json     # Active watch rooms
-├── enhanced.json        # Premium features (chat, requests, scheduling)
+├── enhanced.json        # Premium features
 ├── chat.json           # Chat messages
-└── requests.json       # Watch requests
+├── requests.json       # Watch requests
+└── schedule_votes.json # Schedule voting data
+
+./data/users/
+├── users.json          # User accounts and passwords
+└── roles.json          # User roles and permissions
 ```
 
-#### Role-Based Permissions:
-- **Owner**: Full control, approves watch requests
-- **Admin**: Can manage rooms, approve requests
-- **Moderator**: Can moderate chat
-- **Member**: Can chat, raise requests
-- **Guest**: Can watch, cannot chat or request
+#### Upload Flow:
+1. Admin uploads movie via `/movie-upload`
+2. Discord announcement sent to server
+3. Community votes on schedule time (reactions)
+4. Owner receives permission request via DM
+5. Owner approves/denies with reactions
+6. Movie auto-starts at scheduled time
+7. Watch party created with live chat and requests
+
+#### Commands:
+```
+/set-password <password>    # Set dashboard password
+/movie-upload              # Upload new movie
+/watch-party               # Create watch party
+/list-movies               # List available movies
+```
 
 #### API Endpoints:
 ```
@@ -88,19 +110,31 @@ GET    /api/watch/schedule/<room_id>  # Get schedule
 GET    /api/watch/viewers/<room_id>   # Get viewers list
 ```
 
-#### Discord Integration:
-- Announces movie uploads in configured channel
-- Sends watch link when upload completes
-- Owner receives DM with approval request
-- React ✅ to approve, ❌ to deny
-- Auto-starts movie at scheduled time
+#### Advanced UI Features:
+- **Video Player**: Full controls (play, pause, rewind, forward, fullscreen)
+- **Progress Bar**: Click to seek, shows current time
+- **Live Chat Panel**: Real-time messages with role-based colors
+- **Requests Panel**: Pending requests with approve/reject buttons
+- **Viewers Panel**: Live viewer list with role badges
+- **Schedule Panel**: Upcoming movies with countdown timer
+- **Reactions**: Users can react to messages
+- **Smooth Animations**: All interactions have smooth transitions
+- **Responsive Design**: Works on desktop and mobile
 
-#### Commands:
-```
-/watchparty setup       # Configure watch party channel
-/movie-upload          # Upload new movie
-/active-parties        # Show active watch parties
-```
+#### User Account System:
+- **Auto-Registration**: When user gets mod/admin role
+- **Primary ID**: Discord username (e.g., "pratyush3012")
+- **Password Setup**: User sets password via `/set-password`
+- **Dashboard Access**: Login with username and password
+- **Permission Levels**: Based on Discord role
+- **Account Info**: Sent via DM when promoted
+
+#### Schedule Voting:
+- **Emoji Reactions**: 🕐-🕗 for different times
+- **Community Vote**: Everyone can vote
+- **Auto-Selection**: Time with most votes wins
+- **Confirmation**: Owner notified of winning time
+- **Auto-Start**: Movie starts at scheduled time
 
 ---
 
@@ -204,7 +238,78 @@ GET    /api/watch/viewers/<room_id>   # Get viewers list
 
 ---
 
-## Database Persistence
+## User Account & Authentication System
+
+### Auto-Registration
+- **Automatic**: Users registered when promoted to mod/admin
+- **No Manual Setup**: Happens instantly
+- **DM Notification**: User receives account info via Discord DM
+- **Primary ID**: Discord username used as account identifier
+
+### Account Features
+- **Username**: Discord username (e.g., "pratyush3012")
+- **Password**: User-set password (minimum 8 characters)
+- **Role-Based Access**: Permissions based on Discord role
+- **Dashboard Login**: Access web controls with credentials
+- **Permission Levels**:
+  - Owner: Full control
+  - Admin: Upload, schedule, manage users
+  - Moderator: Moderate chat, approve requests
+  - Member: Chat, raise requests
+  - Guest: Watch only
+
+### Password Management
+```
+/set-password <password>    # Set your dashboard password
+```
+
+### Dashboard Access
+1. Go to WAN Bot dashboard
+2. Click "Login"
+3. Enter username (Discord name)
+4. Enter password (set via `/set-password`)
+5. Access all controls based on your role
+
+### Permissions by Role
+
+| Feature | Owner | Admin | Mod | Member | Guest |
+|---------|-------|-------|-----|--------|-------|
+| Chat | ✅ | ✅ | ✅ | ✅ | ❌ |
+| React | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Request | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Pause | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Play | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Upload | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Schedule | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Manage Users | ✅ | ✅ | ❌ | ❌ | ❌ |
+
+---
+
+## Movie Upload & Schedule Voting
+
+### Upload Process
+1. Admin runs `/movie-upload`
+2. Uploads movie file via dashboard
+3. Discord announcement sent to server
+4. Community votes on schedule time
+5. Owner approves/denies upload
+6. Movie auto-starts at winning time
+
+### Schedule Voting
+- **Emoji Reactions**: 🕐 (6 PM) through 🕗 (1 AM)
+- **Community Vote**: Everyone can vote
+- **Auto-Selection**: Time with most votes wins
+- **Confirmation**: Owner notified of schedule
+- **Auto-Start**: Movie starts automatically
+
+### Notification Flow
+1. **Upload Announcement**: "New movie uploaded!"
+2. **Vote Request**: "React to vote for watch time"
+3. **Permission Request**: Owner gets DM to approve
+4. **Schedule Confirmation**: Owner notified of winning time
+5. **Auto-Start**: Movie starts at scheduled time
+
+---
 
 All data is stored in JSON files in `./data/` directory:
 
@@ -425,11 +530,22 @@ python bot.py
 
 ## Version Info
 
-- **Bot Version**: 2.1
+- **Bot Version**: 3.0 - Complete Watch Party System
 - **Python**: 3.8+
 - **discord.py**: Latest
 - **Last Updated**: March 30, 2026
-- **Status**: Production Ready with Auto-Recovery ✅
+- **Status**: Production Ready with Full Automation ✅
+
+### What's New in v3.0:
+- ✅ Auto-registration for mods/admins
+- ✅ User account system with passwords
+- ✅ Advanced UI with modern design
+- ✅ Movie upload notifications
+- ✅ Community schedule voting
+- ✅ Permission-based access control
+- ✅ Automatic movie start at scheduled time
+- ✅ Enhanced chat with role-based colors
+- ✅ Request system with approval workflow
 
 ---
 
