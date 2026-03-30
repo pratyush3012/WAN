@@ -33,7 +33,7 @@
   #videoPlayer{width:100%;height:100%;object-fit:contain;background:#000}
   /* ── Controls overlay ── */
   .controls{position:absolute;bottom:0;left:0;right:0;padding:12px 16px;background:linear-gradient(transparent,rgba(0,0,0,.85));display:flex;flex-direction:column;gap:8px;opacity:0;transition:.3s}
-  .video-side:hover .controls{opacity:1}
+  .video-side:hover .controls,.controls:focus-within{opacity:1}
   .progress-wrap{position:relative;height:4px;background:rgba(255,255,255,.2);border-radius:4px;cursor:pointer}
   .progress-fill{height:100%;background:var(--accent);border-radius:4px;pointer-events:none;transition:width .1s}
   .progress-wrap:hover{height:6px}
@@ -102,7 +102,7 @@
 <div class="main">
   <!-- Video -->
   <div class="video-side" id="videoWrap">
-    <video id="videoPlayer" preload="metadata" playsinline controls
+    <video id="videoPlayer" preload="metadata" playsinline
            crossorigin="anonymous"
            style="width:100%;height:100%;background:#000">
       <source id="videoSource" type="video/mp4">
@@ -253,13 +253,13 @@ socket.on("error", d => addSystemMsg("⚠️ " + d.message));
 let myRoleLevel = 0;  // 0=Guest, 1=Member, 2=Mod, 3=Admin, 4=Owner
 
 function canControl() {
-  return myRoleLevel >= 2;  // Mods and above
+  return IS_HOST || myRoleLevel >= 2;  // Host, Mods, Admins, Owners
 }
 
 function togglePlay() {
-  if (!canControl()) { 
-    addSystemMsg("⛔ Only mods and above can control playback"); 
-    return; 
+  if (!canControl()) {
+    addSystemMsg("⛔ Only mods/admins/owners can control playback");
+    return;
   }
   if (video.paused) {
     video.play();
@@ -273,7 +273,10 @@ function togglePlay() {
 }
 
 function skip(secs) {
-  if (!canControl()) return;
+  if (!canControl()) {
+    addSystemMsg("⛔ Only mods/admins/owners can seek");
+    return;
+  }
   video.currentTime = Math.max(0, video.currentTime + secs);
   socket.emit("watch_seek", { room_id: ROOM_ID, current_time: video.currentTime });
 }
@@ -391,13 +394,16 @@ function showSyncToast() {
 }
 
 function updateControlsUI() {
-  const controls = document.getElementById("controls");
-  if (!canControl()) {
-    controls.style.opacity = "0.5";
-    controls.style.pointerEvents = "none";
+  // Controls are always visible — everyone can see the progress bar and time
+  // Only mods/admins/owners can interact with playback buttons
+  const ctrlBtns = document.querySelectorAll(".ctrl-btn:not(.vol-btn):not(.fullscreen-btn)");
+  const progressWrap = document.getElementById("progressWrap");
+  if (canControl()) {
+    ctrlBtns.forEach(b => { b.style.opacity = "1"; b.style.cursor = "pointer"; });
+    progressWrap.style.cursor = "pointer";
   } else {
-    controls.style.opacity = "1";
-    controls.style.pointerEvents = "auto";
+    ctrlBtns.forEach(b => { b.style.opacity = "0.35"; b.style.cursor = "not-allowed"; });
+    progressWrap.style.cursor = "default";
   }
 }
 
