@@ -4171,6 +4171,60 @@ def watch_list_rooms(server_id):
     return jsonify({"rooms": rooms})
 
 
+@app.route("/api/watch/resolve-url", methods=["POST"])
+@require_auth
+def watch_resolve_url():
+    """Resolve a YouTube/external URL to a direct streamable URL using yt-dlp."""
+    data = request.json or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "url required"}), 400
+
+    # If it's already a direct video file, return as-is
+    if any(url.lower().endswith(ext) for ext in (".mp4", ".webm", ".mkv", ".m3u8")):
+        return jsonify({"stream_url": url, "title": url.split("/")[-1], "type": "direct"})
+
+    try:
+        import yt_dlp
+        ydl_opts = {
+            "format": "best[ext=mp4]/best",
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                return jsonify({"error": "Could not extract video info"}), 400
+
+            stream_url = info.get("url") or info.get("manifest_url")
+            title = info.get("title", "Video")
+            thumbnail = info.get("thumbnail", "")
+            duration = info.get("duration", 0)
+
+            if not stream_url:
+                # Try formats list
+                fmts = info.get("formats", [])
+                for f in reversed(fmts):
+                    if f.get("url") and f.get("vcodec") != "none":
+                        stream_url = f["url"]
+                        break
+
+            if not stream_url:
+                return jsonify({"error": "No streamable URL found"}), 400
+
+            return jsonify({
+                "stream_url": stream_url,
+                "title": title,
+                "thumbnail": thumbnail,
+                "duration": duration,
+                "type": "resolved"
+            })
+    except Exception as e:
+        logger.error(f"URL resolve error: {e}")
+        return jsonify({"error": f"Could not resolve URL: {str(e)[:100]}"}), 400
+
+
 @app.route("/api/server/<server_id>/watch/create", methods=["POST"])
 @require_auth
 def watch_create_room(server_id):
