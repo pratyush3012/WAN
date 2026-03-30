@@ -347,35 +347,37 @@ class GamingBot(commands.Bot):
         except Exception as e:
             logger.error(f'❌ Failed to set presence: {e}')
 
-        # Keep-alive: ping own health endpoint every 10 min so Render never sleeps
+        # Keep-alive: ping own health endpoint every 8 min so Render never sleeps
+        # Render free tier sleeps after 15 min of inactivity — we ping every 8 min to stay awake
         dashboard_url = os.getenv('DASHBOARD_URL', '').rstrip('/')
         if dashboard_url:
             async def _keep_alive():
                 import aiohttp
                 consecutive_failures = 0
+                # Initial delay so bot is fully ready before first ping
+                await asyncio.sleep(30)
                 while not self.is_closed():
                     try:
                         async with aiohttp.ClientSession() as s:
-                            async with s.get(f"{dashboard_url}/api/health", timeout=aiohttp.ClientTimeout(total=10)) as r:
+                            async with s.get(f"{dashboard_url}/api/health", timeout=aiohttp.ClientTimeout(total=15)) as r:
                                 if r.status == 200:
                                     consecutive_failures = 0
-                                    logger.debug(f"Keep-alive ping: {r.status}")
+                                    logger.debug(f"Keep-alive ping OK: {r.status}")
                                 else:
                                     consecutive_failures += 1
                                     logger.warning(f"Keep-alive ping returned {r.status}")
                     except Exception as e:
                         consecutive_failures += 1
                         logger.debug(f"Keep-alive ping failed: {e}")
-                    
-                    # If too many consecutive failures, log warning
+
                     if consecutive_failures > 5:
-                        logger.warning(f"⚠️ Keep-alive pinger has failed {consecutive_failures} times")
-                    
-                    await asyncio.sleep(600)  # every 10 minutes
-            
+                        logger.warning(f"⚠️ Keep-alive pinger has failed {consecutive_failures} times in a row")
+
+                    await asyncio.sleep(480)  # every 8 minutes (well under Render's 15-min sleep threshold)
+
             try:
                 self.loop.create_task(_keep_alive())
-                logger.info(f"✅ Keep-alive pinger started → {dashboard_url}/api/health")
+                logger.info(f"✅ Keep-alive pinger started (every 8 min) → {dashboard_url}/api/health")
             except Exception as e:
                 logger.error(f"❌ Failed to start keep-alive pinger: {e}")
     
