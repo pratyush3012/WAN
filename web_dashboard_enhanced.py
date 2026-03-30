@@ -4701,6 +4701,107 @@ def on_watch_request_sync(data):
     })
 
 
+@socketio.on("watch_mood_react")
+def on_watch_mood_react(data):
+    """Mood reaction that affects the screen for everyone."""
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    emoji = data.get("emoji", "")
+    username = session.get("username", "Someone")
+    emit("mood_effect", {"emoji": emoji, "user": username},
+         room=f"watch_{room_id}")
+
+
+@socketio.on("watch_bookmark")
+def on_watch_bookmark(data):
+    """Drop a timestamp bookmark visible to everyone."""
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    if not hasattr(room, "bookmarks"):
+        room.bookmarks = []
+    bm = {
+        "ts": data.get("current_time", 0),
+        "label": str(data.get("label", "📍"))[:40],
+        "user": session.get("username", "Someone"),
+        "id": secrets.token_hex(4),
+    }
+    room.bookmarks.append(bm)
+    emit("bookmark_added", bm, room=f"watch_{room_id}")
+
+
+@socketio.on("watch_prediction_create")
+def on_prediction_create(data):
+    """Mod creates a prediction poll."""
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    viewer = room.viewers.get(request.sid, {})
+    if viewer.get("role_level", 0) < 2:
+        emit("error", {"message": "Only mods+ can create predictions"})
+        return
+    if not hasattr(room, "prediction"):
+        room.prediction = None
+    room.prediction = {
+        "id": secrets.token_hex(4),
+        "question": str(data.get("question", ""))[:100],
+        "options": [str(o)[:50] for o in data.get("options", [])[:4]],
+        "votes": {},
+        "resolved": False,
+        "winner": None,
+        "created_by": session.get("username", "Mod"),
+    }
+    emit("prediction_started", room.prediction, room=f"watch_{room_id}")
+
+
+@socketio.on("watch_prediction_vote")
+def on_prediction_vote(data):
+    """User votes on a prediction."""
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room or not hasattr(room, "prediction") or not room.prediction:
+        return
+    if room.prediction.get("resolved"):
+        emit("error", {"message": "Prediction already resolved"})
+        return
+    user_id = session.get("user_id", request.sid)
+    option = int(data.get("option", 0))
+    room.prediction["votes"][user_id] = option
+    # Broadcast updated vote counts (without revealing who voted what)
+    counts = [0] * len(room.prediction["options"])
+    for v in room.prediction["votes"].values():
+        if 0 <= v < len(counts):
+            counts[v] += 1
+    emit("prediction_votes", {"counts": counts, "total": len(room.prediction["votes"])},
+         room=f"watch_{room_id}")
+
+
+@socketio.on("watch_prediction_resolve")
+def on_prediction_resolve(data):
+    """Mod resolves a prediction with the winning option."""
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room or not hasattr(room, "prediction") or not room.prediction:
+        return
+    viewer = room.viewers.get(request.sid, {})
+    if viewer.get("role_level", 0) < 2:
+        return
+    winner_idx = int(data.get("winner", 0))
+    room.prediction["resolved"] = True
+    room.prediction["winner"] = winner_idx
+    # Calculate who got it right
+    correct = [uid for uid, v in room.prediction["votes"].items() if v == winner_idx]
+    emit("prediction_resolved", {
+        "prediction": room.prediction,
+        "correct_count": len(correct),
+        "correct_users": correct,
+    }, room=f"watch_{room_id}")
+
+
 @socketio.on("disconnect")
 def on_watch_disconnect():
     # Clean up viewer from any watch rooms
