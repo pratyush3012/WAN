@@ -133,26 +133,45 @@ class GuildUploadManager:
                 return False
             
             # Send @everyone announcement
+            dashboard_url = os.getenv("DASHBOARD_URL", "").rstrip("/")
+            watch_link = f"{dashboard_url}/watch/{movie_id}" if dashboard_url else None
+
             embed = discord.Embed(
-                title="🎬 New Movie Uploaded!",
-                description=f"**{upload_info['title']}** has been uploaded by {upload_info['username']}",
+                title="🎬 New Movie Ready to Watch!",
+                description=f"**{upload_info['title']}** has been uploaded by **{upload_info['username']}**",
                 color=discord.Color.from_rgb(0, 255, 200),
                 timestamp=datetime.now(timezone.utc)
             )
+            if watch_link:
+                embed.add_field(
+                    name="▶️ Watch Now",
+                    value=f"[Click here to watch]({watch_link})",
+                    inline=False
+                )
             embed.add_field(
-                name="📋 Vote for Watch Time",
-                value="React with an emoji below to vote for when to watch this movie!",
+                name="🗳️ Vote for Watch Time",
+                value="React below to vote when to watch together!",
                 inline=False
             )
             embed.add_field(
                 name="📊 File Info",
                 value=f"Size: {upload_info['file_size'] / (1024**2):.1f}MB",
-                inline=False
+                inline=True
             )
             embed.set_footer(text="WAN Bot Watch Party")
             
             # Send announcement with @everyone mention
-            msg = await channel.send(f"@everyone", embed=embed)
+            # Build a view with a Watch Now button if we have a URL
+            view = None
+            if watch_link:
+                view = discord.ui.View()
+                view.add_item(discord.ui.Button(
+                    label="▶️ Watch Now",
+                    url=watch_link,
+                    style=discord.ButtonStyle.link
+                ))
+
+            msg = await channel.send("@everyone", embed=embed, view=view)
             
             # Add time voting reactions
             time_options = {
@@ -186,6 +205,7 @@ class GuildUploadManager:
                 "channel_id": channel.id,
                 "uploader": upload_info["username"],
                 "uploader_id": upload_info["user_id"],
+                "watch_link": watch_link,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "votes": {emoji: [] for emoji in time_options.keys()},
                 "time_options": time_options,
@@ -201,7 +221,7 @@ class GuildUploadManager:
             upload_info["announcement_message_id"] = msg.id
             
             logger.info(f"✅ Upload completed: {upload_id}")
-            logger.info(f"✅ Announcement sent to guild {guild_id}")
+            logger.info(f"✅ Announcement sent to guild {guild_id} with watch link: {watch_link}")
             logger.info(f"✅ Poll created with {len(time_options)} time options")
             
             return True
