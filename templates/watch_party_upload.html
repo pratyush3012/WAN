@@ -212,7 +212,22 @@
     <!-- Info -->
     <div class="info-box">
       <i class="fas fa-lightbulb"></i>
-      <span><strong>Tip:</strong> Videos are automatically deleted after 24 hours. Download or re-upload if needed.</span>
+      <span><strong>Tip:</strong> Videos are saved to the database and persist until you delete them.</span>
+    </div>
+  </div>
+
+  <!-- Recent Movies Section -->
+  <div class="card" style="margin-top: 24px;">
+    <div class="header">
+      <h2 style="font-size: 20px; margin-bottom: 16px;">
+        <i class="fas fa-list"></i> Your Movies
+      </h2>
+    </div>
+    <div id="moviesList" style="max-height: 400px; overflow-y: auto;">
+      <div style="text-align: center; color: var(--muted); padding: 24px;">
+        <i class="fas fa-film" style="font-size: 32px; margin-bottom: 12px; display: block;"></i>
+        <p>No movies uploaded yet</p>
+      </div>
     </div>
   </div>
 </div>
@@ -464,6 +479,104 @@ function showSuccess(roomId) {
 
 // Initialize
 switchMode('file');
+
+// Load movies on page load
+document.addEventListener('DOMContentLoaded', loadMovies);
+
+async function loadMovies() {
+  try {
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const response = await fetch(`/api/watch/movies/${serverId}`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      displayMovies(data.movies || []);
+    }
+  } catch (error) {
+    console.error('Error loading movies:', error);
+  }
+}
+
+function displayMovies(movies) {
+  const moviesList = document.getElementById('moviesList');
+  
+  if (!movies || movies.length === 0) {
+    moviesList.innerHTML = `
+      <div style="text-align: center; color: var(--muted); padding: 24px;">
+        <i class="fas fa-film" style="font-size: 32px; margin-bottom: 12px; display: block;"></i>
+        <p>No movies uploaded yet</p>
+      </div>
+    `;
+    return;
+  }
+  
+  moviesList.innerHTML = movies.map(movie => `
+    <div style="background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+      <div style="flex: 1;">
+        <div style="font-weight: 600; margin-bottom: 4px;">${escapeHtml(movie.title)}</div>
+        <div style="font-size: 12px; color: var(--muted);">
+          ${formatBytes(movie.file_size)} • ${new Date(movie.created_at).toLocaleDateString()}
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" style="padding: 6px 12px; flex: 0;" onclick="watchMovie('${movie.id}')">
+          <i class="fas fa-play"></i> Watch
+        </button>
+        <button class="btn btn-secondary" style="padding: 6px 12px; flex: 0; background: rgba(239,68,68,.1); color: var(--danger);" onclick="deleteMovie('${movie.id}', '${escapeHtml(movie.title)}')">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+async function watchMovie(movieId) {
+  try {
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const response = await fetch(`/api/watch/start/${serverId}/${movieId}`, {
+      method: 'POST'
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      window.location.href = `/watch/${data.room_id}`;
+    } else {
+      alert('Failed to start watch party');
+    }
+  } catch (error) {
+    console.error('Error starting watch party:', error);
+    alert('Error starting watch party');
+  }
+}
+
+async function deleteMovie(movieId, title) {
+  if (!confirm(`Delete "${title}"? This cannot be undone.`)) {
+    return;
+  }
+  
+  try {
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const response = await fetch(`/api/watch/delete/${serverId}/${movieId}`, {
+      method: 'DELETE'
+    });
+    
+    if (response.ok) {
+      showValidation('✅ Movie deleted', 'success');
+      setTimeout(loadMovies, 1000);
+    } else {
+      showValidation('❌ Failed to delete movie', 'error');
+    }
+  } catch (error) {
+    console.error('Error deleting movie:', error);
+    showValidation('❌ Error deleting movie', 'error');
+  }
+}
 </script>
 
 </body>

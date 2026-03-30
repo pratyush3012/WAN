@@ -12,6 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from watch_party_config import MAX_UPLOAD_MB, ALLOWED_VIDEO_EXTS, UPLOAD_FOLDER
+from watch_party_movies_db import MovieDatabase
 
 
 class UploadValidator:
@@ -222,3 +223,51 @@ class UploadProgress:
         self.uploaded_bytes += chunk_bytes
         if self.uploaded_bytes > self.total_bytes:
             self.uploaded_bytes = self.total_bytes
+
+
+class UploadManager:
+    """Manage file uploads and database persistence"""
+    
+    @staticmethod
+    def save_uploaded_movie(guild_id: str, title: str, file_path: str, 
+                           file_size: int, uploader_id: str = None,
+                           required_role_id: str = None, duration: int = 0) -> Optional[str]:
+        """
+        Save uploaded movie to database
+        
+        Returns:
+            movie_id if successful, None otherwise
+        """
+        try:
+            movie_id = MovieDatabase.add_movie(
+                guild_id=guild_id,
+                title=title,
+                file_path=file_path,
+                file_size=file_size,
+                duration=duration,
+                uploader_id=uploader_id,
+                required_role_id=required_role_id
+            )
+            
+            if movie_id:
+                logger.info(f"Saved movie {movie_id} to database for guild {guild_id}")
+            
+            return movie_id
+        except Exception as e:
+            logger.error(f"Error saving movie to database: {e}")
+            return None
+    
+    @staticmethod
+    def get_guild_movies(guild_id: str) -> list:
+        """Get all active movies for a guild"""
+        return MovieDatabase.get_guild_movies(guild_id, active_only=True)
+    
+    @staticmethod
+    def delete_movie(movie_id: str) -> bool:
+        """Delete a movie"""
+        return MovieDatabase.delete_movie(movie_id)
+    
+    @staticmethod
+    def create_watch_room(guild_id: str, movie_id: str) -> Optional[str]:
+        """Create a watch room for a movie"""
+        return MovieDatabase.create_watch_room(guild_id, movie_id)
