@@ -77,13 +77,15 @@ Bot will automatically create data directories on first run.
 ```
 
 #### Upload Flow:
-1. Admin uploads movie via `/movie-upload`
-2. Discord announcement sent to server
-3. Community votes on schedule time (reactions)
-4. Owner receives permission request via DM
-5. Owner approves/denies with reactions
-6. Movie auto-starts at scheduled time
-7. Watch party created with live chat and requests
+1. Admin uploads movie via `/movie-upload` or dashboard
+2. **Guild-specific**: Upload only goes to that server
+3. **@everyone announcement** sent to configured upload channel
+4. **Schedule poll** created with 8 time options (6 PM - 1 AM)
+5. Community votes on best time (reactions)
+6. Owner receives approval request via DM
+7. Owner approves/denies with reactions
+8. Movie auto-starts at winning time
+9. Watch party created with live chat and requests
 
 #### Commands:
 ```
@@ -91,6 +93,8 @@ Bot will automatically create data directories on first run.
 /movie-upload              # Upload new movie
 /watch-party               # Create watch party
 /list-movies               # List available movies
+/set-upload-channel <channel>  # Set upload announcement channel
+/upload-status             # Check active uploads
 ```
 
 #### API Endpoints:
@@ -290,10 +294,18 @@ GET    /api/watch/viewers/<room_id>   # Get viewers list
 ### Upload Process
 1. Admin runs `/movie-upload`
 2. Uploads movie file via dashboard
-3. Discord announcement sent to server
-4. Community votes on schedule time
-5. Owner approves/denies upload
-6. Movie auto-starts at winning time
+3. **Guild-specific**: Upload only affects that server
+4. **@everyone announcement** sent to upload channel
+5. Community votes on schedule time
+6. Owner approves/denies upload
+7. Movie auto-starts at winning time
+
+### Guild-Specific Uploads
+- Each server has its own upload channel
+- Configure with `/set-upload-channel <channel>`
+- Uploads only appear in that server
+- No cross-server interference
+- Each guild has separate movie library
 
 ### Schedule Voting
 - **Emoji Reactions**: 🕐 (6 PM) through 🕗 (1 AM)
@@ -303,7 +315,7 @@ GET    /api/watch/viewers/<room_id>   # Get viewers list
 - **Auto-Start**: Movie starts automatically
 
 ### Notification Flow
-1. **Upload Announcement**: "New movie uploaded!"
+1. **Upload Announcement**: "@everyone New movie uploaded!"
 2. **Vote Request**: "React to vote for watch time"
 3. **Permission Request**: Owner gets DM to approve
 4. **Schedule Confirmation**: Owner notified of winning time
