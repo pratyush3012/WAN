@@ -401,12 +401,35 @@ python bot.py
 
 ---
 
+## Reliability & Uptime
+
+### Automatic Crash Recovery
+- Bot automatically restarts on crash (up to 5 attempts)
+- Exponential backoff: 5s → 10s → 20s → 40s → 60s
+- Logs all errors for debugging
+- Never stays offline permanently
+
+### Keep-Alive System
+- Pings health endpoint every 10 minutes
+- Prevents Render from sleeping
+- Tracks consecutive failures
+- Ensures 24/7 availability
+
+### Error Handling
+- Global error handler for all events
+- Graceful error recovery
+- Detailed logging for troubleshooting
+- No silent failures
+
+---
+
 ## Version Info
 
-- **Bot Version**: 2.0
+- **Bot Version**: 2.1
 - **Python**: 3.8+
 - **discord.py**: Latest
-- **Last Updated**: March 2026
+- **Last Updated**: March 30, 2026
+- **Status**: Production Ready with Auto-Recovery ✅
 
 ---
 
