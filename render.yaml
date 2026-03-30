@@ -2,7 +2,7 @@ services:
   - type: web
     name: WAN
     runtime: python
-    buildCommand: apt-get install -y ffmpeg && pip install -r requirements.txt && pip install -U yt-dlp
+    buildCommand: apt-get install -y ffmpeg libopus-dev libffi-dev && pip install -r requirements.txt && pip install -U yt-dlp "discord.py[voice]"
     startCommand: python bot.py
     healthCheckPath: /api/health
     disk:
