@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WAN Bot - Advanced Watch Party</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #fff;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+            padding: 20px;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ─── PLAYER SECTION ─── */
+        .player-section {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow: hidden;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            flex: 1;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .video-container:hover .video-overlay {
+            opacity: 1;
+        }
+
+        .play-button {
+            width: 80px;
+            height: 80px;
+            background: rgba(0, 255, 200, 0.8);
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            transition: all 0.3s;
+        }
+
+        .play-button:hover {
+            background: rgba(0, 255, 200, 1);
+            transform: scale(1.1);
+        }
+
+        /* ─── CONTROLS ─── */
+        .controls {
+            background: rgba(20, 20, 40, 0.9);
+            border-radius: 12px;
+            padding: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 200, 0.2);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            cursor: pointer;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ffc8, #00d4ff);
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        .time-display {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #aaa;
+            margin-bottom: 12px;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: rgba(0, 255, 200, 0.2);
+            border: 1px solid rgba(0, 255, 200, 0.5);
+            color: #00ffc8;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: rgba(0, 255, 200, 0.4);
+            border-color: rgba(0, 255, 200, 0.8);
+            transform: translateY(-2px);
+        }
+
+        .btn.active {
+            background: rgba(0, 255, 200, 0.6);
+            border-color: #00ffc8;
+        }
+
+        .btn.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .btn.danger {
+            color: #ff6b6b;
+            border-color: rgba(255, 107, 107, 0.5);
+            background: rgba(255, 107, 107, 0.1);
+        }
+
+        .btn.danger:hover {
+            background: rgba(255, 107, 107, 0.2);
+            border-color: rgba(255, 107, 107, 0.8);
+        }
+
+        /* ─── SIDEBAR ─── */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow: hidden;
+        }
+
+        .panel {
+            background: rgba(20, 20, 40, 0.9);
+            border-radius: 12px;
+            padding: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 200, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow: hidden;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #00ffc8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid rgba(0, 255, 200, 0.2);
+            padding-bottom: 8px;
+        }
+
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* ─── CHAT ─── */
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-right: 5px;
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: rgba(0, 255, 200, 0.1);
+            border-radius: 3px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 200, 0.4);
+            border-radius: 3px;
+        }
+
+        .message {
+            padding: 8px 10px;
+            background: rgba(0, 255, 200, 0.05);
+            border-left: 3px solid rgba(0, 255, 200, 0.3);
+            border-radius: 4px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .message.owner {
+            border-left-color: #ffd700;
+            background: rgba(255, 215, 0, 0.05);
+        }
+
+        .message.admin {
+            border-left-color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.05);
+        }
+
+        .message.moderator {
+            border-left-color: #51cf66;
+            background: rgba(81, 207, 102, 0.05);
+        }
+
+        .message.member {
+            border-left-color: #00ffc8;
+            background: rgba(0, 255, 200, 0.05);
+        }
+
+        .message.guest {
+            border-left-color: #888;
+            background: rgba(136, 136, 136, 0.05);
+        }
+
+        .message-author {
+            font-weight: bold;
+            font-size: 11px;
+            margin-bottom: 2px;
+        }
+
+        .message-author.owner {
+            color: #ffd700;
+        }
+
+        .message-author.admin {
+            color: #ff6b6b;
+        }
+
+        .message-author.moderator {
+            color: #51cf66;
+        }
+
+        .message-author.member {
+            color: #00ffc8;
+        }
+
+        .message-author.guest {
+            color: #aaa;
+        }
+
+        .message-text {
+            color: #ddd;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 8px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            background: rgba(0, 255, 200, 0.1);
+            border: 1px solid rgba(0, 255, 200, 0.3);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .chat-input input:focus {
+            outline: none;
+            border-color: rgba(0, 255, 200, 0.8);
+            background: rgba(0, 255, 200, 0.15);
+        }
+
+        .chat-input button {
+            background: rgba(0, 255, 200, 0.3);
+            border: 1px solid rgba(0, 255, 200, 0.5);
+            color: #00ffc8;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .chat-input button:hover {
+            background: rgba(0, 255, 200, 0.5);
+        }
+
+        /* ─── REQUESTS ─── */
+        .request-item {
+            padding: 10px;
+            background: rgba(0, 255, 200, 0.05);
+            border: 1px solid rgba(0, 255, 200, 0.2);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .request-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .request-user {
+            font-weight: bold;
+            color: #00ffc8;
+        }
+
+        .request-action {
+            color: #aaa;
+        }
+
+        .request-buttons {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .request-buttons button {
+            flex: 1;
+            padding: 6px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.3s;
+        }
+
+        .approve-btn {
+            background: rgba(81, 207, 102, 0.3);
+            color: #51cf66;
+        }
+
+        .approve-btn:hover {
+            background: rgba(81, 207, 102, 0.6);
+        }
+
+        .reject-btn {
+            background: rgba(255, 107, 107, 0.3);
+            color: #ff6b6b;
+        }
+
+        .reject-btn:hover {
+            background: rgba(255, 107, 107, 0.6);
+        }
+
+        /* ─── VIEWERS ─── */
+        .viewer-item {
+            padding: 8px;
+            background: rgba(0, 255, 200, 0.05);
+            border-radius: 4px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .viewer-badge {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #00ffc8;
+        }
+
+        .viewer-badge.owner {
+            background: #ffd700;
+        }
+
+        .viewer-badge.admin {
+            background: #ff6b6b;
+        }
+
+        .viewer-badge.moderator {
+            background: #51cf66;
+        }
+
+        /* ─── REACTIONS ─── */
+        .reactions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .reaction {
+            background: rgba(0, 255, 200, 0.1);
+            border: 1px solid rgba(0, 255, 200, 0.3);
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .reaction:hover {
+            background: rgba(0, 255, 200, 0.3);
+        }
+
+        .reaction.active {
+            background: rgba(0, 255, 200, 0.5);
+            border-color: #00ffc8;
+        }
+
+        /* ─── SCHEDULE ─── */
+        .schedule-item {
+            padding: 10px;
+            background: rgba(0, 255, 200, 0.05);
+            border: 1px solid rgba(0, 255, 200, 0.2);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .schedule-time {
+            color: #00ffc8;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .schedule-movie {
+            color: #aaa;
+        }
+
+        .countdown {
+            color: #ff6b6b;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+
+        /* ─── ANIMATIONS ─── */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message, .request-item, .viewer-item {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .btn:active {
+            animation: pulse 0.3s;
+        }
+
+        /* ─── RESPONSIVE ─── */
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                max-height: 300px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+                gap: 10px;
+            }
+
+            .sidebar {
+                grid-template-columns: 1fr;
+            }
+
+            .control-buttons {
+                gap: 5px;
+            }
+
+            .btn {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- PLAYER SECTION -->
+        <div class="player-section">
+            <div class="video-container">
+                <video id="player" controls>
+                    <source src="" type="video/mp4">
+                </video>
+                <div class="video-overlay">
+                    <button class="play-button" id="playOverlay">▶</button>
+                </div>
+            </div>
+
+            <!-- CONTROLS -->
+            <div class="controls">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="time-display">
+                    <span id="currentTime">0:00</span>
+                    <span id="duration">0:00</span>
+                </div>
+                <div class="control-buttons">
+                    <button class="btn" id="playBtn">▶ Play</button>
+                    <button class="btn" id="pauseBtn">⏸ Pause</button>
+                    <button class="btn" id="rewindBtn">⏮ -10s</button>
+                    <button class="btn" id="forwardBtn">⏭ +10s</button>
+                    <button class="btn" id="volumeBtn">🔊 Volume</button>
+                    <button class="btn" id="fullscreenBtn">⛶ Fullscreen</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SIDEBAR -->
+        <div class="sidebar">
+            <!-- CHAT PANEL -->
+            <div class="panel">
+                <div class="panel-title">💬 Live Chat</div>
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="Send message...">
+                    <button id="sendBtn">Send</button>
+                </div>
+            </div>
+
+            <!-- REQUESTS PANEL -->
+            <div class="panel">
+                <div class="panel-title">📋 Requests</div>
+                <div class="panel-content" id="requestsList"></div>
+            </div>
+
+            <!-- VIEWERS PANEL -->
+            <div class="panel">
+                <div class="panel-title">👥 Viewers</div>
+                <div class="panel-content" id="viewersList"></div>
+            </div>
+
+            <!-- SCHEDULE PANEL -->
+            <div class="panel">
+                <div class="panel-title">📅 Schedule</div>
+                <div class="panel-content" id="scheduleList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+        const player = document.getElementById('player');
+        const roomId = new URLSearchParams(window.location.search).get('room_id');
+        const userId = new URLSearchParams(window.location.search).get('user_id');
+        const userRole = new URLSearchParams(window.location.search).get('role') || 'guest';
+
+        // ─── PLAYER CONTROLS ─── 
+        document.getElementById('playBtn').addEventListener('click', () => {
+            player.play();
+            socket.emit('playback_update', { room_id: roomId, action: 'play' });
+        });
+
+        document.getElementById('pauseBtn').addEventListener('click', () => {
+            player.pause();
+            socket.emit('playback_update', { room_id: roomId, action: 'pause' });
+        });
+
+        document.getElementById('rewindBtn').addEventListener('click', () => {
+            player.currentTime = Math.max(0, player.currentTime - 10);
+        });
+
+        document.getElementById('forwardBtn').addEventListener('click', () => {
+            player.currentTime = Math.min(player.duration, player.currentTime + 10);
+        });
+
+        document.getElementById('fullscreenBtn').addEventListener('click', () => {
+            if (player.requestFullscreen) {
+                player.requestFullscreen();
+            }
+        });
+
+        // ─── PROGRESS BAR ─── 
+        player.addEventListener('timeupdate', () => {
+            const percent = (player.currentTime / player.duration) * 100;
+            document.getElementById('progressFill').style.width = percent + '%';
+            document.getElementById('currentTime').textContent = formatTime(player.currentTime);
+            document.getElementById('duration').textContent = formatTime(player.duration);
+        });
+
+        document.querySelector('.progress-bar').addEventListener('click', (e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const percent = (e.clientX - rect.left) / rect.width;
+            player.currentTime = percent * player.duration;
+        });
+
+        // ─── CHAT ─── 
+        document.getElementById('sendBtn').addEventListener('click', sendMessage);
+        document.getElementById('chatInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            socket.emit('send_message', {
+                room_id: roomId,
+                user_id: userId,
+                message: message
+            });
+
+            input.value = '';
+        }
+
+        socket.on('new_message', (data) => {
+            const messagesDiv = document.getElementById('chatMessages');
+            const msgEl = document.createElement('div');
+            msgEl.className = `message ${data.role}`;
+            msgEl.innerHTML = `
+                <div class="message-author ${data.role}">${data.username}</div>
+                <div class="message-text">${escapeHtml(data.message)}</div>
+            `;
+            messagesDiv.appendChild(msgEl);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+
+        // ─── REQUESTS ─── 
+        socket.on('update_requests', (data) => {
+            const requestsList = document.getElementById('requestsList');
+            requestsList.innerHTML = '';
+
+            data.requests.forEach(req => {
+                const reqEl = document.createElement('div');
+                reqEl.className = 'request-item';
+                reqEl.innerHTML = `
+                    <div class="request-header">
+                        <span class="request-user">${req.username}</span>
+                        <span class="request-action">${req.action}</span>
+                    </div>
+                    ${['admin', 'owner'].includes(userRole) ? `
+                        <div class="request-buttons">
+                            <button class="approve-btn" onclick="approveRequest('${req.id}')">✓ Approve</button>
+                            <button class="reject-btn" onclick="rejectRequest('${req.id}')">✗ Reject</button>
+                        </div>
+                    ` : ''}
+                `;
+                requestsList.appendChild(reqEl);
+            });
+        });
+
+        function approveRequest(requestId) {
+            socket.emit('approve_request', { room_id: roomId, request_id: requestId });
+        }
+
+        function rejectRequest(requestId) {
+            socket.emit('reject_request', { room_id: roomId, request_id: requestId });
+        }
+
+        // ─── VIEWERS ─── 
+        socket.on('update_viewers', (data) => {
+            const viewersList = document.getElementById('viewersList');
+            viewersList.innerHTML = '';
+
+            data.viewers.forEach(viewer => {
+                const viewerEl = document.createElement('div');
+                viewerEl.className = 'viewer-item';
+                viewerEl.innerHTML = `
+                    <div class="viewer-badge ${viewer.role}"></div>
+                    <span>${viewer.username}</span>
+                `;
+                viewersList.appendChild(viewerEl);
+            });
+        });
+
+        // ─── UTILITIES ─── 
+        function formatTime(seconds) {
+            if (!seconds || isNaN(seconds)) return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ─── INIT ─── 
+        socket.emit('join_room', { room_id: roomId, user_id: userId });
+    </script>
+</body>
+</html>
