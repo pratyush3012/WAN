@@ -4373,6 +4373,81 @@ def watch_close_room(room_id):
     return jsonify({"success": True})
 
 
+@app.route("/api/watch/movies/<server_id>")
+@require_auth
+def watch_list_movies(server_id):
+    """List all uploaded movies for a server (persisted in DB)."""
+    from watch_party_movies_db import MovieDatabase
+    movies = MovieDatabase.get_guild_movies(str(server_id), active_only=True)
+    # Also include in-memory rooms that have a file (uploaded this session)
+    session_movies = []
+    for room in _watch_rooms.values():
+        if str(room.guild_id) == str(server_id) and getattr(room, "file_path", None):
+            session_movies.append({
+                "id": room.room_id,
+                "title": room.title,
+                "file_size": os.path.getsize(room.file_path) if os.path.exists(room.file_path) else 0,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "room_id": room.room_id,
+            })
+    # Merge, deduplicate by id
+    all_ids = {m.get("id") or m.get("movie_id") for m in movies}
+    for m in session_movies:
+        if m["id"] not in all_ids:
+            movies.append(m)
+    return jsonify({"movies": movies})
+
+
+@app.route("/api/watch/start/<server_id>/<movie_id>", methods=["POST"])
+@require_auth
+def watch_start_movie(server_id, movie_id):
+    """Start a watch party for an existing movie."""
+    from watch_party_movies_db import MovieDatabase
+    # Check if room already exists for this movie
+    for room in _watch_rooms.values():
+        if str(room.guild_id) == str(server_id) and room.room_id == movie_id:
+            return jsonify({"room_id": room.room_id, "room": room.to_dict()})
+    # Look up movie in DB
+    movie = MovieDatabase.get_movie(movie_id)
+    if not movie:
+        # Try in-memory rooms (uploaded this session)
+        room = _watch_rooms.get(movie_id)
+        if room:
+            return jsonify({"room_id": room.room_id, "room": room.to_dict()})
+        return jsonify({"error": "Movie not found"}), 404
+    # Create a new room for this movie
+    room_id = movie_id  # reuse movie_id as room_id for simplicity
+    room = WatchRoom(
+        room_id=room_id,
+        guild_id=server_id,
+        title=movie.get("title", "Movie"),
+        video_url=f"/watch/stream/{room_id}",
+        host_id=session.get("user_id", "unknown"),
+        host_name=session.get("username", "Host"),
+    )
+    room.file_path = movie.get("file_path", "")
+    _watch_rooms[room_id] = room
+    MovieDatabase.update_movie_views(movie_id)
+    return jsonify({"room_id": room_id, "room": room.to_dict()})
+
+
+@app.route("/api/watch/delete/<server_id>/<movie_id>", methods=["DELETE", "POST"])
+@require_auth
+def watch_delete_movie(server_id, movie_id):
+    """Delete a movie."""
+    from watch_party_movies_db import MovieDatabase
+    # Remove from in-memory rooms
+    room = _watch_rooms.pop(movie_id, None)
+    if room and room.file_path and os.path.exists(room.file_path):
+        try:
+            os.remove(room.file_path)
+        except Exception:
+            pass
+    # Remove from DB
+    MovieDatabase.delete_movie(movie_id)
+    return jsonify({"success": True})
+
+
 @app.route("/watch/upload")
 @require_auth
 def watch_upload_page():

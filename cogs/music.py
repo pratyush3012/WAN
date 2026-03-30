@@ -499,14 +499,19 @@ class Music(commands.Cog):
 
     # ── Voice join ──────────────────────────────────────────────────────────────
     async def _join_voice(self, guild, author, send_fn):
-        if not hasattr(author, "voice") or author.voice is None:
+        """Join the author's voice channel. send_fn must be an async callable."""
+        if not hasattr(author, "voice") or author.voice is None or author.voice.channel is None:
             await send_fn("❌ Join a voice channel first.")
             return None
         vc = guild.voice_client
-        if vc is None:
-            vc = await author.voice.channel.connect()
-        elif vc.channel != author.voice.channel:
-            await vc.move_to(author.voice.channel)
+        try:
+            if vc is None:
+                vc = await author.voice.channel.connect()
+            elif vc.channel != author.voice.channel:
+                await vc.move_to(author.voice.channel)
+        except Exception as e:
+            await send_fn(f"❌ Could not join voice channel: {e}")
+            return None
         return vc
 
     # ── Fetch song ──────────────────────────────────────────────────────────────
@@ -754,9 +759,11 @@ class Music(commands.Cog):
     @app_commands.describe(query="Song name, YouTube URL, or Spotify URL")
     async def slash_play(self, interaction: discord.Interaction, query: str):
         await interaction.response.defer()
-        vc = await self._join_voice(
-            interaction.guild, interaction.user,
-            lambda m: interaction.followup.send(m, ephemeral=True))
+
+        async def _send_err(msg):
+            await interaction.followup.send(msg, ephemeral=True)
+
+        vc = await self._join_voice(interaction.guild, interaction.user, _send_err)
         if not vc:
             return
         gp = self._get_player(interaction.guild.id)
