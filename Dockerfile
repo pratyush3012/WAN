@@ -1,7 +1,5 @@
 FROM python:3.11-slim
 
-# Install system dependencies including ffmpeg and libopus for voice/music
-# cache-bust: v3
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
@@ -15,14 +13,13 @@ RUN apt-get update && \
 WORKDIR /app
 
 COPY requirements.txt .
-# cache-bust: v7 - fix debug endpoint + health check cookie path
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -U yt-dlp "discord.py[voice]"
 
 COPY . .
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data /app/uploads
 
-# Render injects PORT env var; expose it (actual value set at runtime)
 EXPOSE 10000
 
-CMD ["gunicorn", "--worker-class", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker", "--workers", "1", "--bind", "0.0.0.0:10000", "--timeout", "120", "wsgi:app"]
+CMD ["python", "bot.py"]
