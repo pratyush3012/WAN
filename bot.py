@@ -450,11 +450,13 @@ async def main():
     while retry_count < max_retries:
         try:
             async with bot:
-                token = os.getenv('DISCORD_TOKEN')
+                token = os.getenv('DISCORD_TOKEN', '').strip()
                 if not token:
                     logger.critical("❌ DISCORD_TOKEN not found in environment variables")
                     await asyncio.sleep(30)
                     continue
+                # Log token info for debugging (first 10 chars only)
+                logger.info(f"🔑 Token loaded: {token[:10]}... (len={len(token)})")
                 logger.info(f"🚀 Starting bot (attempt {retry_count + 1})...")
                 await bot.start(token)
         except KeyboardInterrupt:
