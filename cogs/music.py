@@ -450,11 +450,54 @@ class Music(commands.Cog):
             self._players[guild_id] = GuildPlayer()
         return self._players[guild_id]
 
+    # ── Restore dashboard on ready ──────────────────────────────────────────────
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Restore music dashboards after restart."""
+        # Try to load opus manually (needed on some Linux/Render deployments)
+        if not discord.opus.is_loaded():
+            for lib in ("libopus.so.0", "libopus.so", "libopus", "opus"):
+                try:
+                    discord.opus.load_opus(lib)
+                    logger.info(f"✅ Loaded opus: {lib}")
+                    break
+                except Exception:
+                    pass
+            if not discord.opus.is_loaded():
+                logger.warning("⚠️ Opus not loaded — voice may not work. Install libopus-dev.")
+
+        # Restore saved dashboards
+        for guild in self.bot.guilds:
+            try:
+                data = await get_setting(guild.id, "music_dashboard", None)
+                if not data:
+                    continue
+                ch = guild.get_channel(int(data["channel_id"]))
+                if not ch:
+                    continue
+                gp = self._get_player(guild.id)
+                gp.dash_channel_id = int(data["channel_id"])
+                gp.dash_message_id = int(data["message_id"])
+                # Try to edit the existing message to confirm it still exists
+                try:
+                    msg = await ch.fetch_message(gp.dash_message_id)
+                    await msg.edit(embed=_idle_embed(), view=MusicControls(self, guild.id))
+                    logger.info(f"✅ Restored music dashboard in {guild.name}")
+                except discord.NotFound:
+                    # Message deleted — recreate it
+                    msg = await ch.send(embed=_idle_embed(), view=MusicControls(self, guild.id))
+                    gp.dash_message_id = msg.id
+                    await set_setting(guild.id, "music_dashboard", {
+                        "channel_id": ch.id, "message_id": msg.id})
+                    logger.info(f"✅ Recreated music dashboard in {guild.name}")
+            except Exception as e:
+                logger.debug(f"Dashboard restore error {guild.name}: {e}")
+
     # ── Live embed update (every 15s) ───────────────────────────────────────────
     @tasks.loop(seconds=15)
     async def _update_task(self):
         for guild_id, gp in list(self._players.items()):
-            if not gp.dash_channel_id or not gp.dash_message_id:
+            if not gp.dash_channel_id:
                 continue
             guild = self.bot.get_guild(guild_id)
             if not guild:
@@ -462,15 +505,25 @@ class Music(commands.Cog):
             ch = guild.get_channel(gp.dash_channel_id)
             if not ch:
                 continue
+            embed = gp.current.player_embed(gp) if gp.current else _idle_embed()
+            view  = MusicControls(self, guild_id)
             try:
-                msg = await ch.fetch_message(gp.dash_message_id)
-                embed = gp.current.player_embed(gp) if gp.current else _idle_embed()
-                view  = MusicControls(self, guild_id)
-                await msg.edit(embed=embed, view=view)
+                if gp.dash_message_id:
+                    msg = await ch.fetch_message(gp.dash_message_id)
+                    await msg.edit(embed=embed, view=view)
+                else:
+                    raise discord.NotFound(None, "no message id")
             except discord.NotFound:
-                gp.dash_message_id = None
+                # Dashboard message was deleted — recreate it
+                try:
+                    msg = await ch.send(embed=embed, view=view)
+                    gp.dash_message_id = msg.id
+                    await set_setting(guild_id, "music_dashboard", {
+                        "channel_id": ch.id, "message_id": msg.id})
+                except Exception as ex:
+                    logger.debug(f"Dashboard recreate error: {ex}")
             except Exception as ex:
-                logger.debug(f"Dashboard update: {ex}")
+                logger.debug(f"Dashboard update error: {ex}")
 
     @_update_task.before_loop
     async def _before_update(self):
@@ -485,13 +538,18 @@ class Music(commands.Cog):
             guild = self.bot.get_guild(guild_id)
             if not guild:
                 continue
-            if guild.voice_client is None:
+            vc = guild.voice_client
+            if vc is None:
                 ch = guild.get_channel(gp.vc_channel_id)
                 if ch:
                     try:
                         await ch.connect()
+                        logger.info(f"✅ 24/7 reconnected to {ch.name} in {guild.name}")
                     except Exception as ex:
-                        logger.debug(f"24/7 reconnect: {ex}")
+                        logger.warning(f"24/7 reconnect failed {guild.name}: {ex}")
+            elif not vc.is_playing() and not vc.is_paused() and gp.autoplay and not gp.current:
+                # In 24/7 mode with nothing playing — try autoplay
+                pass  # autoplay handles this via _play_next
 
     @_247_task.before_loop
     async def _before_247(self):
@@ -769,15 +827,17 @@ class Music(commands.Cog):
         gp = self._get_player(interaction.guild.id)
         if gp.mode_247:
             gp.vc_channel_id = vc.channel.id
+
+        await interaction.followup.send(f"🔍 Searching **{query}**...")
         song = await self._fetch_song(query, interaction.user)
         if not song:
-            await interaction.followup.send(
-                "❌ Couldn't find that song. Try a more specific name or a direct URL.")
+            await interaction.followup.send("❌ Couldn't find that song. Try a more specific name or a direct URL.")
             return
+
         gp.queue.append(song)
         if not vc.is_playing() and not vc.is_paused():
             self._play_next(interaction.channel, interaction.guild, gp)
-            await interaction.followup.send(f"▶️ Now playing: **{song.title}**")
+            await interaction.followup.send(embed=song.simple_embed())
         else:
             e = discord.Embed(title="➕ Added to Queue",
                               description=f"[{song.title}]({song.webpage})" if song.webpage else song.title,
