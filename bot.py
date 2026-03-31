@@ -463,19 +463,13 @@ async def main():
         except discord.LoginFailure as e:
             retry_count += 1
             logger.error(f"❌ Invalid token (attempt {retry_count}): {e}")
-            logger.info("🔄 Waiting 60s before retry...")
-            await asyncio.sleep(60)
+            await asyncio.sleep(10)
             bot = GamingBot()
         except discord.errors.HTTPException as e:
             retry_count += 1
-            if e.status == 429:
-                # Rate limited by Cloudflare — wait 30 minutes, stop making it worse
-                logger.error(f"❌ Rate limited (429). Waiting 1800s (30 min) before retry...")
-                await asyncio.sleep(1800)
-            else:
-                logger.error(f"❌ HTTP error (attempt {retry_count}): {e}")
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 120)
+            logger.error(f"❌ HTTP {e.status} (attempt {retry_count}): {e}")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60)
             bot = GamingBot()
         except Exception as e:
             retry_count += 1
