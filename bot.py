@@ -469,9 +469,9 @@ async def main():
         except discord.errors.HTTPException as e:
             retry_count += 1
             if e.status == 429:
-                # Rate limited — wait 5 minutes, stop hammering Discord
-                logger.error(f"❌ Rate limited by Discord (attempt {retry_count}). Waiting 300s...")
-                await asyncio.sleep(300)
+                # Rate limited by Cloudflare — wait 30 minutes, stop making it worse
+                logger.error(f"❌ Rate limited (429). Waiting 1800s (30 min) before retry...")
+                await asyncio.sleep(1800)
             else:
                 logger.error(f"❌ HTTP error (attempt {retry_count}): {e}")
                 await asyncio.sleep(retry_delay)
