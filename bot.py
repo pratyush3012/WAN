@@ -443,9 +443,9 @@ async def main():
         else:
             logger.info("✅ Dashboard is up and serving")
 
-    max_retries = 5
+    max_retries = 999  # Effectively infinite — only stop on keyboard interrupt or bad token
     retry_count = 0
-    retry_delay = 5  # Start with 5 seconds
+    retry_delay = 5
 
     while retry_count < max_retries:
         try:
@@ -453,25 +453,28 @@ async def main():
                 token = os.getenv('DISCORD_TOKEN')
                 if not token:
                     logger.critical("❌ DISCORD_TOKEN not found in environment variables")
-                    return
-                logger.info(f"🚀 Starting bot (attempt {retry_count + 1}/{max_retries})...")
+                    await asyncio.sleep(30)
+                    continue
+                logger.info(f"🚀 Starting bot (attempt {retry_count + 1})...")
                 await bot.start(token)
         except KeyboardInterrupt:
             logger.info("⚠️ Received keyboard interrupt")
             break
+        except discord.LoginFailure as e:
+            # Bad token — wait longer and retry (token may have just been updated)
+            retry_count += 1
+            logger.error(f"❌ Invalid token (attempt {retry_count}): {e}")
+            logger.info("🔄 Waiting 30s before retry (token may have just been updated in env)...")
+            await asyncio.sleep(30)
+            bot = GamingBot()
         except Exception as e:
             retry_count += 1
-            logger.error(f"❌ Bot error (attempt {retry_count}/{max_retries}): {e}", exc_info=True)
-            
-            if retry_count < max_retries:
-                logger.info(f"🔄 Restarting bot in {retry_delay} seconds...")
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 60)  # Exponential backoff, max 60 seconds
-                bot = GamingBot()  # Create new bot instance
-            else:
-                logger.critical(f"❌ Bot failed {max_retries} times. Giving up.")
-                break
-    
+            logger.error(f"❌ Bot error (attempt {retry_count}): {e}", exc_info=True)
+            logger.info(f"🔄 Restarting bot in {retry_delay} seconds...")
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60)
+            bot = GamingBot()
+
     logger.info("👋 Bot shutdown complete")
 
 if __name__ == '__main__':
