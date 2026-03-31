@@ -349,15 +349,74 @@ function fmt(s) {
   return `${m}:${String(sec).padStart(2,'0')}`;
 }
 
-// ── SONG TRANSITION (Apple Music style) ───────────────────────────────────────
+// ── APPLE MUSIC AUDIO CROSSFADE ───────────────────────────────────────────────
+// Simulates the Apple Music volume duck: fade out → show transition → fade in
+let crossfadeActive = false;
+let targetVolume = 80;
+
+async function appleMusicCrossfade(title, artist, thumb, onMidpoint) {
+  if (crossfadeActive) return;
+  crossfadeActive = true;
+  targetVolume = parseInt(document.getElementById('volSl').value) || 80;
+
+  // Phase 1: Fade volume down (400ms)
+  await fadeVolume(targetVolume, 0, 400);
+
+  // Phase 2: Show visual transition + swap art
+  const ov = document.getElementById('transOverlay');
+  const art = document.getElementById('transArt');
+  document.getElementById('transTitle').textContent = title;
+  document.getElementById('transArtist').textContent = artist;
+  art.src = thumb || '';
+  ov.classList.add('show');
+
+  if (onMidpoint) onMidpoint();
+
+  // Phase 3: Hold for 1.2s
+  await sleep(1200);
+
+  // Phase 4: Fade volume back up (600ms)
+  await fadeVolume(0, targetVolume, 600);
+
+  // Phase 5: Hide overlay
+  ov.classList.remove('show');
+  crossfadeActive = false;
+}
+
+function fadeVolume(from, to, durationMs) {
+  return new Promise(resolve => {
+    const steps = 30;
+    const stepTime = durationMs / steps;
+    const delta = (to - from) / steps;
+    let current = from;
+    let step = 0;
+    const interval = setInterval(() => {
+      current += delta;
+      step++;
+      const clamped = Math.max(0, Math.min(100, Math.round(current)));
+      document.getElementById('volSl').value = clamped;
+      document.getElementById('bbVol').value = clamped;
+      // Tell the bot to adjust volume
+      if (step % 5 === 0) {
+        API('/music/control', 'POST', { action: 'volume', value: clamped }).catch(() => {});
+      }
+      if (step >= steps) {
+        clearInterval(interval);
+        resolve();
+      }
+    }, stepTime);
+  });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── SONG TRANSITION (visual only, called when no audio crossfade) ─────────────
 function playTransition(title, artist, thumb) {
   const ov = document.getElementById('transOverlay');
   const art = document.getElementById('transArt');
-  const ttl = document.getElementById('transTitle');
-  const atr = document.getElementById('transArtist');
+  document.getElementById('transTitle').textContent = title;
+  document.getElementById('transArtist').textContent = artist;
   art.src = thumb || '';
-  ttl.textContent = title;
-  atr.textContent = artist;
   ov.classList.add('show');
   setTimeout(() => ov.classList.remove('show'), 2200);
 }
@@ -371,9 +430,12 @@ function updateUI(data) {
   state.loop = data.loop;
   state.volume = data.volume;
 
-  // Sync volume sliders
-  document.getElementById('volSl').value = data.volume;
-  document.getElementById('bbVol').value = data.volume;
+  // Sync volume sliders (only if not in crossfade)
+  if (!crossfadeActive) {
+    document.getElementById('volSl').value = data.volume;
+    document.getElementById('bbVol').value = data.volume;
+    targetVolume = data.volume;
+  }
 
   // Loop button state
   document.getElementById('loopBtn').classList.toggle('active', data.loop);
@@ -385,7 +447,6 @@ function updateUI(data) {
   document.getElementById('bbPlayIcon').className = `fas ${icon}`;
 
   if (!cur) {
-    // Nothing playing
     document.getElementById('heroIdle').style.display = 'block';
     document.getElementById('heroTrack').style.display = 'none';
     document.getElementById('heroArt').src = '';
@@ -399,26 +460,24 @@ function updateUI(data) {
     return;
   }
 
-  // Song changed — trigger transition
+  // Song changed — Apple Music crossfade
   if (cur.title !== wasTitle && wasTitle !== null) {
-    playTransition(cur.title, cur.uploader || cur.requester, cur.thumbnail);
-    // Animate album art
-    const heroArt = document.getElementById('heroArt');
-    const bbArt = document.getElementById('bbArt');
-    heroArt.classList.add('transitioning');
-    bbArt.classList.add('transitioning');
-    setTimeout(() => {
-      heroArt.src = cur.thumbnail || '';
-      bbArt.src = cur.thumbnail || '';
-      heroArt.classList.remove('transitioning');
-      bbArt.classList.remove('transitioning');
-    }, 400);
-    // Update background blur
-    setTimeout(() => {
-      document.getElementById('heroBg').style.backgroundImage = `url('${cur.thumbnail}')`;
-    }, 300);
+    appleMusicCrossfade(cur.title, cur.uploader || cur.requester, cur.thumbnail, () => {
+      // Swap art at midpoint
+      const heroArt = document.getElementById('heroArt');
+      const bbArt = document.getElementById('bbArt');
+      heroArt.classList.add('transitioning');
+      bbArt.classList.add('transitioning');
+      setTimeout(() => {
+        heroArt.src = cur.thumbnail || '';
+        bbArt.src = cur.thumbnail || '';
+        heroArt.classList.remove('transitioning');
+        bbArt.classList.remove('transitioning');
+        document.getElementById('heroBg').style.backgroundImage = `url('${cur.thumbnail}')`;
+      }, 300);
+    });
   } else if (cur.title !== wasTitle) {
-    // First song
+    // First song — no crossfade, just set
     document.getElementById('heroArt').src = cur.thumbnail || '';
     document.getElementById('bbArt').src = cur.thumbnail || '';
     document.getElementById('heroBg').style.backgroundImage = `url('${cur.thumbnail}')`;

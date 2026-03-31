@@ -27,17 +27,20 @@ SC_OPTS = {
     "format": "bestaudio/best", "noplaylist": True,
     "quiet": True, "no_warnings": True,
     "source_address": "0.0.0.0", "skip_download": True,
+    "socket_timeout": 15,
 }
 YT_OPTS = {
-    "format": "bestaudio/best", "noplaylist": True,
+    "format": "bestaudio[ext=webm]/bestaudio/best", "noplaylist": True,
     "quiet": True, "no_warnings": True,
     "source_address": "0.0.0.0", "skip_download": True,
-    "extractor_args": {"youtube": {"player_client": ["android_vr"]}},
+    "extractor_args": {"youtube": {"player_client": ["android_vr", "web"]}},
     "geo_bypass": True, "geo_bypass_country": "US",
+    "socket_timeout": 15,
 }
+# FIX: Increased reconnect_delay_max from 5 → 30, added buffer_size
 FFMPEG_OPTS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn",
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 30 -bufsize 8192k",
+    "options": "-vn -b:a 128k",
 }
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -97,8 +100,10 @@ def _sc_search(query: str) -> dict | None:
         info = ytdl.extract_info(f"scsearch:{query}", download=False)
         if not info or not info.get("entries"):
             return None
-        e = info["entries"][0]
-        return e if e and e.get("url") else None
+        for e in info["entries"]:
+            if e and e.get("url"):
+                return e
+        return None
     except Exception as ex:
         logger.warning(f"SC '{query}': {ex}")
         return None
@@ -106,36 +111,20 @@ def _sc_search(query: str) -> dict | None:
 def _yt_search(query: str, is_url: bool = False) -> dict | None:
     ytdl = yt_dlp.YoutubeDL(YT_OPTS)
     try:
-        search = query if is_url else f"ytsearch:{query}"
+        search = query if is_url else f"ytsearch3:{query}"
         info = ytdl.extract_info(search, download=False)
         if not info:
             return None
-        
-        # Handle search results
-        if "entries" in info:
-            entries = [e for e in info["entries"] if e and e.get("url")]
-            if not entries:
-                return None
-            
-            # Try each entry until we get valid data
-            for entry in entries:
-                try:
-                    url = entry.get("webpage_url") or entry.get("url")
-                    if not url:
-                        continue
-                    
-                    # Try to extract full info from this entry
-                    full_info = ytdl.extract_info(url, download=False)
-                    if full_info and full_info.get("url"):
-                        return full_info
-                except Exception:
-                    continue
-            
-            # Fallback: return first entry even if extraction failed
-            return entries[0] if entries else None
-        
-        # Direct URL result
-        return info if info and info.get("url") else None
+
+        entries = info.get("entries") if "entries" in info else [info]
+        entries = [e for e in entries if e and e.get("url")]
+
+        for entry in entries:
+            # Validate the entry has a real stream URL
+            if entry.get("url") and entry.get("title"):
+                return entry
+
+        return None
     except Exception as ex:
         logger.warning(f"YT '{query}': {ex}")
         return None
@@ -573,25 +562,45 @@ class Music(commands.Cog):
         return vc
 
     # ── Fetch song ──────────────────────────────────────────────────────────────
-    async def _fetch_song(self, query: str, requester) -> Song:
+    async def _fetch_song(self, query: str, requester) -> "Song | None":
         if "spotify.com" in query:
             query = _spotify_to_search(query)
+
         is_url = query.startswith("http://") or query.startswith("https://")
         is_yt  = is_url and ("youtube.com" in query or "youtu.be" in query)
+        is_sc  = is_url and "soundcloud.com" in query
         loop   = asyncio.get_running_loop()
         data   = None
+
+        # Strategy 1: Direct URL
         if is_yt:
             data = await loop.run_in_executor(None, lambda: _yt_search(query, is_url=True))
-        elif is_url and "soundcloud.com" in query:
+        elif is_sc:
             data = await loop.run_in_executor(None, lambda: _sc_search(query))
-        else:
-            data = await loop.run_in_executor(None, lambda: _sc_search(query))
-            if not data:
-                data = await loop.run_in_executor(None, lambda: _yt_search(query))
+
+        # Strategy 2: SoundCloud search (best quality for music)
         if not data:
+            data = await loop.run_in_executor(None, lambda: _sc_search(query))
+
+        # Strategy 3: YouTube search (fallback)
+        if not data:
+            data = await loop.run_in_executor(None, lambda: _yt_search(query))
+
+        # Strategy 4: Try with "official audio" appended (helps with songs like Ilzaam)
+        if not data and not is_url:
+            data = await loop.run_in_executor(None, lambda: _sc_search(f"{query} official audio"))
+        if not data and not is_url:
+            data = await loop.run_in_executor(None, lambda: _yt_search(f"{query} official audio"))
+
+        if not data:
+            logger.warning(f"_fetch_song: No results for '{query}'")
             return None
+
         s = Song(data, requester)
-        return s if s.stream_url else None
+        if not s.stream_url:
+            logger.warning(f"_fetch_song: No stream URL for '{query}' (title={s.title})")
+            return None
+        return s
 
     # ── Playback ────────────────────────────────────────────────────────────────
     def _play_next(self, channel, guild, gp: GuildPlayer):
@@ -635,10 +644,10 @@ class Music(commands.Cog):
     def _start_song(self, channel, guild, gp: GuildPlayer, song: Song):
         vc = guild.voice_client
         if not vc:
+            gp.vc_playing = False
             return
-        song.started_at = time.time()
-        gp.current = song
-        gp.vc_playing = True
+
+        # FIX: Build FFmpeg source BEFORE setting gp.current
         try:
             source = discord.PCMVolumeTransformer(
                 discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTS),
@@ -646,20 +655,37 @@ class Music(commands.Cog):
             )
         except Exception as e:
             logger.error(f"FFmpeg error '{song.title}': {e}")
-            gp.current = None
-            self._play_next(channel, guild, gp)
+            # Skip to next song without marking this as current
+            asyncio.run_coroutine_threadsafe(
+                self._skip_to_next(channel, guild, gp), self.bot.loop)
             return
+
+        # Only set current AFTER source is ready
+        song.started_at = time.time()
+        gp.current = song
+        gp.vc_playing = True
 
         def _after(error):
             if error:
-                logger.error(f"Player error: {error}")
+                logger.error(f"Player error '{song.title}': {error}")
+            gp.vc_playing = False
             self._play_next(channel, guild, gp)
 
         vc.play(source, after=_after)
-        # Only send now-playing message if NOT in the dashboard channel
+
+        # Send now-playing only if not in dashboard channel
         if channel and gp.dash_channel_id and channel.id != gp.dash_channel_id:
             asyncio.run_coroutine_threadsafe(
                 channel.send(embed=song.simple_embed()), self.bot.loop)
+
+    async def _skip_to_next(self, channel, guild, gp: GuildPlayer):
+        """Skip a failed song and play next."""
+        if gp.queue:
+            song = gp.queue.popleft()
+            self._start_song(channel, guild, gp, song)
+        else:
+            gp.current = None
+            gp.vc_playing = False
 
     async def _loop_song(self, channel, guild, gp: GuildPlayer, last: Song):
         """Re-fetch and replay the same song (stream URLs expire)."""
@@ -729,6 +755,7 @@ class Music(commands.Cog):
 
     # ── Dashboard setup ─────────────────────────────────────────────────────────
     async def _setup_dashboard(self, guild, text_ch: discord.TextChannel, gp: GuildPlayer):
+        # FIX: Only purge bot's own messages, not user messages
         try:
             await text_ch.purge(limit=20, check=lambda m: m.author == guild.me)
         except Exception:
