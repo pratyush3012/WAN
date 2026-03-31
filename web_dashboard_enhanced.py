@@ -1358,6 +1358,90 @@ def get_text_channels(server_id):
         return jsonify({'error': str(e)}), 500
 
 # ===== MUSIC STATUS STUB =====
+@app.route('/server/<server_id>/music')
+@require_auth
+def music_player_page(server_id):
+    """Dedicated YouTube Music-style player page."""
+    if not bot_instance:
+        return redirect(url_for('index'))
+    guild = bot_instance.get_guild(int(server_id))
+    if not guild:
+        return redirect(url_for('index'))
+    return render_template('music_player.html',
+                           server_id=server_id,
+                           server_name=guild.name,
+                           server_icon=str(guild.icon.url) if guild.icon else '')
+
+
+@app.route('/api/server/<server_id>/music/search', methods=['POST'])
+@require_auth
+def music_search(server_id):
+    """Search for songs via yt-dlp."""
+    try:
+        data = request.json or {}
+        query = data.get('query', '').strip()
+        if not query:
+            return jsonify({'error': 'No query'}), 400
+        import yt_dlp
+        results = []
+        # Try SoundCloud first, then YouTube
+        for prefix in (f"scsearch5:{query}", f"ytsearch5:{query}"):
+            try:
+                opts = {"format": "bestaudio/best", "quiet": True, "no_warnings": True,
+                        "skip_download": True, "noplaylist": True}
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(prefix, download=False)
+                    for e in (info.get("entries") or []):
+                        if not e:
+                            continue
+                        results.append({
+                            "title": e.get("title", "Unknown"),
+                            "uploader": e.get("uploader") or e.get("channel") or "Unknown",
+                            "duration": e.get("duration", 0),
+                            "thumbnail": e.get("thumbnail") or e.get("artwork_url") or "",
+                            "url": e.get("webpage_url") or e.get("url") or "",
+                            "source": "soundcloud" if "soundcloud" in prefix else "youtube",
+                        })
+                if results:
+                    break
+            except Exception:
+                continue
+        return jsonify({"results": results[:8]})
+    except Exception as e:
+        logger.error(f"Music search error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/server/<server_id>/music/queue', methods=['GET'])
+@require_auth
+def music_queue_full(server_id):
+    """Get full queue with metadata."""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'queue': []})
+        music_cog = bot_instance.get_cog('Music')
+        if not music_cog:
+            return jsonify({'queue': []})
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild:
+            return jsonify({'queue': []})
+        gp = music_cog._get_player(guild.id)
+        queue = []
+        for i, s in enumerate(list(gp.queue)):
+            queue.append({
+                'index': i + 1,
+                'title': s.title,
+                'uploader': s.uploader,
+                'duration': s.duration_str,
+                'thumbnail': s.thumbnail or '',
+                'url': s.webpage or '',
+                'requester': s.requester.display_name if s.requester else 'Unknown',
+            })
+        return jsonify({'queue': queue, 'total': len(queue)})
+    except Exception as e:
+        return jsonify({'queue': [], 'error': str(e)})
+
+
 @app.route('/api/server/<server_id>/music/status')
 @require_auth
 def music_status(server_id):
