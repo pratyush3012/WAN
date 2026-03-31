@@ -461,11 +461,21 @@ async def main():
             logger.info("⚠️ Received keyboard interrupt")
             break
         except discord.LoginFailure as e:
-            # Bad token — wait longer and retry (token may have just been updated)
             retry_count += 1
             logger.error(f"❌ Invalid token (attempt {retry_count}): {e}")
-            logger.info("🔄 Waiting 30s before retry (token may have just been updated in env)...")
-            await asyncio.sleep(30)
+            logger.info("🔄 Waiting 60s before retry...")
+            await asyncio.sleep(60)
+            bot = GamingBot()
+        except discord.errors.HTTPException as e:
+            retry_count += 1
+            if e.status == 429:
+                # Rate limited — wait 5 minutes, stop hammering Discord
+                logger.error(f"❌ Rate limited by Discord (attempt {retry_count}). Waiting 300s...")
+                await asyncio.sleep(300)
+            else:
+                logger.error(f"❌ HTTP error (attempt {retry_count}): {e}")
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 120)
             bot = GamingBot()
         except Exception as e:
             retry_count += 1
