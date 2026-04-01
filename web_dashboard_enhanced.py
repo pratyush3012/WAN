@@ -4801,6 +4801,114 @@ def watch_get_me(room_id):
 # ── Movie Schedule API (multiple time slots, loop support) ────────────────────
 _movie_schedules: dict = {}  # {server_id: [schedule_entry, ...]}
 
+# ── Scheduled movie auto-start ────────────────────────────────────────────────
+def _schedule_checker():
+    """
+    Background thread: checks every 30s if any scheduled movie should start.
+    When the scheduled time hits, it auto-creates the room and starts playback,
+    so late joiners sync to the correct position via sync_time().
+    """
+    import time as _t
+    _fired: set = set()  # track entry IDs already started today
+
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            now_date = now.strftime("%Y-%m-%d")
+            now_hhmm = now.strftime("%H:%M")
+
+            for server_id, entries in list(_movie_schedules.items()):
+                for entry in entries:
+                    entry_id  = entry.get("id", "")
+                    slots     = entry.get("slots", [])
+                    sched_date = entry.get("date", "")
+                    repeat    = entry.get("repeat", "none")
+                    room_id   = entry.get("room_id")
+
+                    # Build a unique fire key per entry+slot+date
+                    for slot in slots:
+                        fire_key = f"{entry_id}_{slot}_{now_date}"
+                        if fire_key in _fired:
+                            continue
+
+                        # Date match: exact date, or daily/weekly repeat
+                        date_ok = False
+                        if repeat == "daily":
+                            date_ok = True
+                        elif repeat == "weekly":
+                            # same weekday
+                            try:
+                                from datetime import datetime as _dt
+                                sched_dt = _dt.strptime(sched_date, "%Y-%m-%d")
+                                date_ok = sched_dt.weekday() == now.weekday()
+                            except Exception:
+                                date_ok = False
+                        else:
+                            date_ok = (sched_date == now_date)
+
+                        if not date_ok:
+                            continue
+
+                        # Time match: within a 1-minute window
+                        if slot != now_hhmm:
+                            continue
+
+                        # ── Fire! ──
+                        _fired.add(fire_key)
+                        logger.info(f"[Scheduler] Auto-starting scheduled movie: {entry.get('title')} at {slot} for guild {server_id}")
+
+                        try:
+                            if room_id and room_id in _watch_rooms:
+                                # Room already exists — just start playback
+                                room = _watch_rooms[room_id]
+                            else:
+                                # Create a new room from the schedule entry
+                                video_url = entry.get("video_url", "")
+                                if not video_url and room_id:
+                                    video_url = f"/watch/stream/{room_id}"
+                                new_room_id = room_id or secrets.token_urlsafe(8)
+                                room = WatchRoom(
+                                    room_id=new_room_id,
+                                    guild_id=server_id,
+                                    title=entry.get("title", "Scheduled Movie"),
+                                    video_url=video_url,
+                                    host_id="scheduler",
+                                    host_name="Scheduler",
+                                    required_role_id=entry.get("role"),
+                                )
+                                _watch_rooms[new_room_id] = room
+                                # Update entry with the actual room_id
+                                entry["room_id"] = new_room_id
+
+                            # Start playback from 0
+                            room.is_playing  = True
+                            room.current_time = 0.0
+                            room.last_sync   = _time.time()
+
+                            # Broadcast to anyone already in the room
+                            socketio.emit("watch_sync", {
+                                "action":       "play",
+                                "is_playing":   True,
+                                "current_time": 0.0,
+                            }, room=f"watch_{room.room_id}")
+
+                            logger.info(f"[Scheduler] Room {room.room_id} started for guild {server_id}")
+                        except Exception as e:
+                            logger.error(f"[Scheduler] Failed to start room: {e}")
+
+            # Clean up _fired keys older than today
+            _fired = {k for k in _fired if k.endswith(now_date)}
+
+        except Exception as e:
+            logger.error(f"[Scheduler] Checker error: {e}")
+
+        _t.sleep(30)  # check every 30 seconds
+
+
+# Start the scheduler thread when the module loads
+_sched_thread = threading.Thread(target=_schedule_checker, daemon=True, name="MovieScheduler")
+_sched_thread.start()
+
 @app.route("/api/server/<server_id>/watch/schedule", methods=["GET"])
 @require_auth
 def watch_get_schedule(server_id):
