@@ -95,6 +95,14 @@ class Database:
             db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
         elif db_url.startswith('postgresql://') and '+asyncpg' not in db_url:
             db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+
+        # If asyncpg not installed, fall back to SQLite regardless of DATABASE_URL
+        if 'asyncpg' in db_url:
+            try:
+                import asyncpg  # noqa: F401
+            except ImportError:
+                logger.warning("asyncpg not installed — falling back to SQLite")
+                db_url = 'sqlite+aiosqlite:///bot.db'
         
         # Connection pooling configuration
         pool_config = {
