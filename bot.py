@@ -72,10 +72,11 @@ class GamingBot(commands.Bot):
         GUILD_ID = int(os.getenv('GUILD_ID', '1462688504436752489'))
         self._home_guild = discord.Object(id=GUILD_ID)
 
-        # Cogs — only welcome, leveling, watch party, music, and web dashboard
+        # Cogs — welcome, leveling, music, watch party, web dashboard
         all_cogs = [
             'cogs.welcome',
             'cogs.leveling',
+            'cogs.music',
             'cogs.watch_party_complete',
             'cogs.watch_party_enhanced',
             'cogs.webdashboard',

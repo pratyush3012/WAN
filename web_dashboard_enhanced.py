@@ -1419,8 +1419,16 @@ def get_text_channels(server_id):
 @app.route('/server/<server_id>/music')
 @require_auth
 def music_player_page(server_id):
-    """Dedicated music player page — removed, redirect to dashboard."""
-    return redirect(url_for('index'))
+    """Dedicated YouTube Music-style player page."""
+    if not bot_instance:
+        return redirect(url_for('index'))
+    guild = bot_instance.get_guild(int(server_id))
+    if not guild:
+        return redirect(url_for('index'))
+    return render_template('music_player.html',
+                           server_id=server_id,
+                           server_name=guild.name,
+                           server_icon=str(guild.icon.url) if guild.icon else '')
 
 
 @app.route('/api/server/<server_id>/music/search', methods=['POST'])
