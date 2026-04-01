@@ -648,6 +648,14 @@ class Music(commands.Cog):
             return
 
         # FIX: Build FFmpeg source BEFORE setting gp.current
+        # Validate stream URL first
+        if not song.stream_url or not song.stream_url.startswith('http'):
+            logger.error(f"Invalid stream URL for '{song.title}': {song.stream_url!r}")
+            # Try to re-fetch with YouTube as fallback
+            asyncio.run_coroutine_threadsafe(
+                self._refetch_and_play(channel, guild, gp, song), self.bot.loop)
+            return
+
         try:
             source = discord.PCMVolumeTransformer(
                 discord.FFmpegPCMAudio(song.stream_url, **FFMPEG_OPTS),
@@ -655,9 +663,8 @@ class Music(commands.Cog):
             )
         except Exception as e:
             logger.error(f"FFmpeg error '{song.title}': {e}")
-            # Skip to next song without marking this as current
             asyncio.run_coroutine_threadsafe(
-                self._skip_to_next(channel, guild, gp), self.bot.loop)
+                self._refetch_and_play(channel, guild, gp, song), self.bot.loop)
             return
 
         # Only set current AFTER source is ready
@@ -686,6 +693,20 @@ class Music(commands.Cog):
         else:
             gp.current = None
             gp.vc_playing = False
+
+    async def _refetch_and_play(self, channel, guild, gp: GuildPlayer, original: Song):
+        """Re-fetch a song using YouTube when SoundCloud stream URL is invalid."""
+        loop = asyncio.get_running_loop()
+        logger.info(f"Re-fetching '{original.title}' via YouTube...")
+        data = await loop.run_in_executor(None, lambda: _yt_search(original.title))
+        if data and data.get('url'):
+            song = Song(data, original.requester)
+            if song.stream_url:
+                self._start_song(channel, guild, gp, song)
+                return
+        # Both failed — skip to next
+        logger.error(f"Could not re-fetch '{original.title}' — skipping")
+        await self._skip_to_next(channel, guild, gp)
 
     async def _loop_song(self, channel, guild, gp: GuildPlayer, last: Song):
         """Re-fetch and replay the same song (stream URLs expire)."""

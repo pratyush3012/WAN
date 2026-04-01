@@ -1552,7 +1552,6 @@ def music_play(server_id):
                 return {'status': 'playing', 'title': song.title}
             else:
                 return {'status': 'queued', 'title': song.title}
-                return {'status': 'queued', 'title': song.title}
 
         future = asyncio.run_coroutine_threadsafe(_play(), bot_instance.loop)
         result = future.result(timeout=15)
