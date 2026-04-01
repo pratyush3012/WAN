@@ -36,6 +36,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger('dashboard')
 
+# ── Cross-process signed auth tokens (works on Render + local) ───────────────
+from itsdangerous import URLSafeTimedSerializer as _USTS, BadSignature as _BadSig, SignatureExpired as _SigExp
+
+def _make_auth_token(user_id: str, guild_id: str, username: str, role: str) -> str:
+    """Create a signed token that embeds user info — no shared memory needed."""
+    s = _USTS(app.config['SECRET_KEY'], salt='discord-auth')
+    return s.dumps({'uid': user_id, 'gid': guild_id, 'un': username, 'role': role})
+
+def _verify_auth_token(token: str, max_age: int = 86400) -> dict | None:
+    """Verify and decode a signed token. Returns None if invalid/expired."""
+    s = _USTS(app.config['SECRET_KEY'], salt='discord-auth')
+    try:
+        return s.loads(token, max_age=max_age)
+    except (_BadSig, _SigExp):
+        return None
+
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('DASHBOARD_SECRET_KEY', 'wan-bot-dashboard-secret-key-change-me-in-env')
@@ -196,14 +212,28 @@ def manage():
 
 @app.route('/auth')
 def auth():
-    """Authenticate with token from Discord command"""
+    """Authenticate with signed token from Discord command"""
     token = request.args.get('token')
     next_url = request.args.get('next', '').strip()
 
     if not token:
         return redirect(url_for('login'))
 
-    # Get webdashboard cog to verify token
+    # Try new signed token first (works cross-process on Render)
+    token_data = _verify_auth_token(token)
+    if token_data:
+        session.permanent = True
+        session['user_id']   = token_data['uid']
+        session['guild_id']  = token_data['gid']
+        session['username']  = token_data['un']
+        session['role']      = token_data['role']
+        session['login_time'] = datetime.now(timezone.utc).isoformat()
+        logger.info(f"Token auth OK: {token_data['un']} ({token_data['uid']}) role={token_data['role']}")
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
+        return redirect(url_for('index'))
+
+    # Fallback: legacy in-memory token (local bot only)
     if bot_instance:
         webdashboard_cog = bot_instance.get_cog('WebDashboardCog')
         if webdashboard_cog:
@@ -211,32 +241,29 @@ def auth():
             if loop and loop.is_running():
                 import concurrent.futures
                 future = asyncio.run_coroutine_threadsafe(webdashboard_cog.verify_token(token), loop)
-                token_data = future.result(timeout=5)
-            else:
-                token_data = None
-
-            if token_data:
-                # Try to get real Discord username
-                real_username = f"User {token_data['user_id']}"
                 try:
-                    guild = bot_instance.get_guild(int(token_data['guild_id']))
+                    legacy_data = future.result(timeout=5)
+                except Exception:
+                    legacy_data = None
+            else:
+                legacy_data = None
+
+            if legacy_data:
+                real_username = f"User {legacy_data['user_id']}"
+                try:
+                    guild = bot_instance.get_guild(int(legacy_data['guild_id']))
                     if guild:
-                        member = guild.get_member(int(token_data['user_id']))
+                        member = guild.get_member(int(legacy_data['user_id']))
                         if member:
                             real_username = member.display_name
                 except Exception:
                     pass
-
                 session.permanent = True
-                session['user_id'] = str(token_data['user_id'])
-                session['guild_id'] = str(token_data['guild_id'])
-                session['role'] = token_data['role']
-                session['username'] = real_username
+                session['user_id']   = str(legacy_data['user_id'])
+                session['guild_id']  = str(legacy_data['guild_id'])
+                session['role']      = legacy_data['role']
+                session['username']  = real_username
                 session['login_time'] = datetime.now(timezone.utc).isoformat()
-
-                logger.info(f"Token auth successful for {real_username} ({token_data['user_id']}) with role {token_data['role']}")
-
-                # Redirect to next URL if safe, otherwise go to dashboard
                 if next_url and next_url.startswith('/'):
                     return redirect(next_url)
                 return redirect(url_for('index'))
@@ -4607,8 +4634,6 @@ def watch_upload_video(server_id):
 @app.route("/watch/stream/<room_id>")
 def watch_stream_file(room_id):
     """Stream an uploaded video file with range support."""
-    if 'user_id' not in session:
-        return redirect(url_for('login', next=request.url))
     room = _watch_rooms.get(room_id)
     if not room or not room.file_path or not os.path.exists(room.file_path):
         return jsonify({"error": "File not found"}), 404

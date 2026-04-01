@@ -1,40 +1,35 @@
 """
 WAN Bot - Web Dashboard Command Cog
-Opens external web dashboard with role-based access
+Generates signed auth tokens that work on Render (cross-process).
 """
 
 import discord
 from discord.ext import commands
 from discord import app_commands
-import secrets
-import hashlib
-from datetime import datetime, timedelta
-import webbrowser
+from datetime import datetime
 import os
+import sys
+
+# Add project root to path so we can import the token helper
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+DASHBOARD_URL = os.getenv('DASHBOARD_URL', 'http://localhost:5000').rstrip('/')
+
+
+def _get_token_maker():
+    """Lazy-import _make_auth_token from web_dashboard_enhanced to avoid circular imports."""
+    try:
+        from web_dashboard_enhanced import _make_auth_token
+        return _make_auth_token
+    except Exception:
+        return None
+
 
 class WebDashboardCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.access_tokens = {}  # {token: {user_id, guild_id, role, expires}}
-        self.dashboard_url = os.getenv('DASHBOARD_URL', 'http://localhost:5000')
-    
-    def generate_access_token(self, user_id: int, guild_id: int, role: str) -> str:
-        """Generate secure access token for user"""
-        token = secrets.token_urlsafe(32)
-        expires = datetime.utcnow() + timedelta(hours=24)
-        
-        self.access_tokens[token] = {
-            'user_id': user_id,
-            'guild_id': guild_id,
-            'role': role,
-            'expires': expires,
-            'created_at': datetime.utcnow()
-        }
-        
-        return token
-    
+
     def get_user_role(self, member: discord.Member) -> str:
-        """Determine user's dashboard role based on Discord permissions"""
         if member.guild_permissions.administrator:
             return 'admin'
         elif member.guild_permissions.manage_guild:
@@ -43,140 +38,44 @@ class WebDashboardCog(commands.Cog):
             return 'moderator'
         elif member.guild_permissions.manage_messages:
             return 'helper'
-        else:
-            return 'member'
-    
-    @app_commands.command(name="web", description="🌐 Open the ultimate web dashboard in your browser")
+        return 'member'
+
+    @app_commands.command(name="web", description="🌐 Open the WAN Bot dashboard")
     async def web_dashboard(self, interaction: discord.Interaction):
-        """Open web dashboard with personalized access"""
-        
-        # Get user's role
         role = self.get_user_role(interaction.user)
-        
-        # Generate secure access token
-        token = self.generate_access_token(
-            interaction.user.id,
-            interaction.guild.id,
-            role
-        )
-        
-        # Create dashboard URL with token
-        dashboard_url = f"{self.dashboard_url}/auth?token={token}"
-        
-        # Create beautiful embed
+
+        # Build signed token (works on Render — no shared memory needed)
+        make_token = _get_token_maker()
+        if make_token:
+            token = make_token(
+                user_id=str(interaction.user.id),
+                guild_id=str(interaction.guild.id),
+                username=interaction.user.display_name,
+                role=role,
+            )
+            link = f"{DASHBOARD_URL}/auth?token={token}"
+        else:
+            # Fallback: direct login page
+            link = f"{DASHBOARD_URL}/login"
+
+        role_icons = {'admin':'⚙️','manager':'🔧','moderator':'🛡️','helper':'🤝','member':'👤'}
         embed = discord.Embed(
-            title="🌐 WAN Bot Ultimate Dashboard",
-            description="**Your personalized dashboard is ready!**",
+            title="🌐 WAN Bot Dashboard",
+            description=f"Your personalized dashboard is ready, {interaction.user.mention}!",
             color=discord.Color.from_rgb(102, 126, 234)
         )
-        
-        # Role-specific features
-        role_features = {
-            'admin': [
-                "✅ Full server control",
-                "✅ All moderation tools",
-                "✅ Analytics & insights",
-                "✅ Bot configuration",
-                "✅ User management",
-                "✅ Security settings",
-                "✅ Backup & restore",
-                "✅ Advanced features"
-            ],
-            'manager': [
-                "✅ Server management",
-                "✅ Moderation tools",
-                "✅ Analytics viewing",
-                "✅ Member management",
-                "✅ Channel control",
-                "✅ Role management"
-            ],
-            'moderator': [
-                "✅ Moderation tools",
-                "✅ Member warnings",
-                "✅ Message management",
-                "✅ Basic analytics",
-                "✅ Ticket handling"
-            ],
-            'helper': [
-                "✅ View analytics",
-                "✅ Ticket support",
-                "✅ Message viewing",
-                "✅ Member info"
-            ],
-            'member': [
-                "✅ View profile",
-                "✅ Check stats",
-                "✅ View leaderboards",
-                "✅ Manage settings"
-            ]
-        }
-        
-        features = role_features.get(role, role_features['member'])
-        
-        embed.add_field(
-            name=f"🎭 Your Role: {role.title()}",
-            value="\n".join(features[:4]),
-            inline=False
-        )
-        
-        if len(features) > 4:
-            embed.add_field(
-                name="✨ Additional Features",
-                value="\n".join(features[4:]),
-                inline=False
-            )
-        
-        embed.add_field(
-            name="🔗 Access Link",
-            value=f"[Click here to open dashboard]({dashboard_url})",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="⏰ Session Duration",
-            value="```24 hours```",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="🔒 Security",
-            value="```Encrypted & Secure```",
-            inline=True
-        )
-        
-        embed.set_thumbnail(url=self.bot.user.display_avatar.url)
-        embed.set_footer(
-            text=f"Requested by {interaction.user.display_name} • Secure Token Generated",
-            icon_url=interaction.user.display_avatar.url
-        )
+        embed.add_field(name="🎭 Role", value=f"{role_icons.get(role,'👤')} {role.title()}", inline=True)
+        embed.add_field(name="⏰ Expires", value="24 hours", inline=True)
+        embed.add_field(name="🔗 Open Dashboard", value=f"[Click here]({link})", inline=False)
+        embed.set_footer(text="Link is personal — don't share it", icon_url=interaction.user.display_avatar.url)
         embed.timestamp = datetime.utcnow()
-        
-        # Send ephemeral message (only visible to user)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        # Log access
-        print(f"🌐 Dashboard access granted to {interaction.user} ({role}) in {interaction.guild.name}")
 
-    # web-status removed to stay under 100 command limit
-    
-    async def verify_token(self, token: str) -> dict:
-        """Verify access token and return user info"""
-        if token not in self.access_tokens:
-            return None
-        
-        token_data = self.access_tokens[token]
-        
-        # Check if expired
-        if token_data['expires'] < datetime.utcnow():
-            del self.access_tokens[token]
-            return None
-        
-        return token_data
-    
-    async def revoke_token(self, token: str):
-        """Revoke access token"""
-        if token in self.access_tokens:
-            del self.access_tokens[token]
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # Keep verify_token for legacy fallback in /auth route
+    async def verify_token(self, token: str):
+        return None  # legacy tokens no longer issued
+
 
 async def setup(bot):
     await bot.add_cog(WebDashboardCog(bot))
