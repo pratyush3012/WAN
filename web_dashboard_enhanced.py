@@ -13,6 +13,7 @@ from discord.ext import commands
 import asyncio
 import threading
 import os
+import re
 from datetime import datetime, timedelta, timezone
 import json
 import secrets
@@ -111,7 +112,8 @@ def require_auth(f):
             # Always return JSON for /api/ routes
             if request.path.startswith('/api/') or request.is_json:
                 return jsonify({'error': 'Authentication required', 'redirect': '/login'}), 401
-            return redirect(url_for('login'))
+            # Save the full URL they were trying to reach so we can redirect back after login
+            return redirect(url_for('login', next=request.url))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -183,10 +185,11 @@ def manage():
 def auth():
     """Authenticate with token from Discord command"""
     token = request.args.get('token')
-    
+    next_url = request.args.get('next', '').strip()
+
     if not token:
         return redirect(url_for('login'))
-    
+
     # Get webdashboard cog to verify token
     if bot_instance:
         webdashboard_cog = bot_instance.get_cog('WebDashboardCog')
@@ -198,19 +201,33 @@ def auth():
                 token_data = future.result(timeout=5)
             else:
                 token_data = None
-            
+
             if token_data:
-                # Set session
+                # Try to get real Discord username
+                real_username = f"User {token_data['user_id']}"
+                try:
+                    guild = bot_instance.get_guild(int(token_data['guild_id']))
+                    if guild:
+                        member = guild.get_member(int(token_data['user_id']))
+                        if member:
+                            real_username = member.display_name
+                except Exception:
+                    pass
+
                 session.permanent = True
                 session['user_id'] = str(token_data['user_id'])
                 session['guild_id'] = str(token_data['guild_id'])
                 session['role'] = token_data['role']
-                session['username'] = f"User {token_data['user_id']}"
+                session['username'] = real_username
                 session['login_time'] = datetime.now(timezone.utc).isoformat()
-                
-                logger.info(f"Token auth successful for user {token_data['user_id']} with role {token_data['role']}")
+
+                logger.info(f"Token auth successful for {real_username} ({token_data['user_id']}) with role {token_data['role']}")
+
+                # Redirect to next URL if safe, otherwise go to dashboard
+                if next_url and next_url.startswith('/'):
+                    return redirect(next_url)
                 return redirect(url_for('index'))
-    
+
     return redirect(url_for('login'))
 
 @app.route('/admin')
@@ -1506,6 +1523,102 @@ def music_status(server_id):
     except Exception as e:
         logger.error(f"Music status error: {e}")
         return jsonify({'playing': False, 'current': None, 'queue': [], 'queue_size': 0, 'volume': 50})
+
+
+@app.route('/api/server/<server_id>/music/lyrics', methods=['POST'])
+@require_auth
+def music_lyrics(server_id):
+    """Fetch lyrics for a song using multiple fallback APIs."""
+    try:
+        data = request.json or {}
+        title = data.get('title', '').strip()
+        artist = data.get('artist', '').strip()
+        if not title:
+            return jsonify({'error': 'No title'}), 400
+        import urllib.request, urllib.parse
+
+        # Clean title: remove feat., (Official), [HD], etc.
+        clean_title = re.sub(r'\(.*?\)|\[.*?\]', '', title).strip()
+        clean_title = re.sub(r'\s*feat\..*', '', clean_title, flags=re.IGNORECASE).strip()
+        clean_title = re.sub(r'\s*ft\..*', '', clean_title, flags=re.IGNORECASE).strip()
+
+        # Parse artist/song from title if not provided
+        parts = clean_title.split(' - ', 1)
+        if len(parts) == 2:
+            artist_name = artist or parts[0].strip()
+            song_name = parts[1].strip()
+        else:
+            artist_name = artist or ''
+            song_name = clean_title
+
+        def _try_lyrics_ovh(a, s):
+            try:
+                url = f"https://api.lyrics.ovh/v1/{urllib.parse.quote(a or 'unknown')}/{urllib.parse.quote(s)}"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                resp = urllib.request.urlopen(req, timeout=6)
+                d = json.loads(resp.read())
+                return d.get('lyrics') or None
+            except Exception:
+                return None
+
+        def _try_lyricsovh_swap(a, s):
+            """Try with artist and song swapped (some songs have artist in title)."""
+            if not a:
+                return None
+            return _try_lyrics_ovh(s, a)
+
+        def _try_happi_dev(a, s):
+            """Try happi.dev lyrics API (free tier)."""
+            try:
+                q = urllib.parse.quote(f"{a} {s}".strip())
+                url = f"https://api.happi.dev/v1/music?q={q}&limit=1&apikey=demo"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                resp = urllib.request.urlopen(req, timeout=5)
+                d = json.loads(resp.read())
+                results = d.get('result', [])
+                if results:
+                    # Fetch lyrics for first result
+                    lyrics_url = results[0].get('api_lyrics', '')
+                    if lyrics_url:
+                        req2 = urllib.request.Request(lyrics_url, headers={'User-Agent': 'Mozilla/5.0'})
+                        resp2 = urllib.request.urlopen(req2, timeout=5)
+                        d2 = json.loads(resp2.read())
+                        return d2.get('result', {}).get('lyrics') or None
+            except Exception:
+                return None
+
+        def _try_lrclib(a, s):
+            """Try lrclib.net — free, no key needed."""
+            try:
+                q = urllib.parse.urlencode({'q': f"{a} {s}".strip()})
+                url = f"https://lrclib.net/api/search?{q}"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                resp = urllib.request.urlopen(req, timeout=6)
+                results = json.loads(resp.read())
+                if results:
+                    plain = results[0].get('plainLyrics') or results[0].get('syncedLyrics', '')
+                    if plain:
+                        # Strip timestamps from synced lyrics
+                        plain = re.sub(r'\[\d+:\d+\.\d+\]', '', plain).strip()
+                        return plain if len(plain) > 20 else None
+            except Exception:
+                return None
+
+        # Try all sources in order
+        lyrics = (
+            _try_lyrics_ovh(artist_name, song_name) or
+            _try_lrclib(artist_name, song_name) or
+            _try_lyrics_ovh(artist_name, clean_title) or
+            _try_lrclib(artist_name, clean_title) or
+            _try_lrclib('', song_name) or
+            _try_lyricsovh_swap(artist_name, song_name)
+        )
+
+        if lyrics:
+            return jsonify({'lyrics': lyrics.strip()})
+        return jsonify({'lyrics': None, 'error': 'Lyrics not found'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/server/<server_id>/music/reorder', methods=['POST'])
@@ -4479,9 +4592,10 @@ def watch_upload_video(server_id):
 
 
 @app.route("/watch/stream/<room_id>")
-@require_auth
 def watch_stream_file(room_id):
     """Stream an uploaded video file with range support."""
+    if 'user_id' not in session:
+        return redirect(url_for('login', next=request.url))
     room = _watch_rooms.get(room_id)
     if not room or not room.file_path or not os.path.exists(room.file_path):
         return jsonify({"error": "File not found"}), 404
@@ -4634,6 +4748,55 @@ def watch_delete_movie(server_id, movie_id):
     return jsonify({"success": True})
 
 
+# ── Movie Schedule API (multiple time slots, loop support) ────────────────────
+_movie_schedules: dict = {}  # {server_id: [schedule_entry, ...]}
+
+@app.route("/api/server/<server_id>/watch/schedule", methods=["GET"])
+@require_auth
+def watch_get_schedule(server_id):
+    """Get movie schedule for a server."""
+    return jsonify({"schedule": _movie_schedules.get(server_id, [])})
+
+@app.route("/api/server/<server_id>/watch/schedule", methods=["POST"])
+@require_auth
+def watch_save_schedule(server_id):
+    """Save/replace movie schedule for a server."""
+    data = request.json or {}
+    schedule = data.get("schedule", [])
+    _movie_schedules[server_id] = schedule
+    return jsonify({"success": True, "count": len(schedule)})
+
+@app.route("/api/server/<server_id>/watch/schedule/add", methods=["POST"])
+@require_auth
+def watch_add_schedule_entry(server_id):
+    """Add a single schedule entry (supports multiple time slots)."""
+    data = request.json or {}
+    entry = {
+        "id": secrets.token_hex(6),
+        "title": str(data.get("title", ""))[:100],
+        "date": data.get("date", ""),
+        "slots": data.get("slots", []),  # list of time strings e.g. ["18:00","21:00"]
+        "repeat": data.get("repeat", "none"),
+        "room_id": data.get("room_id"),
+        "role": data.get("role"),
+        "is_looping": len(data.get("slots", [])) > 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": session.get("username", "unknown"),
+    }
+    if server_id not in _movie_schedules:
+        _movie_schedules[server_id] = []
+    _movie_schedules[server_id].append(entry)
+    return jsonify({"success": True, "entry": entry})
+
+@app.route("/api/server/<server_id>/watch/schedule/<entry_id>", methods=["DELETE"])
+@require_auth
+def watch_delete_schedule_entry(server_id, entry_id):
+    """Delete a schedule entry."""
+    if server_id in _movie_schedules:
+        _movie_schedules[server_id] = [e for e in _movie_schedules[server_id] if e.get("id") != entry_id]
+    return jsonify({"success": True})
+
+
 @app.route("/watch/upload")
 @require_auth
 def watch_upload_page():
@@ -4641,12 +4804,39 @@ def watch_upload_page():
     return render_template("watch_party_upload.html")
 
 @app.route("/watch/<room_id>")
-@require_auth
 def watch_party_page(room_id):
-    """Serve the watch party page."""
+    """Serve the watch party page — no login required, room access check handles roles."""
     room = _watch_rooms.get(room_id)
+    # If room not in memory (e.g. after restart), try to restore from DB
     if not room:
-        return redirect(url_for("index"))
+        try:
+            from watch_party_movies_db import MovieDatabase
+            movie = MovieDatabase.get_movie(room_id)
+            if movie:
+                room = WatchRoom(
+                    room_id=room_id,
+                    guild_id=str(movie.get("guild_id", "")),
+                    title=movie.get("title", "Movie"),
+                    video_url=f"/watch/stream/{room_id}",
+                    host_id=movie.get("uploader_id", "unknown"),
+                    host_name=movie.get("uploader_name", "Host"),
+                )
+                room.file_path = movie.get("file_path", "")
+                _watch_rooms[room_id] = room
+                MovieDatabase.update_movie_views(room_id)
+        except Exception as _e:
+            logger.warning(f"Could not restore room {room_id} from DB: {_e}")
+    if not room:
+        # Show a simple not-found page
+        return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Watch Party Not Found</title>
+        <style>body{{background:#05070f;color:#eef0ff;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px;}}
+        h2{{font-size:24px;}}p{{color:#5a6080;}}a{{color:#7c6fff;text-decoration:none;}}</style></head>
+        <body><div style="font-size:48px">🎬</div><h2>Watch Party Not Found</h2>
+        <p>This watch party has ended or the link is no longer valid.</p>
+        <a href="/">← Back to Dashboard</a></body></html>""", 404
+    # Role-restricted rooms still require login
+    if room.required_role_id and 'user_id' not in session:
+        return redirect(url_for('login', next=request.url))
     if not _check_watch_access(room):
         return render_template("login.html", error="You need the required server role to join this watch party.")
     return render_template("watch_party.html",

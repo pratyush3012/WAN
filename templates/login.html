@@ -232,7 +232,10 @@ document.getElementById('loginForm').addEventListener('submit', async e=>{
     const d=await r.json();
     if(d.success){
       document.getElementById('loginOk').classList.add('show');
-      setTimeout(()=>location.href='/',600);
+      // Redirect to 'next' URL if present, otherwise go to dashboard
+      const params=new URLSearchParams(window.location.search);
+      const next=params.get('next');
+      setTimeout(()=>location.href=(next&&next.startsWith('/'))?next:'/',600);
     } else {
       showAlert('loginErr','loginErrTxt',d.error||'Invalid credentials');
       setBtn('loginBtn','loginBtnTxt',false,'Sign In');
@@ -314,7 +317,9 @@ async function submitOtp(){
       body:JSON.stringify({email:_pendingEmail,otp:code})});
     const d=await r.json();
     if(d.success){
-      location.href='/';
+      const params=new URLSearchParams(window.location.search);
+      const next=params.get('next');
+      location.href=(next&&next.startsWith('/'))?next:'/';
     } else {
       showAlert('otpErr','otpErrTxt',d.error||'Invalid code');
       [0,1,2,3,4,5].forEach(i=>{document.getElementById('otp'+i).value='';});

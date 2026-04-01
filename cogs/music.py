@@ -634,6 +634,7 @@ class Music(commands.Cog):
             if not guild:
                 continue
             vc = guild.voice_client
+            # Only reconnect if truly disconnected (not just between songs)
             if vc is None:
                 ch = guild.get_channel(gp.vc_channel_id)
                 if ch:
@@ -642,13 +643,37 @@ class Music(commands.Cog):
                         logger.info(f"✅ 24/7 reconnected to {ch.name} in {guild.name}")
                     except Exception as ex:
                         logger.warning(f"24/7 reconnect failed {guild.name}: {ex}")
-            elif not vc.is_playing() and not vc.is_paused() and gp.autoplay and not gp.current:
-                # In 24/7 mode with nothing playing — try autoplay
-                pass  # autoplay handles this via _play_next
+            elif vc.channel.id != gp.vc_channel_id:
+                # Bot is in wrong channel — move it back only if nothing is playing
+                if not vc.is_playing() and not vc.is_paused():
+                    ch = guild.get_channel(gp.vc_channel_id)
+                    if ch:
+                        try:
+                            await vc.move_to(ch)
+                        except Exception:
+                            pass
+            # Do NOT disconnect/reconnect if already connected and playing
 
     @_247_task.before_loop
     async def _before_247(self):
         await self.bot.wait_until_ready()
+
+    # ── Voice state: handle bot being kicked/disconnected ───────────────────────
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        """Detect when bot is disconnected from voice and clean up state."""
+        if member.id != self.bot.user.id:
+            return
+        # Bot left a voice channel
+        if before.channel and not after.channel:
+            guild = member.guild
+            gp = self._get_player(guild.id)
+            # If 24/7 mode is off, clean up
+            if not gp.mode_247:
+                gp.vc_playing = False
+                gp.current = None
+            # If 24/7 mode is on, the _247_task will reconnect after 30s
+            # (no immediate reconnect to avoid join/leave spam)
 
     # ── Voice join ──────────────────────────────────────────────────────────────
     async def _join_voice(self, guild, author, send_fn):
@@ -657,11 +682,18 @@ class Music(commands.Cog):
             await send_fn("❌ Join a voice channel first.")
             return None
         vc = guild.voice_client
+        target_ch = author.voice.channel
         try:
             if vc is None:
-                vc = await author.voice.channel.connect()
-            elif vc.channel != author.voice.channel:
-                await vc.move_to(author.voice.channel)
+                vc = await target_ch.connect()
+            elif vc.channel.id == target_ch.id:
+                # Already in the right channel — do nothing, just return existing vc
+                pass
+            else:
+                # Move to user's channel only if not currently playing
+                if not vc.is_playing() and not vc.is_paused():
+                    await vc.move_to(target_ch)
+                # If playing, stay in current channel (don't interrupt)
         except Exception as e:
             await send_fn(f"❌ Could not join voice channel: {e}")
             return None
@@ -744,7 +776,8 @@ class Music(commands.Cog):
         # ── END: Queue finished ───────────────────────────────────────────────────
         gp.current = None
         gp.vc_playing = False
-        if not gp.mode_247:
+        # Only disconnect if not in 24/7 mode AND autoplay is off
+        if not gp.mode_247 and not gp.autoplay:
             asyncio.run_coroutine_threadsafe(
                 channel.send("✅ Queue finished."), self.bot.loop)
     
@@ -787,10 +820,18 @@ class Music(commands.Cog):
             else:
                 logger.info(f"✅ Finished playing '{song.title}'")
                 gp.vc_playing = False
-                self._play_next(channel, guild, gp)
+                # Only call _play_next if vc is still connected
+                vc_check = guild.voice_client
+                if vc_check and (vc_check.is_connected() or True):
+                    self._play_next(channel, guild, gp)
 
         vc.play(source, after=_after)
         logger.info(f"✅ vc.play() called for '{song.title}'")
+
+        # Pre-fill queue with autoplay songs immediately (don't wait for song to end)
+        if gp.autoplay and len(gp.queue) < 3:
+            asyncio.run_coroutine_threadsafe(
+                self._prefill_queue(channel, guild, gp, song), self.bot.loop)
 
         # Send now-playing only if not in dashboard channel
         if channel and gp.dash_channel_id and channel.id != gp.dash_channel_id:
@@ -805,6 +846,35 @@ class Music(commands.Cog):
         else:
             gp.current = None
             gp.vc_playing = False
+
+    async def _prefill_queue(self, channel, guild, gp: GuildPlayer, current: Song):
+        """Pre-fill queue with 10 similar songs so it's always ready."""
+        try:
+            loop = asyncio.get_running_loop()
+            needed = 10 - len(gp.queue)
+            if needed <= 0:
+                return
+            songs_data = await loop.run_in_executor(
+                None, lambda: _get_autoplay_songs(
+                    current.title, current.uploader, current.webpage, limit=needed + 3
+                )
+            )
+            added = 0
+            existing_titles = {s.title.lower() for s in gp.queue}
+            if gp.current:
+                existing_titles.add(gp.current.title.lower())
+            for d in songs_data:
+                if added >= needed:
+                    break
+                s = Song(d, guild.me)
+                if s.stream_url and s.title.lower() not in existing_titles:
+                    gp.queue.append(s)
+                    existing_titles.add(s.title.lower())
+                    added += 1
+            if added > 0:
+                logger.info(f"✅ Pre-filled queue with {added} songs")
+        except Exception as e:
+            logger.debug(f"Pre-fill queue error: {e}")
 
     async def _refetch_and_play(self, channel, guild, gp: GuildPlayer, original: Song):
         """Re-fetch a song using YouTube when SoundCloud stream URL is invalid."""

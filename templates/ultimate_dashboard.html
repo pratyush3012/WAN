@@ -1205,17 +1205,18 @@ select.form-control option{background:var(--surface2);}
           <input type="date" id="wpDate" class="form-control">
         </div>
         <div class="form-group">
-          <label class="form-label">⏰ Time Slot (3-hour blocks)</label>
-          <select id="wpTimeSlot" class="form-control">
-            <option value="00:00">🌙 12:00 AM – 3:00 AM</option>
-            <option value="03:00">🌙 3:00 AM – 6:00 AM</option>
-            <option value="06:00">🌅 6:00 AM – 9:00 AM</option>
-            <option value="09:00">☀️ 9:00 AM – 12:00 PM</option>
-            <option value="12:00">☀️ 12:00 PM – 3:00 PM</option>
-            <option value="15:00">🌤️ 3:00 PM – 6:00 PM</option>
-            <option value="18:00">🌆 6:00 PM – 9:00 PM</option>
-            <option value="21:00">🌙 9:00 PM – 12:00 AM</option>
-          </select>
+          <label class="form-label">⏰ Time Slots <span style="color:var(--text-muted);font-size:11px;">(select multiple for loop)</span></label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--surface2);border-radius:8px;padding:10px;border:1px solid rgba(255,255,255,.08)">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" name="wpSlot" value="00:00" style="accent-color:var(--accent)"> 🌙 12 AM – 3 AM</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" name="wpSlot" value="03:00" style="accent-color:var(--accent)"> 🌙 3 AM – 6 AM</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" name="wpSlot" value="06:00" style="accent-color:var(--accent)"> 🌅 6 AM – 9 AM</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" name="wpSlot" value="09:00" style="accent-color:var(--accent)"> ☀️ 9 AM – 12 PM</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" name="wpSlot" value="12:00" style="accent-color:var(--accent)"> ☀️ 12 PM – 3 PM</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" name="wpSlot" value="15:00" style="accent-color:var(--accent)"> 🌤️ 3 PM – 6 PM</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" name="wpSlot" value="18:00" style="accent-color:var(--accent)"> 🌆 6 PM – 9 PM</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" name="wpSlot" value="21:00" style="accent-color:var(--accent)"> 🌙 9 PM – 12 AM</label>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Select multiple slots so viewers can join at their preferred time. Each slot loops the movie.</div>
         </div>
         <div class="form-group">
           <label class="form-label">🔁 Repeat</label>
@@ -2101,7 +2102,7 @@ select.form-control option{background:var(--surface2);}
 </div>
 
 <script>
-let currentServer=null, allMembers=[], allRoles=[], allTextChannels=[], allVoiceChannels=[], socket=null;
+let currentServer=null, currentSection='', allMembers=[], allRoles=[], allTextChannels=[], allVoiceChannels=[], socket=null;
 
 async function apiFetch(url,opts){
   opts=opts||{}; opts.credentials='include';
@@ -2112,6 +2113,7 @@ async function apiFetch(url,opts){
 
 // SECTION NAV
 function show(name,el){
+  currentSection=name;
   document.querySelectorAll('.section').forEach(s=>{s.style.display='none';s.classList.remove('active');});
   document.querySelectorAll('.menu-item').forEach(m=>m.classList.remove('active'));
   const sec=document.getElementById('sec-'+name);
@@ -2132,7 +2134,8 @@ function show(name,el){
   else if(bcServer){bcServer.style.display='none';bcServerSep.style.display='none';}
   if(name==='leaderboard'&&currentServer)loadLeaderboard('score');
   if(name==='audit'&&currentServer)loadAuditLog();
-  if(name==='music'&&currentServer){loadMusicStatus();mqLoadSuggestions();}
+  if(name==='music'&&currentServer){loadMusicStatus();mqLoadSuggestions();_startMqRefresh();}
+  if(name!=='music')_stopMqRefresh();
   if(name==='watchparty'&&currentServer){loadWatchRooms();loadCinemaSchedule();initCinemaDate();}
   if(name==='announce'&&currentServer)loadTextChannels();
   if(name==='welcome'&&currentServer)populateWelcomeChannels();
@@ -3589,14 +3592,49 @@ async function mqShowLyrics(){
   if(btn) btn.style.color='#fff';
   if(!mqCurrentSongData){document.getElementById('mq-lyrics-text').textContent='Nothing playing';return;}
   document.getElementById('mq-lyrics-text').textContent='Loading lyrics...';
+  const title=mqCurrentSongData.title;
+  const artist=mqCurrentSongData.artist||'';
+
+  // Clean title: remove (Official), [HD], feat. etc.
+  const cleanTitle=title.replace(/\(.*?\)|\[.*?\]/g,'').replace(/\s*feat\..*|\s*ft\..*/gi,'').trim();
+  const parts=cleanTitle.split(' - ');
+  const songName=(parts.length>1?parts[1]:parts[0]).trim();
+  const artistName=artist||parts[0].trim();
+
+  // 1. Try lrclib.net (free, no CORS, best for Hindi/English)
   try{
-    const q=encodeURIComponent(`${mqCurrentSongData.title} ${mqCurrentSongData.artist||''}`);
-    const r=await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(mqCurrentSongData.artist||'unknown')}/${encodeURIComponent(mqCurrentSongData.title)}`);
+    const q=encodeURIComponent(`${artistName} ${songName}`.trim());
+    const r=await fetch(`https://lrclib.net/api/search?q=${q}`);
+    if(r.ok){
+      const results=await r.json();
+      if(results&&results.length){
+        const plain=results[0].plainLyrics||results[0].syncedLyrics||'';
+        const cleaned=plain.replace(/\[\d+:\d+\.\d+\]/g,'').trim();
+        if(cleaned.length>20){document.getElementById('mq-lyrics-text').textContent=cleaned;return;}
+      }
+    }
+  }catch(e){}
+
+  // 2. Try lyrics.ovh
+  try{
+    const r=await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(artistName||'unknown')}/${encodeURIComponent(songName)}`);
+    if(r.ok){
+      const d=await r.json();
+      if(d.lyrics&&d.lyrics.length>20){document.getElementById('mq-lyrics-text').textContent=d.lyrics;return;}
+    }
+  }catch(e){}
+
+  // 3. Try our backend (tries multiple APIs server-side)
+  try{
+    const r=await apiFetch(`/api/server/${currentServer}/music/lyrics`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title,artist})
+    });
     const d=await r.json();
-    document.getElementById('mq-lyrics-text').textContent=d.lyrics||'Lyrics not found for this song.';
-  }catch(e){
-    document.getElementById('mq-lyrics-text').textContent='Lyrics not available.';
-  }
+    if(d.lyrics&&d.lyrics.length>20){document.getElementById('mq-lyrics-text').textContent=d.lyrics;return;}
+  }catch(e){}
+
+  document.getElementById('mq-lyrics-text').textContent='Lyrics not found for this song.\n\nTry searching: "'+title+' lyrics" on Google.';
 }
 
 // Sleep timer
@@ -3641,6 +3679,18 @@ async function loadMusicStatus(){
     const d=await res.json();
     updateMusicUI(d);
   }catch(e){}
+}
+
+// Auto-refresh queue every 5s when music section is active
+let _mqRefreshInterval=null;
+function _startMqRefresh(){
+  if(_mqRefreshInterval)return;
+  _mqRefreshInterval=setInterval(()=>{
+    if(currentSection==='music'&&currentServer)loadMusicStatus();
+  },5000);
+}
+function _stopMqRefresh(){
+  if(_mqRefreshInterval){clearInterval(_mqRefreshInterval);_mqRefreshInterval=null;}
 }
 
 function loadMusicVoiceChannels(channels){
@@ -3897,7 +3947,10 @@ function getShowForSlot(dateStr, slotTime, dayOfWeek){
 
 function quickSchedule(date, time){
   document.getElementById('wpDate').value = date;
-  document.getElementById('wpTimeSlot').value = time;
+  // Check the matching slot checkbox
+  document.querySelectorAll('input[name="wpSlot"]').forEach(cb=>{
+    cb.checked = cb.value === time;
+  });
   document.getElementById('wpTitle').focus();
   notify('📅 Slot selected — fill in the movie details above', 'info');
 }
@@ -3979,7 +4032,8 @@ async function scheduleMovie(){
   if(!currentServer){notify('Select a server first','warning');return;}
   const title = document.getElementById('wpTitle').value.trim();
   const date  = document.getElementById('wpDate').value;
-  const time  = document.getElementById('wpTimeSlot').value;
+  // Collect all checked time slots
+  const selectedSlots = Array.from(document.querySelectorAll('input[name="wpSlot"]:checked')).map(cb=>cb.value);
   const repeat= document.getElementById('wpRepeat').value;
   const role  = document.getElementById('wpRole').value;
   const url   = document.getElementById('wpUrl').value.trim();
@@ -3988,6 +4042,7 @@ async function scheduleMovie(){
 
   if(!title){notify('Enter a movie title','warning');return;}
   if(!date){notify('Select a date','warning');return;}
+  if(!selectedSlots.length){notify('Select at least one time slot','warning');return;}
 
   let roomId = null;
 
@@ -4028,27 +4083,33 @@ async function scheduleMovie(){
     }catch(e){notify('Error creating room: '+e.message,'danger');return;}
   }
 
-  // Add to schedule
-  const show = {
-    id: Date.now().toString(36),
-    title, date, time, repeat, role,
-    room_id: roomId,
-    created_at: new Date().toISOString()
-  };
-  cinemaSchedule.push(show);
+  // Add one schedule entry per selected slot (supports loop across multiple times)
+  const slotLabels = selectedSlots.map(t=>{const idx=SLOTS.indexOf(t);return idx>=0?SLOT_LABELS[idx]:t;});
+  for(const time of selectedSlots){
+    const show = {
+      id: Date.now().toString(36)+'_'+time.replace(':',''),
+      title, date, time, repeat, role,
+      room_id: roomId,
+      is_looping: selectedSlots.length > 1,
+      all_slots: selectedSlots,
+      created_at: new Date().toISOString()
+    };
+    cinemaSchedule.push(show);
+  }
   saveCinemaSchedule();
   renderCinemaGrid();
   renderUpcoming();
 
   // Announce in Discord if channel selected
   if(announceChannel && roomId){
+    const slotsText = slotLabels.join(', ');
     try{
       await apiFetch(`/api/server/${currentServer}/announce`,{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           channel_id: announceChannel,
           title: `🎬 ${title} — Scheduled!`,
-          message: `**${title}** is scheduled for **${new Date(date+'T'+time).toLocaleDateString()}** at **${SLOT_LABELS[SLOTS.indexOf(time)]}**${repeat!=='none'?' ('+{daily:'repeats daily',weekly:'repeats weekly',weekdays:'weekdays only',weekends:'weekends only'}[repeat]+')':''}.\n\nJoin here: ${window.location.origin}/watch/${roomId}`,
+          message: `**${title}** is scheduled for **${new Date(date+'T'+selectedSlots[0]).toLocaleDateString()}**\n⏰ **Time slots:** ${slotsText}${repeat!=='none'?' ('+{daily:'repeats daily',weekly:'repeats weekly',weekdays:'weekdays only',weekends:'weekends only'}[repeat]+')':''}\n\nJoin here: ${window.location.origin}/watch/${roomId}`,
           color: '#7c6fff',
           ping_everyone: true
         })
@@ -4056,11 +4117,13 @@ async function scheduleMovie(){
     }catch(e){}
   }
 
-  notify(`✅ "${title}" scheduled for ${date} at ${SLOT_LABELS[SLOTS.indexOf(time)]}`, 'success');
+  notify(`✅ "${title}" scheduled for ${date} at ${slotLabels.join(', ')}`, 'success');
   document.getElementById('wpTitle').value='';
   document.getElementById('wpUrl').value='';
   document.getElementById('wpFile').value='';
   document.getElementById('wpUploadName').textContent='';
+  // Uncheck all slots
+  document.querySelectorAll('input[name="wpSlot"]').forEach(cb=>cb.checked=false);
 }
 
 async function createWatchParty(){

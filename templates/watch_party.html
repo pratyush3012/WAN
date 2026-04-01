@@ -854,6 +854,54 @@ function renderViewers(viewers){
   });
 }
 
+// ── AUTO PREDICTIONS ─────────────────────────────────────────────────────────
+// Automatically fire prediction questions at key movie moments
+const AUTO_PRED_QUESTIONS = [
+  { pct: 0.10, q: "What do you think will happen next?", opts: ["Something unexpected", "Exactly what we expect", "A plot twist", "Nothing much"] },
+  { pct: 0.25, q: "Who is your favorite character so far?", opts: ["The main hero", "The villain", "The sidekick", "Someone else"] },
+  { pct: 0.40, q: "How would you rate the movie so far?", opts: ["🔥 Amazing!", "👍 Pretty good", "😐 It's okay", "😴 Boring"] },
+  { pct: 0.55, q: "What's the best scene so far?", opts: ["The opening", "The action scene", "The emotional moment", "The funny part"] },
+  { pct: 0.70, q: "How do you think it ends?", opts: ["Happy ending", "Sad ending", "Cliffhanger", "Twist ending"] },
+  { pct: 0.85, q: "Would you watch this again?", opts: ["Definitely yes!", "Maybe someday", "Probably not", "Never again 😅"] },
+];
+
+let _autoPredFired = new Set();
+let _autoPredInterval = null;
+
+function _startAutoPredictions(){
+  if(_autoPredInterval) return;
+  _autoPredInterval = setInterval(()=>{
+    if(!vid||!vid.duration||vid.paused) return;
+    // Only host/mod fires auto predictions
+    if(!canMod()) return;
+    const pct = vid.currentTime / vid.duration;
+    for(const ap of AUTO_PRED_QUESTIONS){
+      const key = ap.pct.toString();
+      if(!_autoPredFired.has(key) && pct >= ap.pct && pct < ap.pct + 0.05){
+        _autoPredFired.add(key);
+        // Don't fire if there's already an active prediction
+        if(currentPrediction && !currentPrediction.resolved) return;
+        socket.emit("watch_prediction_create",{
+          room_id: ROOM_ID,
+          question: ap.q,
+          options: ap.opts
+        });
+        showToast("🎯 Auto prediction launched!", 3000);
+        break;
+      }
+    }
+  }, 10000); // check every 10s
+}
+
+function _stopAutoPredictions(){
+  if(_autoPredInterval){ clearInterval(_autoPredInterval); _autoPredInterval=null; }
+}
+
+// Start auto predictions when video plays
+vid.addEventListener('play', _startAutoPredictions);
+vid.addEventListener('pause', ()=>{}); // keep interval running so we catch resume
+vid.addEventListener('ended', _stopAutoPredictions);
+
 // ── CTRL LOCK ─────────────────────────────────────────────────────────────────
 function updateCtrlLock(){
   const locked=!canControl();
