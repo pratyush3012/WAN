@@ -77,16 +77,158 @@ def _progress_bar(elapsed: int, total: int, length: int = 16) -> str:
     bar = "▓" * filled + "🔘" + "░" * (length - filled)
     return bar
 
+def _detect_language(title: str, uploader: str) -> str:
+    """Detect song language: 'hindi', 'punjabi', 'english', 'other'"""
+    text = (title + " " + uploader).lower()
+
+    # Devanagari (Hindi) or Arabic (Urdu)
+    if re.search(r'[\u0900-\u097F\u0600-\u06FF]', title + uploader):
+        return 'hindi'
+
+    # Punjabi/Gurmukhi script
+    if re.search(r'[\u0A00-\u0A7F]', title + uploader):
+        return 'punjabi'
+
+    # Hindi/Bollywood keywords
+    hindi_kw = {
+        'pyaar','dil','ishq','mohabbat','teri','meri','tere','mere','aaja','suno',
+        'raat','yaad','zindagi','khwab','jaan','sanam','woh','yeh','nahi','kya',
+        'toh','bollywood','hindi','arijit','atif','neha','shreya','sonu','lata',
+        'kishore','rafi','kumar','armaan','jubin','darshan','tulsi','udit',
+        'ek','do','teen','hum','tum','dil','dard','khushi','gham','pyar',
+        'intezaar','bewafa','judai','milna','bichhad','teri yaad','mera dil',
+        'tera','mera','apna','paraya','desi','filmi','gaana','geet','naghma'
+    }
+
+    # Punjabi keywords
+    punjabi_kw = {
+        'punjabi','sidhu','moosewala','shubh','karan','aujla','ap dhillon',
+        'gurnam','ammy','virk','diljit','dosanjh','babbu','maan','gippy',
+        'grewal','jasmine','sandlas','parmish','verma','mankirt','aulakh',
+        'jass','manak','g khan','sukh','sagar','ninja','sharry','mann',
+        'bairan','banjaare','jatt','jatti','pind','yaar','yaari','sohna',
+        'sohni','mahiya','akhiyan','naina','taare','chand','raat','subah',
+        'dhol','bhangra','gidda','sarson','khet','waris','shah','heer',
+        'ranjha','mirza','sahiba','number 1','number1','epic hook','musik'
+    }
+
+    words = set(re.findall(r'[a-zA-Z]+', text))
+
+    if words & hindi_kw:
+        return 'hindi'
+    if words & punjabi_kw:
+        return 'punjabi'
+
+    # Check uploader names for known Punjabi/Hindi artists
+    punjabi_artists = {'ap dhillon','sidhu moosewala','shubh','karan aujla','diljit',
+                       'ammy virk','babbu maan','gippy grewal','jass manak','g khan',
+                       'mankirt aulakh','parmish verma','sukh sagar','sharry mann'}
+    hindi_artists = {'arijit singh','atif aslam','neha kakkar','shreya ghoshal',
+                     'jubin nautiyal','darshan raval','armaan malik','tulsi kumar',
+                     'udit narayan','sonu nigam','lata mangeshkar','kishore kumar'}
+
+    upl = uploader.lower()
+    if any(a in upl for a in punjabi_artists):
+        return 'punjabi'
+    if any(a in upl for a in hindi_artists):
+        return 'hindi'
+
+    return 'english'
+
+
 def _is_hindi(text: str) -> bool:
-    """Detect Hindi/Urdu/Bollywood content."""
-    if re.search(r'[\u0900-\u097F\u0600-\u06FF]', text):
-        return True
-    hinglish = {'pyaar','dil','ishq','mohabbat','teri','meri','tere','mere',
-                'aaja','suno','raat','yaad','zindagi','khwab','jaan','sanam',
-                'woh','yeh','nahi','kya','toh','bollywood','hindi','arijit',
-                'atif','neha','shreya','sonu','lata','kishore','rafi','kumar'}
-    words = set(re.findall(r'[a-zA-Z]+', text.lower()))
-    return len(words & hinglish) >= 1
+    """Legacy compat — returns True for Hindi OR Punjabi."""
+    lang = _detect_language(text, "")
+    return lang in ('hindi', 'punjabi')
+
+
+def _get_autoplay_songs(title: str, uploader: str, sc_url: str, limit: int = 3) -> list:
+    """
+    Language-aware autoplay: Hindi→Hindi, Punjabi→Punjabi, English→English.
+    Never mixes languages.
+    """
+    lang = _detect_language(title, uploader)
+    seen = {title.lower()}
+    results = []
+
+    logger.info(f"🎵 Autoplay: '{title}' detected as {lang}")
+
+    # Build language-specific search queries
+    clean_title = re.sub(r'\([^)]*\)', '', title).split('-')[0].strip()
+    clean_artist = uploader.split('•')[0].strip()
+
+    if lang == 'punjabi':
+        search_queries = [
+            f"{clean_artist} punjabi songs",
+            f"punjabi songs like {clean_title}",
+            f"new punjabi songs 2024",
+            f"punjabi hits {clean_artist}",
+        ]
+    elif lang == 'hindi':
+        search_queries = [
+            f"{clean_artist} hindi songs",
+            f"hindi songs like {clean_title}",
+            f"bollywood songs {clean_artist}",
+            f"new hindi songs 2024",
+        ]
+    else:
+        search_queries = [
+            f"{clean_artist} songs",
+            f"songs like {clean_title}",
+            f"similar to {clean_title} {clean_artist}",
+        ]
+
+    def _is_same_lang(entry: dict) -> bool:
+        t = entry.get("title", "")
+        u = entry.get("uploader", "")
+        entry_lang = _detect_language(t, u)
+        # Allow same language or 'other' (instrumental/unknown)
+        return entry_lang == lang or entry_lang == 'other'
+
+    # Step 1: SoundCloud /recommended (most accurate — same artist's related tracks)
+    if sc_url and "soundcloud.com" in sc_url:
+        related = _sc_related(sc_url, limit=limit + 4)
+        for e in related:
+            t = (e.get("title") or "").strip()
+            if t.lower() in seen:
+                continue
+            if not _is_same_lang(e):
+                logger.debug(f"Autoplay skip (wrong lang): {t}")
+                continue
+            seen.add(t.lower())
+            results.append(e)
+            if len(results) >= limit:
+                return results
+
+    # Step 2: Search by artist first (same artist = guaranteed same language)
+    artist_results = _sc_search_multi(f"{clean_artist} songs", limit=limit + 3)
+    for e in artist_results:
+        t = (e.get("title") or "").strip()
+        if t.lower() in seen:
+            continue
+        seen.add(t.lower())
+        results.append(e)
+        if len(results) >= limit:
+            return results
+
+    # Step 3: Language-specific search queries
+    for query in search_queries:
+        if len(results) >= limit:
+            break
+        extra = _sc_search_multi(query, limit=limit + 2)
+        for e in extra:
+            t = (e.get("title") or "").strip()
+            if t.lower() in seen:
+                continue
+            if not _is_same_lang(e):
+                continue
+            seen.add(t.lower())
+            results.append(e)
+            if len(results) >= limit:
+                break
+
+    logger.info(f"🎵 Autoplay found {len(results)} songs for '{title}' ({lang})")
+    return results[:limit]
 
 def _spotify_to_search(url: str) -> str:
     try:
@@ -173,62 +315,8 @@ def _sc_search_multi(query: str, limit: int = 5) -> list:
         logger.debug(f"SC multi '{query}': {ex}")
         return []
 
-def _get_autoplay_songs(title: str, uploader: str, sc_url: str, limit: int = 3) -> list:
-    """
-    Get language-aware autoplay recommendations.
-    Hindi song → Hindi recommendations only.
-    English song → English/similar recommendations.
-    """
-    is_hindi = _is_hindi(title) or _is_hindi(uploader)
-    seen = {title.lower()}
-    results = []
-
-    # Step 1: Try SoundCloud /recommended (most accurate)
-    if sc_url and "soundcloud.com" in sc_url:
-        related = _sc_related(sc_url, limit=limit + 2)
-        for e in related:
-            t = (e.get("title") or "").strip()
-            if t.lower() in seen:
-                continue
-            # Language filter: if Hindi song, skip clearly English results
-            if is_hindi and not _is_hindi(t) and not _is_hindi(e.get("uploader", "")):
-                continue
-            seen.add(t.lower())
-            results.append(e)
-            if len(results) >= limit:
-                return results
-
-    # Step 2: Search by artist (same artist = same language)
-    artist_results = _sc_search_multi(uploader, limit=limit + 3)
-    for e in artist_results:
-        t = (e.get("title") or "").strip()
-        if t.lower() in seen:
-            continue
-        seen.add(t.lower())
-        results.append(e)
-        if len(results) >= limit:
-            return results
-
-    # Step 3: Language-specific search
-    if len(results) < limit:
-        if is_hindi:
-            clean = re.sub(r'\([^)]*\)', '', title).split('-')[0].strip()
-            extra = _sc_search_multi(f"hindi sad songs {clean}", limit=limit)
-        else:
-            clean = re.sub(r'\([^)]*\)', '', title).split('-')[0].strip()
-            extra = _sc_search_multi(f"songs like {clean}", limit=limit)
-        for e in extra:
-            t = (e.get("title") or "").strip()
-            if t.lower() in seen:
-                continue
-            if is_hindi and not _is_hindi(t) and not _is_hindi(e.get("uploader", "")):
-                continue
-            seen.add(t.lower())
-            results.append(e)
-            if len(results) >= limit:
-                break
-
-    return results[:limit]
+def _get_autoplay_songs_OLD_REMOVED():
+    pass
 
 
 # ── Song ────────────────────────────────────────────────────────────────────────
