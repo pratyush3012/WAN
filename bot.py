@@ -17,9 +17,11 @@ load_dotenv()
 REQUIRED_ENV_VARS = ['DISCORD_TOKEN', 'OWNER_ID']
 missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
 if missing_vars:
-    print(f"❌ ERROR: Missing required environment variables: {', '.join(missing_vars)}")
-    print("Please check your .env file and ensure all required variables are set.")
+    print(f"❌ ERROR: Missing required environment variables: {', '.join(missing_vars)}", flush=True)
+    print(f"Available env vars: {[k for k in os.environ.keys() if not k.startswith('_')]}", flush=True)
     sys.exit(1)
+
+print(f"✅ Environment OK — TOKEN present: {bool(os.getenv('DISCORD_TOKEN'))}, OWNER_ID: {os.getenv('OWNER_ID')}", flush=True)
 
 # Configure logging with better formatting
 logging.basicConfig(
