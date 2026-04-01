@@ -115,6 +115,10 @@ select.form-control option{background:var(--surface2);}
 .mq-chip{padding:6px 14px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,.1);background:#212121;color:#fff;font-weight:500;transition:.2s}
 .mq-chip:hover{background:#303030}
 .mq-chip.active{background:#fff;color:#000;border-color:#fff}
+@keyframes eqBar{0%{height:3px}100%{height:14px}}
+.mq-tab-btn{flex:1;padding:9px 2px;text-align:center;font-size:9px;font-weight:700;color:#aaa;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:.2s;text-transform:uppercase;letter-spacing:.3px}
+.mq-tab-btn.active{color:#1db954;border-bottom-color:#1db954}
+.mq-tab-btn:hover:not(.active){color:#fff}
 .mq-song-row{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;cursor:pointer;transition:.15s}
 .mq-song-row:hover{background:#1a1a1a}
 .mq-q-item{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;transition:.15s}
@@ -979,8 +983,8 @@ select.form-control option{background:var(--surface2);}
 
   <!-- MUSIC -->
   <div id="sec-music" class="section">
-    <!-- YouTube Music-style inline player -->
-    <div style="background:#0f0f0f;border-radius:12px;overflow:hidden;min-height:600px;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.08)">
+    <!-- Advanced Music Player -->
+    <div style="background:#0a0a0a;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.07);min-height:700px">
 
       <!-- Top search bar -->
       <div style="background:#0f0f0f;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:12px">
@@ -1023,6 +1027,10 @@ select.form-control option{background:var(--surface2);}
                     <button onclick="musicControl('skip')" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:16px;padding:6px;border-radius:50%;transition:.2s" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#aaa'"><i class="fas fa-step-forward"></i></button>
                     <button id="mq-loop-btn" onclick="musicControl('loop')" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#aaa'"><i class="fas fa-redo"></i></button>
                     <button onclick="musicControl('shuffle')" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#aaa'"><i class="fas fa-random"></i></button>
+                    <button onclick="mqLike()" id="mq-like-btn" title="Like" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s"><i class="fas fa-heart"></i></button>
+                    <button onclick="mqShowLyrics()" id="mq-lyrics-btn" title="Lyrics" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s"><i class="fas fa-align-left"></i></button>
+                    <button onclick="mqAddToPlaylist()" title="Add to Playlist" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s"><i class="fas fa-plus-circle"></i></button>
+                    <button onclick="toggleSleepTimer()" title="Sleep Timer" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s"><i class="fas fa-moon"></i></button>
                     <button onclick="musicControl('stop')" style="background:none;border:none;color:#ff4757;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s;margin-left:auto"><i class="fas fa-stop"></i></button>
                     <div style="display:flex;align-items:center;gap:5px">
                       <i class="fas fa-volume-down" style="font-size:12px;color:#717171"></i>
@@ -1035,15 +1043,21 @@ select.form-control option{background:var(--surface2);}
           </div>
 
           <!-- Genre chips -->
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="mq-chip active" onclick="mqChip('all',this)">All</button>
             <button class="mq-chip" onclick="mqChip('hindi',this)">Hindi</button>
+            <button class="mq-chip" onclick="mqChip('punjabi',this)">Punjabi</button>
             <button class="mq-chip" onclick="mqChip('english',this)">English</button>
             <button class="mq-chip" onclick="mqChip('trending',this)">Trending</button>
             <button class="mq-chip" onclick="mqChip('lofi',this)">Lo-fi</button>
+            <button class="mq-chip" onclick="mqChip('party',this)">Party</button>
+            <button class="mq-chip" onclick="mqChip('sad',this)">Sad</button>
           </div>
-
-          <!-- Search results / suggestions -->
+          <!-- Lyrics panel -->
+          <div id="mq-lyrics-panel" style="display:none;background:#111;border-radius:10px;padding:14px;max-height:180px;overflow-y:auto">
+            <div style="font-size:11px;font-weight:700;color:#aaa;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Lyrics</div>
+            <div id="mq-lyrics-text" style="font-size:13px;line-height:1.8;color:#fff;white-space:pre-wrap">Loading...</div>
+          </div>
           <div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
               <span id="mq-section-title" style="font-size:14px;font-weight:700;color:#fff">Suggestions</span>
@@ -1058,9 +1072,26 @@ select.form-control option{background:var(--surface2);}
           <span id="volumeVal" style="display:none">50</span>
         </div>
 
+        <!-- MIDDLE: History/Playlists/Liked -->
+        <div style="border-left:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;background:#0d0d0d;overflow:hidden">
+          <div style="display:flex;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0">
+            <button class="mq-tab-btn active" onclick="mqSwitchTab('history',this)">History</button>
+            <button class="mq-tab-btn" onclick="mqSwitchTab('playlists',this)">Playlists</button>
+            <button class="mq-tab-btn" onclick="mqSwitchTab('liked',this)">Liked</button>
+          </div>
+          <div id="mq-tab-history" style="flex:1;overflow-y:auto;padding:4px 0"><div style="text-align:center;padding:20px;color:#717171;font-size:11px">No history yet</div></div>
+          <div id="mq-tab-playlists" style="display:none;flex:1;overflow-y:auto;padding:8px">
+            <button onclick="mqCreatePlaylist()" style="width:100%;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.12);border-radius:8px;color:#aaa;cursor:pointer;padding:9px;font-size:11px;margin-bottom:7px;transition:.2s"><i class="fas fa-plus"></i> New Playlist</button>
+            <div id="mq-playlists-list"></div>
+          </div>
+          <div id="mq-tab-liked" style="display:none;flex:1;overflow-y:auto;padding:4px 0"><div style="text-align:center;padding:20px;color:#717171;font-size:11px">No liked songs yet</div></div>
+        </div>
+
         <!-- RIGHT: Queue -->
         <div style="border-left:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;background:#111;overflow:hidden">
-          <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);font-size:13px;font-weight:700;color:#fff;flex-shrink:0">Queue</div>
+          <div style="padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:700;color:#fff;flex-shrink:0;display:flex;justify-content:space-between;align-items:center">
+            Queue <span id="mq-queue-count" style="font-size:10px;color:#717171;font-weight:400">0 songs</span>
+          </div>
           <div id="mq-queue" style="flex:1;overflow-y:auto;padding:6px 0">
             <div style="text-align:center;padding:20px;color:#717171;font-size:12px">Queue is empty</div>
           </div>
@@ -1071,11 +1102,39 @@ select.form-control option{background:var(--surface2);}
             </select>
             <div style="display:flex;gap:6px">
               <input id="musicQuery" style="flex:1;background:#212121;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;padding:8px 12px;font-size:13px;outline:none" placeholder="Song name or YouTube URL..." onkeydown="if(event.key==='Enter')playMusic()">
-              <button onclick="playMusic()" style="background:#ff0000;border:none;border-radius:8px;color:#fff;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700;white-space:nowrap;transition:.2s" onmouseover="this.style.background='#cc0000'" onmouseout="this.style.background='#ff0000'"><i class="fas fa-play"></i></button>
+              <button onclick="playMusic()" style="background:#ff0000;border:none;border-radius:8px;color:#fff;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:700;white-space:nowrap;transition:.2s"><i class="fas fa-play"></i></button>
             </div>
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- Sleep timer modal -->
+    <div id="sleepTimerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#1a1a1a;border-radius:14px;padding:22px;width:260px;border:1px solid rgba(255,255,255,.1)">
+        <div style="font-size:14px;font-weight:700;margin-bottom:14px">⏰ Sleep Timer</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:14px">
+          <button onclick="setSleepTimer(15)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;cursor:pointer;padding:9px;font-size:12px">15 min</button>
+          <button onclick="setSleepTimer(30)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;cursor:pointer;padding:9px;font-size:12px">30 min</button>
+          <button onclick="setSleepTimer(45)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;cursor:pointer;padding:9px;font-size:12px">45 min</button>
+          <button onclick="setSleepTimer(60)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;cursor:pointer;padding:9px;font-size:12px">1 hour</button>
+          <button onclick="setSleepTimer(90)" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;cursor:pointer;padding:9px;font-size:12px">1.5 hrs</button>
+          <button onclick="setSleepTimer(0)" style="background:rgba(255,71,87,.1);border:1px solid rgba(255,71,87,.3);border-radius:8px;color:#ff4757;cursor:pointer;padding:9px;font-size:12px">Cancel</button>
+        </div>
+        <button onclick="document.getElementById('sleepTimerModal').style.display='none'" style="width:100%;background:rgba(255,255,255,.05);border:none;border-radius:8px;color:#aaa;cursor:pointer;padding:8px;font-size:11px">Close</button>
+      </div>
+    </div>
+    <!-- Playlist modal -->
+    <div id="playlistModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+      <div style="background:#1a1a1a;border-radius:14px;padding:22px;width:300px;border:1px solid rgba(255,255,255,.1)">
+        <div style="font-size:14px;font-weight:700;margin-bottom:14px">➕ Add to Playlist</div>
+        <div id="playlistModalList" style="max-height:200px;overflow-y:auto;margin-bottom:12px"></div>
+        <input id="newPlaylistName" style="width:100%;background:#212121;border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#fff;padding:8px 12px;font-size:12px;outline:none;margin-bottom:8px" placeholder="Or create new playlist...">
+        <div style="display:flex;gap:8px">
+          <button onclick="mqSaveToPlaylist()" style="flex:1;background:#1db954;border:none;border-radius:8px;color:#000;cursor:pointer;padding:8px;font-size:12px;font-weight:700">Save</button>
+          <button onclick="document.getElementById('playlistModal').style.display='none'" style="flex:1;background:rgba(255,255,255,.06);border:none;border-radius:8px;color:#aaa;cursor:pointer;padding:8px;font-size:12px">Cancel</button>
+        </div>
       </div>
     </div>
   </div>
@@ -3381,10 +3440,199 @@ async function mqDrop(toIdx){
 
 async function mqRemove(idx){
   await musicControl('remove',idx);
-  setTimeout(mqRenderQueue,300);
+  setTimeout(loadMusicStatus,300);
+}
+
+// ── NEW FEATURES ──────────────────────────────────────────────────────────────
+
+// EQ visualizer
+function mqUpdateEQ(playing){
+  const eq = document.getElementById('mq-eq');
+  if(eq) eq.style.display = playing ? 'block' : 'none';
+}
+
+// Tab switching
+function mqSwitchTab(name, el){
+  document.querySelectorAll('.mq-tab-btn').forEach(b=>{ b.style.color='#aaa'; b.style.borderBottomColor='transparent'; });
+  el.style.color='#1db954'; el.style.borderBottomColor='#1db954';
+  ['history','playlists','liked'].forEach(t=>{
+    const p=document.getElementById('mq-tab-'+t);
+    if(p) p.style.display = t===name ? 'block' : 'none';
+  });
+}
+
+// Song history
+let mqHistory = JSON.parse(localStorage.getItem('wan_music_history')||'[]');
+function mqAddToHistory(title, artist, thumbnail){
+  mqHistory = mqHistory.filter(h=>h.title!==title);
+  mqHistory.unshift({title,artist,thumbnail,ts:Date.now()});
+  if(mqHistory.length>50) mqHistory=mqHistory.slice(0,50);
+  localStorage.setItem('wan_music_history',JSON.stringify(mqHistory));
+  mqRenderHistory();
+}
+function mqRenderHistory(){
+  const el=document.getElementById('mq-tab-history');
+  if(!el) return;
+  if(!mqHistory.length){el.innerHTML='<div style="text-align:center;padding:20px;color:#717171;font-size:11px">No history yet</div>';return;}
+  el.innerHTML=mqHistory.slice(0,20).map(h=>`
+    <div class="mq-q-item" onclick="mqPlay('${esc(h.title)}','${esc(h.title)}','${esc(h.artist||'')}')">
+      <img src="${h.thumbnail||''}" style="width:34px;height:34px;border-radius:4px;object-fit:cover;flex-shrink:0;background:#212121" onerror="this.style.display='none'">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:500;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title)}</div>
+        <div style="font-size:10px;color:#717171">${esc(h.artist||'')}</div>
+      </div>
+    </div>`).join('');
+}
+
+// Liked songs
+let mqLiked = JSON.parse(localStorage.getItem('wan_music_liked')||'[]');
+let mqCurrentSongData = null;
+function mqLike(){
+  if(!mqCurrentSongData) return;
+  const {title,artist,thumbnail} = mqCurrentSongData;
+  const idx = mqLiked.findIndex(s=>s.title===title);
+  const btn = document.getElementById('mq-like-btn');
+  if(idx>=0){
+    mqLiked.splice(idx,1);
+    if(btn) btn.style.color='#aaa';
+    notify('Removed from liked','info');
+  } else {
+    mqLiked.unshift({title,artist,thumbnail});
+    if(btn) btn.style.color='#ff4757';
+    notify('❤️ Added to liked','success');
+  }
+  localStorage.setItem('wan_music_liked',JSON.stringify(mqLiked));
+  mqRenderLiked();
+}
+function mqRenderLiked(){
+  const el=document.getElementById('mq-tab-liked');
+  if(!el) return;
+  if(!mqLiked.length){el.innerHTML='<div style="text-align:center;padding:20px;color:#717171;font-size:11px">No liked songs yet</div>';return;}
+  el.innerHTML=mqLiked.map(s=>`
+    <div class="mq-q-item" onclick="mqPlay('${esc(s.title)}','${esc(s.title)}','${esc(s.artist||'')}')">
+      <img src="${s.thumbnail||''}" style="width:34px;height:34px;border-radius:4px;object-fit:cover;flex-shrink:0;background:#212121" onerror="this.style.display='none'">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:500;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
+        <div style="font-size:10px;color:#717171">${esc(s.artist||'')}</div>
+      </div>
+      <span style="color:#ff4757;font-size:11px">♥</span>
+    </div>`).join('');
+}
+
+// Playlists
+let mqPlaylists = JSON.parse(localStorage.getItem('wan_music_playlists')||'{}');
+function mqCreatePlaylist(){
+  const name = prompt('Playlist name:');
+  if(!name) return;
+  mqPlaylists[name] = mqPlaylists[name]||[];
+  localStorage.setItem('wan_music_playlists',JSON.stringify(mqPlaylists));
+  mqRenderPlaylists();
+}
+function mqRenderPlaylists(){
+  const el=document.getElementById('mq-playlists-list');
+  if(!el) return;
+  const names=Object.keys(mqPlaylists);
+  if(!names.length){el.innerHTML='<div style="text-align:center;padding:12px;color:#717171;font-size:11px">No playlists yet</div>';return;}
+  el.innerHTML=names.map(n=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</div>
+        <div style="font-size:10px;color:#717171">${mqPlaylists[n].length} songs</div>
+      </div>
+      <button onclick="mqPlayPlaylist('${esc(n)}')" style="background:none;border:none;color:#1db954;cursor:pointer;font-size:12px;padding:3px 6px">▶</button>
+      <button onclick="mqDeletePlaylist('${esc(n)}')" style="background:none;border:none;color:#717171;cursor:pointer;font-size:11px;padding:3px 6px">✕</button>
+    </div>`).join('');
+}
+function mqAddToPlaylist(){
+  if(!mqCurrentSongData){notify('Nothing playing','warning');return;}
+  const modal=document.getElementById('playlistModal');
+  const list=document.getElementById('playlistModalList');
+  const names=Object.keys(mqPlaylists);
+  list.innerHTML=names.length?names.map(n=>`<div onclick="mqSaveToPlaylistNamed('${esc(n)}')" style="padding:8px 10px;cursor:pointer;border-radius:6px;font-size:12px;transition:.15s" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='none'">${esc(n)} (${mqPlaylists[n].length})</div>`).join(''):'<div style="color:#717171;font-size:11px;padding:8px">No playlists yet</div>';
+  modal.style.display='flex';
+}
+function mqSaveToPlaylist(){
+  const name=document.getElementById('newPlaylistName').value.trim();
+  if(!name){notify('Enter a playlist name','warning');return;}
+  mqSaveToPlaylistNamed(name);
+}
+function mqSaveToPlaylistNamed(name){
+  if(!mqCurrentSongData) return;
+  if(!mqPlaylists[name]) mqPlaylists[name]=[];
+  if(!mqPlaylists[name].find(s=>s.title===mqCurrentSongData.title)){
+    mqPlaylists[name].push(mqCurrentSongData);
+  }
+  localStorage.setItem('wan_music_playlists',JSON.stringify(mqPlaylists));
+  document.getElementById('playlistModal').style.display='none';
+  document.getElementById('newPlaylistName').value='';
+  mqRenderPlaylists();
+  notify(`✅ Added to "${name}"`, 'success');
+}
+function mqPlayPlaylist(name){
+  const songs=mqPlaylists[name]||[];
+  if(!songs.length){notify('Playlist is empty','warning');return;}
+  songs.forEach((s,i)=>{ setTimeout(()=>{ document.getElementById('musicQuery').value=s.title; playMusic(); }, i*500); });
+}
+function mqDeletePlaylist(name){
+  if(!confirm(`Delete playlist "${name}"?`)) return;
+  delete mqPlaylists[name];
+  localStorage.setItem('wan_music_playlists',JSON.stringify(mqPlaylists));
+  mqRenderPlaylists();
+}
+
+// Lyrics
+async function mqShowLyrics(){
+  const panel=document.getElementById('mq-lyrics-panel');
+  const btn=document.getElementById('mq-lyrics-btn');
+  if(panel.style.display!=='none'){panel.style.display='none';if(btn)btn.style.color='#aaa';return;}
+  panel.style.display='block';
+  if(btn) btn.style.color='#fff';
+  if(!mqCurrentSongData){document.getElementById('mq-lyrics-text').textContent='Nothing playing';return;}
+  document.getElementById('mq-lyrics-text').textContent='Loading lyrics...';
+  try{
+    const q=encodeURIComponent(`${mqCurrentSongData.title} ${mqCurrentSongData.artist||''}`);
+    const r=await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(mqCurrentSongData.artist||'unknown')}/${encodeURIComponent(mqCurrentSongData.title)}`);
+    const d=await r.json();
+    document.getElementById('mq-lyrics-text').textContent=d.lyrics||'Lyrics not found for this song.';
+  }catch(e){
+    document.getElementById('mq-lyrics-text').textContent='Lyrics not available.';
+  }
+}
+
+// Sleep timer
+let sleepTimerTimeout=null;
+function toggleSleepTimer(){
+  document.getElementById('sleepTimerModal').style.display='flex';
+}
+function setSleepTimer(minutes){
+  if(sleepTimerTimeout){clearTimeout(sleepTimerTimeout);sleepTimerTimeout=null;}
+  document.getElementById('sleepTimerModal').style.display='none';
+  if(minutes===0){
+    document.getElementById('sleepTimerLabel').textContent='Sleep';
+    notify('Sleep timer cancelled','info');
+    return;
+  }
+  document.getElementById('sleepTimerLabel').textContent=`${minutes}m`;
+  notify(`😴 Music will stop in ${minutes} minutes`,'success');
+  sleepTimerTimeout=setTimeout(()=>{
+    musicControl('stop');
+    document.getElementById('sleepTimerLabel').textContent='Sleep';
+    notify('😴 Sleep timer — music stopped','info');
+  }, minutes*60*1000);
+}
+
+// Queue count update
+function mqUpdateQueueCount(n){
+  const el=document.getElementById('mq-queue-count');
+  if(el) el.textContent=n+' song'+(n!==1?'s':'');
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML.replace(/'/g,'&#39;');}
+
+// Init
+mqRenderHistory();
+mqRenderLiked();
+mqRenderPlaylists();
 
 async function loadMusicStatus(){
   if(!currentServer)return;
@@ -3448,13 +3696,28 @@ function updateMusicUI(d){
       document.getElementById('mq-time-cur').textContent=mqFmt(cur.elapsed);
       document.getElementById('mq-time-tot').textContent=mqFmt(cur.duration_seconds);
     }
+
+    // Update new features
+    mqCurrentSongData={title:cur.title,artist:cur.uploader||'',thumbnail:cur.thumbnail||''};
+    mqUpdateEQ(d.playing&&!d.paused);
+    // Add to history on song change
+    if(cur.title!==mqLastTitle) mqAddToHistory(cur.title,cur.uploader||'',cur.thumbnail||'');
+    // Update like button state
+    const likeBtn=document.getElementById('mq-like-btn');
+    if(likeBtn) likeBtn.style.color=mqLiked.find(s=>s.title===cur.title)?'#ff4757':'#aaa';
+
   } else {
     mqLastTitle=null;
+    mqCurrentSongData=null;
+    mqUpdateEQ(false);
     document.getElementById('mq-idle').style.display='block';
     document.getElementById('mq-track').style.display='none';
     document.getElementById('mq-art').src='';
     document.getElementById('mq-hero-bg').style.backgroundImage='';
   }
+
+  // Queue count
+  if(d.queue_full) mqUpdateQueueCount(d.queue_full.length);
 
   // Render queue from status data (no extra API call needed)
   if(d.queue_full!==undefined) mqRenderQueueFromData(d.queue_full);
