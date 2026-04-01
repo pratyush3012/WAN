@@ -72,45 +72,13 @@ class GamingBot(commands.Bot):
         GUILD_ID = int(os.getenv('GUILD_ID', '1462688504436752489'))
         self._home_guild = discord.Object(id=GUILD_ID)
 
-        # All cogs — overflow cogs now use prefix commands so we stay under 100 slash commands
+        # Cogs — only welcome, leveling, watch party, music, and web dashboard
         all_cogs = [
-            'cogs.music',
-            'cogs.admin',
-            'cogs.moderation',
-            'cogs.utility',
-            'cogs.logging',
-            'cogs.roles',
-            'cogs.automod',
-            'cogs.autoresponder',
             'cogs.welcome',
-            'cogs.reactionroles',
             'cogs.leveling',
-            'cogs.tickets',
-            'cogs.tempvoice',
-            'cogs.translation',
-            'cogs.roblox',
-            'cogs.giveaways',
-            'cogs.polls',
-            'cogs.afk',
-            'cogs.reminders',
-            'cogs.modlog',
-            'cogs.scheduler',
-            'cogs.antiraid',
+            'cogs.watch_party_complete',
+            'cogs.watch_party_enhanced',
             'cogs.webdashboard',
-            'cogs.dashboard_custom',
-            'cogs.serverstats',
-            'cogs.tags',
-            'cogs.voicexp',
-            'cogs.smartmod',
-            'cogs.channelguard',
-            'cogs.joinleave',
-            'cogs.starboard',
-            'cogs.timedactions',
-            'cogs.embedbuilder',
-            'cogs.botanalyzer',
-            'cogs.ai_brain',
-            'cogs.ai_coder',
-            # NOTE: cogs.dashboard and cogs.highlights removed to stay under 100 slash command limit
         ]
 
         self.cog_errors = {}
