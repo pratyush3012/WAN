@@ -1,0 +1,79 @@
+{
+  "1414641264657432669": {
+    "235088799074484224": {
+      "id": "235088799074484224",
+      "name": "Rythm",
+      "display_name": "Rythm",
+      "avatar": "https://cdn.discordapp.com/avatars/235088799074484224/a_bf76f4b59ab50da1065df1144d5cf46b.gif?size=1024",
+      "commands": {
+        "play": {
+          "count": 4,
+          "last_used": "2026-04-01T14:14:27.869579+00:00",
+          "example_trigger": "/play",
+          "example_response": "<a:arythmblue:1359367366143905984> Searching",
+          "is_slash": true
+        }
+      },
+      "prefixes": [],
+      "slash_commands": [],
+      "message_count": 135,
+      "first_seen": "2026-04-01T06:21:27.840193+00:00",
+      "last_seen": "2026-04-01T15:30:34.054463+00:00"
+    },
+    "394019914157129728": {
+      "id": "394019914157129728",
+      "name": "Censor Bot",
+      "display_name": "Censor Bot",
+      "avatar": "https://cdn.discordapp.com/avatars/394019914157129728/149fdc75fe55e66af8cf725a7494dc24.png?size=1024",
+      "commands": {},
+      "prefixes": [],
+      "slash_commands": [],
+      "message_count": 2,
+      "first_seen": "2026-04-01T14:25:11.294160+00:00",
+      "last_seen": "2026-04-01T14:25:12.848104+00:00"
+    }
+  },
+  "1462688504436752489": {
+    "1480416399053815899": {
+      "id": "1480416399053815899",
+      "name": "Quark",
+      "display_name": "Quark",
+      "avatar": "https://cdn.discordapp.com/avatars/1480416399053815899/d64cdd94f89feeb92baee21318e51d1c.png?size=1024",
+      "commands": {},
+      "prefixes": [],
+      "slash_commands": [],
+      "message_count": 9,
+      "first_seen": "2026-04-01T09:21:49.221916+00:00",
+      "last_seen": "2026-04-01T16:23:33.295949+00:00"
+    }
+  },
+  "1485648537558585436": {
+    "944016826751389717": {
+      "id": "944016826751389717",
+      "name": "Lara\u2728",
+      "display_name": "Lara\u2728",
+      "avatar": "https://cdn.discordapp.com/avatars/944016826751389717/bed9c32e0163818549e7abcd3f2221f2.png?size=1024",
+      "commands": {
+        "play": {
+          "count": 18,
+          "last_used": "2026-04-01T16:38:07.474839+00:00",
+          "example_trigger": "/play",
+          "example_response": "",
+          "is_slash": true
+        },
+        "skip": {
+          "count": 1,
+          "last_used": "2026-04-01T15:24:23.578514+00:00",
+          "example_trigger": "/skip",
+          "example_response": "<:Yes:1107897625442787338> Skip the current track!",
+          "is_slash": true
+        }
+      },
+      "prefixes": [],
+      "slash_commands": [],
+      "message_count": 40,
+      "first_seen": "2026-04-01T15:04:17.090036+00:00",
+      "last_seen": "2026-04-01T16:38:10.632347+00:00"
+    }
+  }
+}

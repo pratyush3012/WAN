@@ -208,8 +208,7 @@ def index():
 @app.route('/manage')
 @require_auth
 def manage():
-    """Server management page"""
-    return render_template('server_management.html', username=session.get('username'))
+    return redirect(url_for('index'))
 
 @app.route('/auth')
 def auth():
@@ -793,17 +792,15 @@ def invite():
         f"&permissions=8"
         f"&scope=bot%20applications.commands"
     ) if client_id else '#'
-    return render_template('invite.html', invite_url=invite_url, client_id=client_id)
+    return redirect(invite_url if invite_url != '#' else url_for('index'))
 
 @app.route('/terms')
 def terms():
-    """Terms of Service page"""
-    return render_template('terms.html')
+    return redirect(url_for('index'))
 
 @app.route('/privacy')
 def privacy():
-    """Privacy Policy page"""
-    return render_template('privacy.html')
+    return redirect(url_for('index'))
 
 # ===== Roblox Integration API Endpoints =====
 
@@ -1422,16 +1419,8 @@ def get_text_channels(server_id):
 @app.route('/server/<server_id>/music')
 @require_auth
 def music_player_page(server_id):
-    """Dedicated YouTube Music-style player page."""
-    if not bot_instance:
-        return redirect(url_for('index'))
-    guild = bot_instance.get_guild(int(server_id))
-    if not guild:
-        return redirect(url_for('index'))
-    return render_template('music_player.html',
-                           server_id=server_id,
-                           server_name=guild.name,
-                           server_icon=str(guild.icon.url) if guild.icon else '')
+    """Dedicated music player page — removed, redirect to dashboard."""
+    return redirect(url_for('index'))
 
 
 @app.route('/api/server/<server_id>/music/search', methods=['POST'])
@@ -5004,7 +4993,33 @@ def watch_upload_page():
 def watch_party_page(room_id):
     """Serve the watch party page — no login required, room access check handles roles."""
     room = _watch_rooms.get(room_id)
-    # If room not in memory (e.g. after restart), try to restore from DB
+    # Restore from DB if not in memory (restart recovery)
+    if not room:
+        try:
+            from watch_party_db import WatchPartyDB
+            saved = WatchPartyDB.get_room_data(room_id)
+            if saved:
+                room = WatchRoom(
+                    room_id=room_id,
+                    guild_id=str(saved.get("guild_id", "")),
+                    title=saved.get("title", "Movie"),
+                    video_url=saved.get("video_url", f"/watch/stream/{room_id}"),
+                    host_id=saved.get("host_id", "unknown"),
+                    host_name=saved.get("host_name", "Host"),
+                    required_role_id=saved.get("required_role_id"),
+                )
+                # Restore file path if it was an upload
+                upload = WatchPartyDB.get_upload_info(room_id)
+                if upload and upload.get("filename"):
+                    from watch_party_config import UPLOAD_FOLDER
+                    import glob as _glob
+                    matches = _glob.glob(os.path.join(UPLOAD_FOLDER, f"{room_id}.*"))
+                    if matches:
+                        room.file_path = matches[0]
+                _watch_rooms[room_id] = room
+        except Exception as _e:
+            logger.warning(f"Could not restore room {room_id} from WatchPartyDB: {_e}")
+    # Also try MovieDatabase as fallback
     if not room:
         try:
             from watch_party_movies_db import MovieDatabase
@@ -5022,7 +5037,7 @@ def watch_party_page(room_id):
                 _watch_rooms[room_id] = room
                 MovieDatabase.update_movie_views(room_id)
         except Exception as _e:
-            logger.warning(f"Could not restore room {room_id} from DB: {_e}")
+            logger.warning(f"Could not restore room {room_id} from MovieDatabase: {_e}")
     if not room:
         # Show a simple not-found page
         return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Watch Party Not Found</title>

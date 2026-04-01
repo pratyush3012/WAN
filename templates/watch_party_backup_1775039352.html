@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ room.title }} — WAN Watch Party</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#05070f;--s1:#0a0d1a;--s2:#0f1220;--s3:#151929;--s4:#1c2035;
+  --accent:#7c6fff;--a2:#00e5ff;--gold:#ffd700;
+  --red:#ff4757;--green:#2ed573;--orange:#ffa502;--pink:#ff6b9d;
+  --text:#eef0ff;--muted:#5a6080;--border:rgba(124,111,255,.12);
+  --glow:0 0 40px rgba(124,111,255,.25);--glow2:0 0 25px rgba(0,229,255,.2);
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;display:flex;flex-direction:column}
+body::before{content:'';position:fixed;inset:0;background:
+  radial-gradient(ellipse 90% 60% at 15% -10%,rgba(124,111,255,.07) 0%,transparent 55%),
+  radial-gradient(ellipse 70% 50% at 85% 110%,rgba(0,229,255,.05) 0%,transparent 55%);
+  pointer-events:none;z-index:0}
+
+/* ── TOPBAR ── */
+.topbar{position:relative;z-index:30;height:50px;
+  background:rgba(255,255,255,.04);
+  backdrop-filter:blur(32px) saturate(1.8);
+  -webkit-backdrop-filter:blur(32px) saturate(1.8);
+  border-bottom:1px solid rgba(255,255,255,.07);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+  display:flex;align-items:center;padding:0 18px;gap:12px;flex-shrink:0}
+.t-logo{font-size:20px;filter:drop-shadow(0 0 10px rgba(124,111,255,.7))}
+.t-title{font-weight:800;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:linear-gradient(90deg,#fff 30%,var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.pill{display:flex;align-items:center;gap:5px;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700}
+.pill-live{background:rgba(255,71,87,.1);border:1px solid rgba(255,71,87,.3);color:var(--red)}
+.pill-viewers{background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.2);color:var(--a2)}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--red);animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
+.tbtn{height:30px;padding:0 12px;border-radius:7px;border:none;cursor:pointer;font-size:11px;font-weight:700;transition:.2s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.tbtn-ghost{background:rgba(255,255,255,.04);color:var(--muted);border:1px solid var(--border)}
+.tbtn-ghost:hover{background:rgba(255,255,255,.09);color:var(--text)}
+.tbtn-accent{background:linear-gradient(135deg,var(--accent),var(--a2));color:#fff;box-shadow:0 2px 14px rgba(124,111,255,.35)}
+.tbtn-accent:hover{transform:translateY(-1px);box-shadow:0 4px 22px rgba(124,111,255,.5)}
+.tbtn-danger{background:linear-gradient(135deg,#c0392b,var(--red));color:#fff;box-shadow:0 2px 12px rgba(255,71,87,.3)}
+.tbtn-danger:hover{transform:translateY(-1px)}
+
+/* ── AMBIENT RGB CANVAS (behind everything, never blocks video) ── */
+#ambientCanvas{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.45;filter:blur(80px) saturate(1.4);transition:opacity 1.2s}
+
+/* ── MAIN layout — z-index above ambient ── */
+.main{display:flex;flex:1;overflow:hidden;position:relative;z-index:2}
+
+/* ── VIDEO SIDE ── */
+.video-side{flex:1;display:flex;flex-direction:column;background:transparent;position:relative;min-width:0}
+.video-wrap{position:relative;flex:1;overflow:hidden;background:#000}
+
+/* CRITICAL: hide native browser controls */
+#vid{width:100%;height:100%;object-fit:contain;display:block;background:#000}
+#vid::-webkit-media-controls{display:none!important}
+#vid::-webkit-media-controls-enclosure{display:none!important}
+
+/* Mood overlay — tinted by reactions */
+.mood-overlay{position:absolute;inset:0;pointer-events:none;transition:background 1.5s,opacity 1.5s;opacity:0;z-index:2}
+.mood-overlay.active{opacity:1}
+
+/* Cinematic gradients */
+.vg-top{position:absolute;top:0;left:0;right:0;height:90px;background:linear-gradient(to bottom,rgba(0,0,0,.65),transparent);pointer-events:none;opacity:0;transition:.4s;z-index:3}
+.vg-bot{position:absolute;bottom:0;left:0;right:0;height:160px;background:linear-gradient(to top,rgba(0,0,0,.92),transparent);pointer-events:none;opacity:0;transition:.4s;z-index:3}
+.video-wrap:hover .vg-top,.video-wrap:hover .vg-bot,.video-wrap.paused .vg-bot{opacity:1}
+
+/* Role badge */
+.role-badge{position:absolute;top:14px;left:14px;padding:5px 13px;border-radius:20px;font-size:11px;font-weight:700;backdrop-filter:blur(10px);border:1px solid;display:none;z-index:5}
+.rb-host,.rb-owner{background:rgba(255,215,0,.14);border-color:rgba(255,215,0,.4);color:var(--gold)}
+.rb-admin{background:rgba(255,71,87,.12);border-color:rgba(255,71,87,.35);color:var(--red)}
+.rb-mod{background:rgba(46,213,115,.1);border-color:rgba(46,213,115,.3);color:var(--green)}
+.rb-member{background:rgba(0,229,255,.09);border-color:rgba(0,229,255,.25);color:var(--a2)}
+
+/* Cinematic mode toggle */
+.cinema-btn{position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:8px;background:rgba(0,0,0,.5);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.6);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:.2s;z-index:5;opacity:0}
+.video-wrap:hover .cinema-btn{opacity:1}
+.cinema-btn:hover{color:#fff;background:rgba(124,111,255,.3)}
+
+/* Sync toast */
+.sync-toast{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.88);backdrop-filter:blur(14px);border:1px solid var(--accent);border-radius:14px;padding:12px 26px;font-size:14px;color:var(--a2);display:none;pointer-events:none;box-shadow:var(--glow2);z-index:10}
+
+/* Center play */
+.center-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.85);width:76px;height:76px;border-radius:50%;background:rgba(124,111,255,.88);backdrop-filter:blur(10px);border:2px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:28px;color:#fff;opacity:0;transition:.3s;pointer-events:none;box-shadow:var(--glow);z-index:6}
+.video-wrap:hover .center-play,.video-wrap.paused .center-play{opacity:1;transform:translate(-50%,-50%) scale(1);pointer-events:auto;cursor:pointer}
+
+/* Bookmark markers on progress bar */
+.bm-marker{position:absolute;top:-4px;width:3px;height:11px;background:var(--gold);border-radius:2px;transform:translateX(-50%);cursor:pointer;z-index:5;transition:.2s}
+.bm-marker:hover{height:16px;top:-7px;background:#fff}
+.bm-tooltip{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.9);border:1px solid var(--gold);border-radius:6px;padding:3px 8px;font-size:10px;white-space:nowrap;color:var(--gold);display:none;pointer-events:none}
+.bm-marker:hover .bm-tooltip{display:block}
+
+/* ── CONTROLS ── */
+.controls{position:absolute;bottom:0;left:0;right:0;padding:0 14px 12px;opacity:0;transition:.35s;pointer-events:none;z-index:7;
+  background:linear-gradient(to top,rgba(0,0,0,.88) 0%,transparent 100%)}
+.video-wrap:hover .controls,.video-wrap.paused .controls{opacity:1;pointer-events:auto}
+.prog-wrap{position:relative;padding:10px 0;cursor:pointer}
+.prog-track{height:3px;background:rgba(255,255,255,.12);border-radius:3px;transition:.2s;position:relative}
+.prog-wrap:hover .prog-track{height:5px}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--a2));border-radius:3px;pointer-events:none;position:relative;transition:width .1s linear}
+.prog-fill::after{content:'';position:absolute;right:-6px;top:50%;transform:translateY(-50%);width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 0 10px rgba(124,111,255,.9);opacity:0;transition:.2s}
+.prog-wrap:hover .prog-fill::after{opacity:1}
+.ctrl-row{display:flex;align-items:center;gap:7px}
+.cbtn{background:none;border:none;color:rgba(255,255,255,.8);font-size:15px;cursor:pointer;padding:5px 7px;border-radius:6px;transition:.2s;display:flex;align-items:center;justify-content:center;min-width:30px}
+.cbtn:hover{color:#fff;background:rgba(255,255,255,.1);transform:scale(1.12)}
+.cbtn.locked{opacity:.25;cursor:not-allowed}
+.cbtn.locked:hover{transform:none;background:none}
+.time-txt{font-size:11px;color:rgba(255,255,255,.65);font-variant-numeric:tabular-nums;min-width:95px;font-weight:600}
+.vol-wrap{display:flex;align-items:center;gap:5px}
+.vol-sl{-webkit-appearance:none;width:68px;height:3px;border-radius:2px;background:rgba(255,255,255,.18);outline:none;cursor:pointer}
+.vol-sl::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:#fff;cursor:pointer}
+.speed-btn{font-size:10px;font-weight:800;min-width:34px;padding:4px 6px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:5px;color:rgba(255,255,255,.7)}
+.speed-btn:hover{background:rgba(124,111,255,.25);color:#fff;border-color:var(--accent)}
+.spacer{flex:1}
+</style>
+
+<style>
+/* ── SIDEBAR ── */
+.chat-side{width:340px;display:flex;flex-direction:column;
+  background:rgba(8,10,20,.65);
+  backdrop-filter:blur(28px) saturate(1.6);
+  -webkit-backdrop-filter:blur(28px) saturate(1.6);
+  border-left:1px solid rgba(255,255,255,.07);
+  box-shadow:-4px 0 40px rgba(0,0,0,.5);
+  flex-shrink:0;position:relative;z-index:10}
+.ctabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
+.ctab{flex:1;padding:9px 4px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:.2s;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;min-width:50px}
+.ctab.active{color:var(--a2);border-bottom-color:var(--a2)}
+.ctab:hover:not(.active){color:var(--text)}
+.tab-pane{display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0}
+.tab-pane.active{display:flex}
+
+/* Viewers strip */
+.vstrip{padding:7px 12px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:4px;max-height:52px;overflow-y:auto;flex-shrink:0}
+.vchip{display:flex;align-items:center;gap:3px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:20px;padding:2px 7px;font-size:10px}
+.vdot{width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green)}
+
+/* Chat */
+.chat-msgs{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:5px;scroll-behavior:smooth}
+.chat-msgs::-webkit-scrollbar{width:3px}
+.chat-msgs::-webkit-scrollbar-thumb{background:rgba(124,111,255,.25);border-radius:2px}
+.cmsg{display:flex;gap:8px;align-items:flex-start;animation:msgIn .22s ease-out}
+@keyframes msgIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.cmsg-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;overflow:hidden;border:2px solid transparent}
+.cmsg-av img{width:100%;height:100%;object-fit:cover}
+.av-host,.av-owner{border-color:var(--gold);background:linear-gradient(135deg,#8b6914,var(--gold));color:#000}
+.av-admin{border-color:var(--red);background:linear-gradient(135deg,#8b1a1a,var(--red));color:#fff}
+.av-mod{border-color:var(--green);background:linear-gradient(135deg,#1a6b3a,var(--green));color:#000}
+.av-member{border-color:var(--a2);background:linear-gradient(135deg,#006080,var(--a2));color:#000}
+.av-guest{border-color:var(--s4);background:var(--s3);color:var(--muted)}
+.cmsg-body{flex:1;min-width:0}
+.cmsg-name{font-size:10px;font-weight:700;margin-bottom:1px;display:flex;align-items:center;gap:4px}
+.n-host,.n-owner{color:var(--gold)}
+.n-admin{color:var(--red)}
+.n-mod{color:var(--green)}
+.n-member{color:var(--a2)}
+.n-guest{color:var(--muted)}
+.nbadge{font-size:8px;padding:1px 4px;border-radius:3px;font-weight:800}
+.nb-host,.nb-owner{background:rgba(255,215,0,.15);color:var(--gold)}
+.nb-admin{background:rgba(255,71,87,.15);color:var(--red)}
+.nb-mod{background:rgba(46,213,115,.12);color:var(--green)}
+.nb-member{background:rgba(0,229,255,.1);color:var(--a2)}
+.nb-guest{background:rgba(255,255,255,.06);color:var(--muted)}
+.cmsg-text{font-size:12px;line-height:1.45;word-break:break-word;color:var(--text)}
+.cmsg-ts{font-size:9px;color:var(--muted);margin-top:1px}
+.sys-msg{text-align:center;font-size:10px;color:var(--muted);padding:2px 0;font-style:italic}
+
+/* Reactions */
+.react-bar{display:flex;gap:4px;padding:7px 12px;border-top:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.rbtn{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:20px;padding:3px 9px;cursor:pointer;font-size:14px;transition:.2s}
+.rbtn:hover{background:rgba(255,255,255,.1);transform:scale(1.3);border-color:rgba(255,255,255,.2)}
+
+/* Chat input */
+.chat-inp-row{padding:9px 12px;border-top:1px solid var(--border);display:flex;gap:7px;flex-shrink:0;background:var(--s2)}
+.chat-inp{flex:1;background:var(--s3);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:8px 13px;font-size:12px;outline:none;transition:.2s;font-family:inherit}
+.chat-inp:focus{border-color:rgba(124,111,255,.5);background:rgba(124,111,255,.06);box-shadow:0 0 0 3px rgba(124,111,255,.1)}
+.chat-inp::placeholder{color:var(--muted)}
+.send-btn{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--a2));border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:.2s;flex-shrink:0}
+.send-btn:hover{transform:scale(1.1);box-shadow:var(--glow)}
+
+/* Viewers tab */
+.viewers-tab{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:5px}
+.vrow{display:flex;align-items:center;gap:9px;padding:7px 10px;background:var(--s2);border-radius:9px;border:1px solid var(--border)}
+.vrow-av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
+.vrow-info{flex:1;min-width:0}
+.vrow-name{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vrow-role{font-size:9px;color:var(--muted)}
+.online-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);flex-shrink:0}
+
+/* ── PREDICTION PANEL ── */
+.pred-panel{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.pred-card{background:var(--s2);border:1px solid rgba(124,111,255,.25);border-radius:12px;padding:14px;animation:msgIn .3s ease-out}
+.pred-q{font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text)}
+.pred-opt{width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);cursor:pointer;font-size:12px;font-weight:600;text-align:left;transition:.2s;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center}
+.pred-opt:hover{background:rgba(124,111,255,.15);border-color:var(--accent)}
+.pred-opt.voted{background:rgba(124,111,255,.2);border-color:var(--accent);color:#fff}
+.pred-opt.winner{background:rgba(46,213,115,.15);border-color:var(--green);color:var(--green)}
+.pred-bar{height:3px;background:rgba(124,111,255,.3);border-radius:2px;margin-top:3px;overflow:hidden}
+.pred-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--a2));border-radius:2px;transition:width .5s}
+.pred-create{padding:12px;border-top:1px solid var(--border);flex-shrink:0}
+.pred-inp{width:100%;background:var(--s3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:7px 11px;font-size:12px;outline:none;margin-bottom:6px;font-family:inherit}
+.pred-inp:focus{border-color:rgba(124,111,255,.5)}
+.pred-inp::placeholder{color:var(--muted)}
+
+/* ── BOOKMARKS PANEL ── */
+.bm-panel{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.bm-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--s2);border-radius:9px;border:1px solid rgba(255,215,0,.15);cursor:pointer;transition:.2s}
+.bm-item:hover{background:rgba(255,215,0,.08);border-color:rgba(255,215,0,.3)}
+.bm-time{font-size:11px;font-weight:800;color:var(--gold);min-width:45px}
+.bm-label{font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bm-user{font-size:10px;color:var(--muted)}
+.bm-add{padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:7px;flex-shrink:0}
+.bm-add input{flex:1;background:var(--s3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:7px 11px;font-size:12px;outline:none;font-family:inherit}
+.bm-add input:focus{border-color:rgba(255,215,0,.4)}
+.bm-add input::placeholder{color:var(--muted)}
+.bm-add button{padding:7px 12px;border-radius:8px;background:rgba(255,215,0,.15);border:1px solid rgba(255,215,0,.3);color:var(--gold);cursor:pointer;font-size:11px;font-weight:700;transition:.2s}
+.bm-add button:hover{background:rgba(255,215,0,.25)}
+
+/* ── FLOATING EMOJI ── */
+.float-emoji{position:fixed;font-size:34px;pointer-events:none;animation:floatUp 2.4s ease-out forwards;z-index:9999}
+@keyframes floatUp{0%{opacity:1;transform:translateY(0) scale(1) rotate(-5deg)}100%{opacity:0;transform:translateY(-160px) scale(1.6) rotate(10deg)}}
+
+/* ── MOOD PARTICLES ── */
+.particle{position:fixed;pointer-events:none;z-index:9998;animation:particleFly 2.5s ease-out forwards}
+@keyframes particleFly{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(-200px) scale(.3)}}
+
+/* ── PREDICTION TOAST ── */
+.pred-toast{position:fixed;top:70px;left:50%;transform:translateX(-50%) translateY(-10px);background:var(--s2);border:1px solid rgba(124,111,255,.4);border-radius:14px;padding:14px 20px;min-width:280px;max-width:380px;opacity:0;transition:.35s;z-index:9990;pointer-events:none;backdrop-filter:blur(14px);box-shadow:var(--glow)}
+.pred-toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+.pred-toast-q{font-size:13px;font-weight:700;margin-bottom:10px}
+.pred-toast-opts{display:flex;flex-direction:column;gap:5px}
+.pred-toast-opt{padding:7px 12px;border-radius:7px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text);cursor:pointer;font-size:12px;font-weight:600;transition:.2s;text-align:left}
+.pred-toast-opt:hover{background:rgba(124,111,255,.2);border-color:var(--accent)}
+.pred-toast-opt.voted{background:rgba(124,111,255,.25);border-color:var(--accent)}
+
+/* ── GLOBAL TOAST ── */
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:9px 18px;font-size:12px;color:var(--text);opacity:0;transition:.3s;z-index:9999;pointer-events:none;backdrop-filter:blur(14px);box-shadow:var(--glow)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── CINEMATIC MODE ── */
+body.cinema .chat-side{opacity:0;pointer-events:none;transition:.5s}
+body.cinema .topbar{opacity:0;pointer-events:none;transition:.5s}
+body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.15}
+
+/* Mobile */
+@media(max-width:700px){.chat-side{display:none}.video-side{flex:1}}
+
+/* ── RATING PANEL ── */
+.rating-panel{padding:12px;border-top:1px solid rgba(255,255,255,.05);flex-shrink:0;background:rgba(255,255,255,.02)}
+.rating-stars{display:flex;gap:5px;justify-content:center;margin:6px 0}
+.star-btn{background:none;border:none;font-size:20px;cursor:pointer;transition:.2s;filter:grayscale(1);opacity:.35;padding:2px}
+.star-btn.lit{filter:none;opacity:1}
+.star-btn:hover,.star-btn:hover~.star-btn{filter:none;opacity:1}
+.rating-label{text-align:center;font-size:10px;color:var(--muted);margin-top:2px}
+.rating-avg{display:flex;align-items:center;justify-content:center;gap:5px;font-size:11px;color:var(--gold);font-weight:700;margin-top:5px}
+
+/* ── AUDIO TRACK — always show button ── */
+#audioTrackWrap{display:flex!important;position:relative}
+</style>
+</head>
+<body>
+<!-- Ambient RGB canvas — syncs colors with movie -->
+<canvas id="ambientCanvas"></canvas>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <span class="t-logo">🎬</span>
+  <span class="t-title">{{ room.title }}</span>
+  <div class="pill pill-live"><span class="live-dot"></span>LIVE</div>
+  <div class="pill pill-viewers"><i class="fas fa-eye"></i>&nbsp;<span id="viewerCount">1</span></div>
+  <button class="tbtn tbtn-ghost" onclick="requestSync()" title="Sync"><i class="fas fa-sync-alt"></i></button>
+  <button class="tbtn tbtn-ghost" onclick="toggleCinema()" title="Cinematic Mode"><i class="fas fa-film"></i></button>
+  {% if session.get('user_id') == room.host_id %}
+  <button class="tbtn tbtn-danger" onclick="closeRoom()"><i class="fas fa-times"></i> End Party</button>
+  {% endif %}
+  <a href="/" class="tbtn tbtn-ghost"><i class="fas fa-arrow-left"></i></a>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- VIDEO SIDE -->
+  <div class="video-side">
+    <div class="video-wrap" id="videoWrap">
+      <video id="vid" preload="metadata" playsinline muted></video>
+      <div class="mood-overlay" id="moodOverlay"></div>
+      <div class="vg-top"></div>
+      <div class="vg-bot"></div>
+      <div class="role-badge" id="roleBadge"></div>
+      <button class="cinema-btn" onclick="toggleCinema()" title="Cinematic Mode"><i class="fas fa-expand-arrows-alt"></i></button>
+      <div class="sync-toast" id="syncToast">⏳ Syncing...</div>
+      <div class="center-play" id="centerPlay" onclick="togglePlay()">
+        <i class="fas fa-play" id="centerIcon"></i>
+      </div>
+      <!-- Controls -->
+      <div class="controls" id="controls">
+        <div class="prog-wrap" id="progWrap" onclick="seekTo(event)">
+          <div class="prog-track" id="progTrack">
+            <div class="prog-fill" id="progFill" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="ctrl-row">
+          <button class="cbtn" id="playBtn" onclick="togglePlay()"><i class="fas fa-play"></i></button>
+          <button class="cbtn" id="skipBackBtn" onclick="skip(-10)" title="-10s"><i class="fas fa-backward"></i></button>
+          <button class="cbtn" id="skipFwdBtn" onclick="skip(10)" title="+10s"><i class="fas fa-forward"></i></button>
+          <span class="time-txt" id="timeTxt">0:00 / 0:00</span>
+          <span class="spacer"></span>
+          <button class="cbtn speed-btn" id="speedBtn" onclick="cycleSpeed()">1×</button>
+          <!-- Audio track selector — always visible, shows native tracks or manual selector -->
+          <div id="audioTrackWrap" style="position:relative">
+            <button class="cbtn" id="audioTrackBtn" onclick="toggleAudioMenu()" title="Audio Language" style="gap:4px;font-size:11px;font-weight:700;padding:4px 8px;min-width:auto;background:rgba(0,229,255,.1);border:1px solid rgba(0,229,255,.25);border-radius:6px">
+              <i class="fas fa-language"></i> <span id="audioTrackLabel">Audio</span>
+            </button>
+            <div id="audioMenu" style="display:none;position:absolute;bottom:44px;right:0;background:rgba(8,10,20,.95);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:6px;min-width:160px;z-index:50;backdrop-filter:blur(20px);box-shadow:0 8px 32px rgba(0,0,0,.7)">
+              <div style="font-size:10px;color:var(--muted);padding:4px 8px 6px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:4px">🎵 Audio Track</div>
+              <div id="audioMenuItems"></div>
+            </div>
+          </div>
+          <div class="vol-wrap">
+            <button class="cbtn" onclick="toggleMute()" id="muteBtn"><i class="fas fa-volume-up"></i></button>
+            <input type="range" class="vol-sl" id="volSl" min="0" max="1" step="0.02" value="1" oninput="setVol(this.value)">
+          </div>
+          <button class="cbtn" onclick="toggleFullscreen()"><i class="fas fa-expand"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="chat-side">
+    <div class="ctabs">
+      <div class="ctab active" onclick="switchTab('chat',this)">💬 Chat</div>
+      <div class="ctab" onclick="switchTab('viewers',this)">👥 Viewers</div>
+      <div class="ctab" onclick="switchTab('predict',this)">🎯 Predict</div>
+      <div class="ctab" onclick="switchTab('bookmarks',this)">📍 Marks</div>
+    </div>
+
+    <!-- CHAT -->
+    <div class="tab-pane active" id="pane-chat">
+      <div class="vstrip" id="vstrip"></div>
+      <div class="chat-msgs" id="chatMsgs"></div>
+      <div class="react-bar">
+        <button class="rbtn" onclick="sendMoodReact('❤️','rgba(255,71,87,.15)')">❤️</button>
+        <button class="rbtn" onclick="sendMoodReact('😂','rgba(255,165,0,.1)')">😂</button>
+        <button class="rbtn" onclick="sendMoodReact('😮','rgba(0,229,255,.1)')">😮</button>
+        <button class="rbtn" onclick="sendMoodReact('👏','rgba(255,215,0,.1)')">👏</button>
+        <button class="rbtn" onclick="sendMoodReact('🔥','rgba(255,100,0,.15)')">🔥</button>
+        <button class="rbtn" onclick="sendMoodReact('💀','rgba(100,100,100,.2)')">💀</button>
+        <button class="rbtn" onclick="sendMoodReact('🎉','rgba(124,111,255,.15)')">🎉</button>
+        <button class="rbtn" onclick="sendMoodReact('😭','rgba(0,100,255,.12)')">😭</button>
+      </div>
+      <div class="chat-inp-row">
+        <input class="chat-inp" id="chatInp" placeholder="Say something..." maxlength="500" onkeydown="if(event.key==='Enter')sendChat()">
+        <button class="send-btn" onclick="sendChat()"><i class="fas fa-paper-plane"></i></button>
+      </div>
+    </div>
+
+    <!-- VIEWERS -->
+    <div class="tab-pane" id="pane-viewers">
+      <div class="viewers-tab" id="viewersTab"></div>
+    </div>
+
+    <!-- PREDICTIONS -->
+    <div class="tab-pane" id="pane-predict">
+      <div class="pred-panel" id="predPanel">
+        <div class="sys-msg" style="padding:20px 0">No active prediction</div>
+      </div>
+      <div class="pred-create" id="predCreate" style="display:none">
+        <input class="pred-inp" id="predQ" placeholder="Question (e.g. Who survives?)">
+        <input class="pred-inp" id="predO1" placeholder="Option 1">
+        <input class="pred-inp" id="predO2" placeholder="Option 2">
+        <input class="pred-inp" id="predO3" placeholder="Option 3 (optional)">
+        <button class="tbtn tbtn-accent" style="width:100%;justify-content:center" onclick="createPrediction()">🎯 Launch Prediction</button>
+      </div>
+    </div>
+
+    <!-- BOOKMARKS -->
+    <div class="tab-pane" id="pane-bookmarks">
+      <div class="bm-panel" id="bmPanel">
+        <div class="sys-msg" style="padding:20px 0">No bookmarks yet</div>
+      </div>
+      <div class="bm-add">
+        <input id="bmLabel" placeholder="Label (e.g. Best scene 🔥)" maxlength="40">
+        <button onclick="addBookmark()">📍 Mark</button>
+      </div>
+    </div>
+
+    <!-- RATING PANEL (always visible at bottom of sidebar) -->
+    <div class="rating-panel" id="ratingPanel">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;text-align:center">⭐ Rate This Movie</div>
+      <div class="rating-stars" id="ratingStars">
+        <button class="star-btn" data-val="1" onclick="submitRating(1)">⭐</button>
+        <button class="star-btn" data-val="2" onclick="submitRating(2)">⭐</button>
+        <button class="star-btn" data-val="3" onclick="submitRating(3)">⭐</button>
+        <button class="star-btn" data-val="4" onclick="submitRating(4)">⭐</button>
+        <button class="star-btn" data-val="5" onclick="submitRating(5)">⭐</button>
+      </div>
+      <div class="rating-label" id="ratingLabel">Tap to rate</div>
+      <div class="rating-avg" id="ratingAvg" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Prediction popup (shown over video) -->
+<div class="pred-toast" id="predToast">
+  <div class="pred-toast-q" id="predToastQ"></div>
+  <div class="pred-toast-opts" id="predToastOpts"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const ROOM_ID   = "{{ room.room_id }}";
+const VIDEO_URL = {{ room.video_url | tojson }};
+const HOST_ID   = "{{ room.host_id }}";
+const HOST_NAME = "{{ room.host_name }}";
+
+// Identity — set from session, then refined by Discord fetch
+let MY_ID     = "{{ user_id }}";
+let MY_NAME   = "{{ username }}";
+let MY_AVATAR = "";
+// IS_HOST: true if session user_id matches host_id OR session username matches host_name
+let IS_HOST   = (MY_ID === HOST_ID) || (MY_NAME === HOST_NAME) || ("{{ username }}" === HOST_NAME);
+
+// While identity is loading, grant control if session says we're the host
+let _identityLoaded = false;
+
+const vid       = document.getElementById("vid");
+const playBtn   = document.getElementById("playBtn");
+const centerIcon= document.getElementById("centerIcon");
+const progFill  = document.getElementById("progFill");
+const timeTxt   = document.getElementById("timeTxt");
+const chatMsgs  = document.getElementById("chatMsgs");
+const syncToast = document.getElementById("syncToast");
+const videoWrap = document.getElementById("videoWrap");
+
+let myRoleLevel = 0, isSyncing = false;
+let speeds = [0.5,0.75,1,1.25,1.5,2], speedIdx = 2;
+let bookmarks = [], currentPrediction = null, myVote = null;
+let moodTimeout = null;
+
+// ── ROLE ──────────────────────────────────────────────────────────────────────
+const RN={4:"Owner",3:"Admin",2:"Mod",1:"Member",0:"Guest"};
+const RL={4:"👑 Owner",3:"⚙️ Admin",2:"🛡️ Mod",1:"👥 Member",0:"👤 Guest"};
+
+// ── FETCH DISCORD IDENTITY ────────────────────────────────────────────────────
+// Resolves real Discord username, avatar, and role level from the server
+async function _fetchDiscordIdentity(){
+  try{
+    const r = await fetch(`/api/watch/me/${ROOM_ID}`, {credentials:'include'});
+    if(!r.ok){ _identityLoaded = true; return; }
+    const d = await r.json();
+    if(d.username) MY_NAME = d.username;
+    if(d.user_id)  MY_ID   = d.user_id;
+    if(d.avatar)   MY_AVATAR = d.avatar;
+    if(d.role_level != null) myRoleLevel = d.role_level;
+    // IS_HOST: server says so, OR any of the IDs/names match
+    IS_HOST = d.is_host || MY_ID === HOST_ID || MY_NAME === HOST_NAME;
+    _identityLoaded = true;
+    showRoleBadge();
+    updateCtrlLock();
+    if(canMod()) document.getElementById("predCreate").style.display="block";
+    if(MY_AVATAR){
+      const logo = document.querySelector('.t-logo');
+      if(logo) logo.innerHTML = `<img src="${MY_AVATAR}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid rgba(124,111,255,.5)">`;
+    }
+  }catch(e){ _identityLoaded = true; }
+}const RAV={4:"av-owner",3:"av-admin",2:"av-mod",1:"av-member",0:"av-guest"};
+const RNM={4:"n-owner",3:"n-admin",2:"n-mod",1:"n-member",0:"n-guest"};
+const RNB={4:"nb-owner",3:"nb-admin",2:"nb-mod",1:"nb-member",0:"nb-guest"};
+function canControl(){ return IS_HOST || myRoleLevel >= 2; }
+function canMod(){ return IS_HOST || myRoleLevel >= 2; }
+
+function showRoleBadge(){
+  const b=document.getElementById("roleBadge");
+  const map={4:["👑 Owner","rb-owner"],3:["⚙️ Admin","rb-admin"],2:["🛡️ Mod","rb-mod"],1:["👥 Member","rb-member"]};
+  if(IS_HOST){ b.textContent="👑 Host"; b.className="role-badge rb-host"; b.style.display="block"; return; }
+  const m=map[myRoleLevel];
+  if(m){ b.textContent=m[0]; b.className="role-badge "+m[1]; b.style.display="block"; }
+  else b.style.display="none";
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function showToast(msg,dur=2500){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),dur);
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+function switchTab(name,el){
+  document.querySelectorAll(".ctab").forEach(t=>t.classList.remove("active"));
+  document.querySelectorAll(".tab-pane").forEach(p=>p.classList.remove("active"));
+  el.classList.add("active");
+  document.getElementById("pane-"+name).classList.add("active");
+  if(name==="predict" && canMod()) document.getElementById("predCreate").style.display="block";
+}
+
+// ── VIDEO ─────────────────────────────────────────────────────────────────────
+// ── VIDEO PLAY/PAUSE — safe wrapper to prevent race conditions ────────────────
+let _playPromise = null;
+
+async function safePlay(){
+  try{
+    _playPromise = vid.play();
+    await _playPromise;
+    _playPromise = null;
+  }catch(e){
+    _playPromise = null;
+    if(e.name !== 'AbortError') showToast("❌ " + e.message);
+  }
+}
+
+async function safePause(){
+  // If play() is in-flight, wait for it before pausing
+  if(_playPromise){
+    try{ await _playPromise; }catch(e){}
+  }
+  _playPromise = null;
+  if(!vid.paused) vid.pause();
+}
+
+function initVideo(){
+  if(VIDEO_URL && !vid.src){ vid.src = VIDEO_URL; vid.load(); }
+}
+
+// ── AMBIENT RGB SYNC ─────────────────────────────────────────────────────────
+// Samples movie colors and paints soft glowing blobs behind the page
+const ambientCanvas = document.getElementById('ambientCanvas');
+const ambCtx = ambientCanvas ? ambientCanvas.getContext('2d') : null;
+// Use a tiny offscreen canvas to sample colors (avoids CORS crash)
+const _sampleCanvas = document.createElement('canvas');
+_sampleCanvas.width = 8; _sampleCanvas.height = 5;
+const _sampleCtx = _sampleCanvas.getContext('2d', {willReadFrequently: true});
+
+let _ambientRaf = null;
+
+function _updateAmbient(){
+  if(!ambCtx || !ambientCanvas) return;
+  if(vid.paused || vid.ended || !vid.videoWidth || !vid.videoHeight) return;
+  try{
+    // crossOrigin must be set before src for same-origin videos; for /watch/stream it's same-origin
+    _sampleCtx.drawImage(vid, 0, 0, 8, 5);
+    const px = _sampleCtx.getImageData(0, 0, 8, 5).data;
+    // Pick 3 color samples: top-left, center, bottom-right
+    const c1 = [px[0], px[1], px[2]];
+    const c2 = [px[(2*8+4)*4], px[(2*8+4)*4+1], px[(2*8+4)*4+2]];
+    const c3 = [px[(4*8+7)*4], px[(4*8+7)*4+1], px[(4*8+7)*4+2]];
+
+    ambientCanvas.width = window.innerWidth;
+    ambientCanvas.height = window.innerHeight;
+    ambCtx.clearRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+
+    const g1 = ambCtx.createRadialGradient(
+      ambientCanvas.width*.15, ambientCanvas.height*.25, 0,
+      ambientCanvas.width*.15, ambientCanvas.height*.25, ambientCanvas.width*.6
+    );
+    g1.addColorStop(0, `rgba(${c1[0]},${c1[1]},${c1[2]},.75)`);
+    g1.addColorStop(1, 'rgba(0,0,0,0)');
+    ambCtx.fillStyle = g1;
+    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+
+    const g2 = ambCtx.createRadialGradient(
+      ambientCanvas.width*.85, ambientCanvas.height*.75, 0,
+      ambientCanvas.width*.85, ambientCanvas.height*.75, ambientCanvas.width*.55
+    );
+    g2.addColorStop(0, `rgba(${c2[0]},${c2[1]},${c2[2]},.6)`);
+    g2.addColorStop(1, 'rgba(0,0,0,0)');
+    ambCtx.fillStyle = g2;
+    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+
+    const g3 = ambCtx.createRadialGradient(
+      ambientCanvas.width*.5, ambientCanvas.height*.5, 0,
+      ambientCanvas.width*.5, ambientCanvas.height*.5, ambientCanvas.width*.4
+    );
+    g3.addColorStop(0, `rgba(${c3[0]},${c3[1]},${c3[2]},.35)`);
+    g3.addColorStop(1, 'rgba(0,0,0,0)');
+    ambCtx.fillStyle = g3;
+    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+  } catch(e){
+    // SecurityError from cross-origin video — disable ambient silently
+    if(_ambientRaf){ clearInterval(_ambientRaf); _ambientRaf = null; }
+    if(ambientCanvas) ambientCanvas.style.opacity = '0';
+  }
+}
+
+vid.addEventListener('play', ()=>{
+  if(_ambientRaf) clearInterval(_ambientRaf);
+  _ambientRaf = setInterval(_updateAmbient, 600);
+  if(ambientCanvas) ambientCanvas.style.opacity = '.45';
+});
+vid.addEventListener('pause', ()=>{ if(ambientCanvas) ambientCanvas.style.opacity = '.15'; });
+vid.addEventListener('ended', ()=>{
+  if(_ambientRaf){ clearInterval(_ambientRaf); _ambientRaf = null; }
+  if(ambientCanvas) ambientCanvas.style.opacity = '0';
+});
+
+// ── RATING SYSTEM ─────────────────────────────────────────────────────────────
+let _myRating = 0;
+const RATING_KEY = `wan_rating_${ROOM_ID}`;
+const RATING_LABELS = ['','😴 Boring','😐 Okay','👍 Good','🔥 Great!','⭐ Amazing!'];
+
+function _initRating(){
+  const saved = parseInt(localStorage.getItem(RATING_KEY)||'0');
+  if(saved) _setRatingUI(saved, true);
+}
+
+function _setRatingUI(val, saved=false){
+  document.querySelectorAll('.star-btn').forEach((b,i)=>{
+    b.classList.toggle('lit', i < val);
+  });
+  const lbl = document.getElementById('ratingLabel');
+  if(lbl) lbl.textContent = saved ? `Your rating: ${RATING_LABELS[val]}` : (RATING_LABELS[val]||'Tap to rate');
+}
+
+function submitRating(val){
+  _myRating = val;
+  localStorage.setItem(RATING_KEY, val);
+  _setRatingUI(val, true);
+  socket.emit('watch_rating', {room_id: ROOM_ID, rating: val, user: MY_NAME});
+  showToast(RATING_LABELS[val] + ' Rating saved!');
+}
+
+// Hover preview
+document.querySelectorAll('.star-btn').forEach((b,i)=>{
+  b.addEventListener('mouseenter', ()=>_setRatingUI(i+1));
+  b.addEventListener('mouseleave', ()=>_setRatingUI(_myRating||0, _myRating>0));
+});
+
+// Receive ratings from others
+socket.on('watch_rating_update', d=>{
+  const avg = document.getElementById('ratingAvg');
+  if(avg && d.avg){
+    avg.style.display='flex';
+    avg.innerHTML=`⭐ ${d.avg.toFixed(1)} avg (${d.count} ratings)`;
+  }
+});
+
+_initRating();
+
+// ── AUDIO TRACK — init with fallback manual selector ─────────────────────────
+function initAudioTracks(){
+  const tracks = vid.audioTracks;
+  const items = document.getElementById('audioMenuItems');
+  items.innerHTML = '';
+
+  if(tracks && tracks.length > 1){
+    // Native multi-track (MKV/MP4 with multiple audio streams)
+    const saved = localStorage.getItem(AUDIO_PREF_KEY);
+    for(let i=0; i<tracks.length; i++){
+      const track = tracks[i];
+      const name = getLangName(track);
+      const isActive = saved ? track.language === saved || track.label === saved : i === 0;
+      if(isActive){ track.enabled=true; document.getElementById('audioTrackLabel').textContent=name; }
+      else track.enabled=false;
+      const btn=document.createElement('button');
+      btn.style.cssText='width:100%;text-align:left;background:none;border:none;color:var(--text);padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;transition:.15s';
+      btn.innerHTML=`<span style="width:8px;height:8px;border-radius:50%;background:${isActive?'var(--a2)':'rgba(255,255,255,.2)'};flex-shrink:0" id="dot_${i}"></span>${name}`;
+      btn.onmouseover=()=>btn.style.background='rgba(255,255,255,.06)';
+      btn.onmouseout=()=>btn.style.background='none';
+      btn.onclick=()=>selectAudioTrack(i,name,track.language||track.label);
+      items.appendChild(btn);
+    }
+  } else {
+    // Fallback: manual language selector (for single-track files)
+    const langs = [
+      {label:'🇮🇳 Hindi',key:'hin'},
+      {label:'🇬🇧 English',key:'eng'},
+      {label:'🎵 Original',key:'orig'},
+      {label:'🇮🇳 Tamil',key:'tam'},
+      {label:'🇮🇳 Telugu',key:'tel'},
+      {label:'🇯🇵 Japanese',key:'jpn'},
+    ];
+    const savedLang = localStorage.getItem(AUDIO_PREF_KEY+'_manual') || 'orig';
+    langs.forEach(l=>{
+      const isActive = l.key === savedLang;
+      const btn=document.createElement('button');
+      btn.style.cssText='width:100%;text-align:left;background:none;border:none;color:var(--text);padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;transition:.15s';
+      btn.innerHTML=`<span style="width:8px;height:8px;border-radius:50%;background:${isActive?'var(--a2)':'rgba(255,255,255,.2)'};flex-shrink:0" id="dot_m_${l.key}"></span>${l.label}${isActive?' ✓':''}`;
+      btn.onmouseover=()=>btn.style.background='rgba(255,255,255,.06)';
+      btn.onmouseout=()=>btn.style.background='none';
+      btn.onclick=()=>{
+        localStorage.setItem(AUDIO_PREF_KEY+'_manual', l.key);
+        document.getElementById('audioTrackLabel').textContent=l.label.split(' ')[1];
+        document.getElementById('audioMenu').style.display='none';
+        showToast(`🎵 Audio preference: ${l.label}`);
+        // Re-render to show checkmark
+        initAudioTracks();
+      };
+      items.appendChild(btn);
+    });
+    // Set label from saved
+    const saved = langs.find(l=>l.key===savedLang);
+    if(saved) document.getElementById('audioTrackLabel').textContent=saved.label.split(' ')[1];
+  }
+}
+
+// Language name map for common audio track labels
+const LANG_NAMES = {
+  'und':'Unknown','eng':'English','hin':'Hindi','pun':'Punjabi','tam':'Tamil',
+  'tel':'Telugu','mal':'Malayalam','kan':'Kannada','ben':'Bengali','mar':'Marathi',
+  'guj':'Gujarati','urd':'Urdu','fra':'French','spa':'Spanish','deu':'German',
+  'jpn':'Japanese','kor':'Korean','zho':'Chinese','ara':'Arabic','rus':'Russian',
+  'por':'Portuguese','ita':'Italian','nld':'Dutch','pol':'Polish','tur':'Turkish',
+};
+
+function getLangName(track){
+  const lang = (track.language||'').toLowerCase();
+  const label = track.label||'';
+  if(label) return label;
+  return LANG_NAMES[lang] || lang.toUpperCase() || `Track ${track.id}`;
+}
+
+function selectAudioTrack(idx, name, langKey){
+  const tracks = vid.audioTracks;
+  if(!tracks) return;
+  for(let i=0; i<tracks.length; i++){
+    tracks[i].enabled = (i === idx);
+    const dot = document.getElementById(`dot_${i}`);
+    if(dot) dot.style.background = i===idx ? 'var(--a2)' : 'rgba(255,255,255,.2)';
+  }
+  document.getElementById('audioTrackLabel').textContent = name;
+  localStorage.setItem(AUDIO_PREF_KEY, langKey);
+  document.getElementById('audioMenu').style.display='none';
+  showToast(`🎵 Audio: ${name}`);
+}
+
+function toggleAudioMenu(){
+  const menu = document.getElementById('audioMenu');
+  menu.style.display = menu.style.display==='none' ? 'block' : 'none';
+}
+
+// Close audio menu when clicking outside
+document.addEventListener('click', e=>{
+  if(!e.target.closest('#audioTrackWrap'))
+    document.getElementById('audioMenu').style.display='none';
+});
+
+// Init audio tracks when video metadata loads
+vid.addEventListener('loadedmetadata', ()=>{
+  initAudioTracks();
+});
+function togglePlay(){
+  // Unmute on first interaction (browsers require muted for autoplay)
+  if(vid.muted){ vid.muted=false; document.getElementById("muteBtn").innerHTML='<i class="fas fa-volume-up"></i>'; }
+  if(vid.paused){
+    safePlay();
+    if(canControl()) socket.emit("watch_play",{room_id:ROOM_ID,current_time:vid.currentTime});
+  } else {
+    safePause();
+    if(canControl()) socket.emit("watch_pause",{room_id:ROOM_ID,current_time:vid.currentTime});
+  }
+}
+function skip(s){
+  vid.currentTime=Math.max(0,Math.min(vid.duration||0,vid.currentTime+s));
+  if(canControl()) socket.emit("watch_seek",{room_id:ROOM_ID,current_time:vid.currentTime});
+}
+function seekTo(e){
+  const r=e.currentTarget.getBoundingClientRect();
+  const t=((e.clientX-r.left)/r.width)*(vid.duration||0);
+  vid.currentTime=t;
+  if(canControl()) socket.emit("watch_seek",{room_id:ROOM_ID,current_time:t});
+}
+function setVol(v){ vid.volume=v; if(v>0&&vid.muted){vid.muted=false;document.getElementById("muteBtn").innerHTML='<i class="fas fa-volume-up"></i>';} }
+function toggleMute(){
+  vid.muted=!vid.muted;
+  document.getElementById("muteBtn").innerHTML=vid.muted?'<i class="fas fa-volume-mute"></i>':'<i class="fas fa-volume-up"></i>';
+}
+function toggleFullscreen(){
+  if(!document.fullscreenElement) videoWrap.requestFullscreen();
+  else document.exitFullscreen();
+}
+function cycleSpeed(){
+  speedIdx=(speedIdx+1)%speeds.length;
+  vid.playbackRate=speeds[speedIdx];
+  document.getElementById("speedBtn").textContent=speeds[speedIdx]+"×";
+}
+function requestSync(){
+  socket.emit("watch_request_sync",{room_id:ROOM_ID});
+  syncToast.style.display="block";
+  setTimeout(()=>syncToast.style.display="none",1500);
+}
+function toggleCinema(){
+  document.body.classList.toggle("cinema");
+  showToast(document.body.classList.contains("cinema")?"🎬 Cinematic mode ON — hover to reveal UI":"🎬 Cinematic mode OFF");
+}
+
+vid.addEventListener("play",()=>{ playBtn.innerHTML='<i class="fas fa-pause"></i>'; centerIcon.className="fas fa-pause"; videoWrap.classList.remove("paused"); });
+vid.addEventListener("pause",()=>{ playBtn.innerHTML='<i class="fas fa-play"></i>'; centerIcon.className="fas fa-play"; videoWrap.classList.add("paused"); });
+vid.addEventListener("timeupdate",()=>{
+  if(!vid.duration) return;
+  const pct=(vid.currentTime/vid.duration)*100;
+  progFill.style.width=pct+"%";
+  timeTxt.textContent=fmt(vid.currentTime)+" / "+fmt(vid.duration);
+});
+
+function fmt(s){
+  if(!s||isNaN(s)) return "0:00";
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60);
+  return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`;
+}
+
+// ── MOOD REACTIONS ────────────────────────────────────────────────────────────
+const MOOD_EFFECTS={
+  "❤️":{bg:"rgba(255,71,87,.18)",particles:["❤️","💕","💗"]},
+  "🔥":{bg:"rgba(255,100,0,.2)",particles:["🔥","✨","💥"]},
+  "💀":{bg:"rgba(80,80,80,.25)",particles:["💀","👻","⚡"],flicker:true},
+  "😭":{bg:"rgba(0,100,255,.15)",particles:["💧","🌊","😭"]},
+  "🎉":{bg:"rgba(124,111,255,.2)",particles:["🎉","🎊","✨","🌟"]},
+  "😮":{bg:"rgba(0,229,255,.12)",particles:["😮","⚡","💫"]},
+  "😂":{bg:"rgba(255,165,0,.12)",particles:["😂","🤣","💛"]},
+  "👏":{bg:"rgba(255,215,0,.12)",particles:["👏","⭐","✨"]},
+};
+
+function sendMoodReact(emoji, _){
+  socket.emit("watch_mood_react",{room_id:ROOM_ID,emoji});
+  socket.emit("watch_chat",{room_id:ROOM_ID,message:emoji,username:MY_NAME});
+  applyMoodEffect(emoji);
+  floatEmoji(emoji);
+}
+
+function applyMoodEffect(emoji){
+  const effect=MOOD_EFFECTS[emoji];
+  if(!effect) return;
+  const overlay=document.getElementById("moodOverlay");
+  overlay.style.background=effect.bg;
+  overlay.classList.add("active");
+  if(effect.flicker){
+    let f=0;
+    const fi=setInterval(()=>{ overlay.style.opacity=f%2===0?"0.8":"0.2"; f++; if(f>6) clearInterval(fi); },120);
+  }
+  if(moodTimeout) clearTimeout(moodTimeout);
+  moodTimeout=setTimeout(()=>{ overlay.classList.remove("active"); overlay.style.background=""; },3000);
+  // Spawn particles
+  for(let i=0;i<6;i++){
+    setTimeout(()=>{
+      const p=document.createElement("div");
+      p.className="particle";
+      p.textContent=effect.particles[Math.floor(Math.random()*effect.particles.length)];
+      p.style.cssText=`left:${10+Math.random()*80}%;bottom:${60+Math.random()*20}%;font-size:${20+Math.random()*16}px`;
+      document.body.appendChild(p);
+      setTimeout(()=>p.remove(),2600);
+    },i*120);
+  }
+}
+
+function floatEmoji(e){
+  const el=document.createElement("div");
+  el.className="float-emoji";
+  el.textContent=e;
+  el.style.left=(15+Math.random()*70)+"%";
+  el.style.bottom="90px";
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),2500);
+}
+
+// ── BOOKMARKS ─────────────────────────────────────────────────────────────────
+function addBookmark(){
+  const label=document.getElementById("bmLabel").value.trim()||"📍 Moment";
+  socket.emit("watch_bookmark",{room_id:ROOM_ID,current_time:vid.currentTime,label});
+  document.getElementById("bmLabel").value="";
+  showToast("📍 Bookmark added at "+fmt(vid.currentTime));
+}
+
+function renderBookmarks(){
+  const panel=document.getElementById("bmPanel");
+  const track=document.getElementById("progTrack");
+  // Remove old markers
+  track.querySelectorAll(".bm-marker").forEach(m=>m.remove());
+  if(!bookmarks.length){ panel.innerHTML='<div class="sys-msg" style="padding:20px 0">No bookmarks yet</div>'; return; }
+  panel.innerHTML="";
+  bookmarks.forEach(bm=>{
+    // Panel item
+    const item=document.createElement("div");
+    item.className="bm-item";
+    item.innerHTML=`<span class="bm-time">${fmt(bm.ts)}</span><span class="bm-label">${esc(bm.label)}</span><span class="bm-user">${esc(bm.user)}</span>`;
+    item.onclick=()=>{ if(canControl()) vid.currentTime=bm.ts; else showToast("⛔ Only mods can seek"); };
+    panel.appendChild(item);
+    // Progress bar marker
+    if(vid.duration){
+      const pct=(bm.ts/vid.duration)*100;
+      const marker=document.createElement("div");
+      marker.className="bm-marker";
+      marker.style.left=pct+"%";
+      marker.innerHTML=`<div class="bm-tooltip">${esc(bm.label)}</div>`;
+      track.appendChild(marker);
+    }
+  });
+}
+
+// ── PREDICTIONS ───────────────────────────────────────────────────────────────
+function createPrediction(){
+  const q=document.getElementById("predQ").value.trim();
+  const opts=[document.getElementById("predO1").value.trim(),document.getElementById("predO2").value.trim(),document.getElementById("predO3").value.trim()].filter(Boolean);
+  if(!q||opts.length<2){ showToast("Need a question and at least 2 options"); return; }
+  socket.emit("watch_prediction_create",{room_id:ROOM_ID,question:q,options:opts});
+  ["predQ","predO1","predO2","predO3"].forEach(id=>document.getElementById(id).value="");
+}
+
+function votePrediction(idx){
+  if(myVote!==null){ showToast("Already voted!"); return; }
+  myVote=idx;
+  socket.emit("watch_prediction_vote",{room_id:ROOM_ID,option:idx});
+  // Mark voted option
+  document.querySelectorAll(".pred-toast-opt").forEach((el,i)=>{ if(i===idx) el.classList.add("voted"); });
+  document.querySelectorAll(".pred-opt").forEach((el,i)=>{ if(i===idx) el.classList.add("voted"); });
+  showToast("✅ Vote cast!");
+}
+
+function resolvePrediction(idx){
+  socket.emit("watch_prediction_resolve",{room_id:ROOM_ID,winner:idx});
+}
+
+function renderPrediction(pred, counts){
+  const panel=document.getElementById("predPanel");
+  const total=counts?counts.reduce((a,b)=>a+b,0):0;
+  panel.innerHTML=`<div class="pred-card">
+    <div class="pred-q">${esc(pred.question)}</div>
+    ${pred.options.map((o,i)=>{
+      const pct=total>0?Math.round((counts[i]||0)/total*100):0;
+      const cls=pred.resolved&&pred.winner===i?"winner":(myVote===i?"voted":"");
+      const resolveBtn=canMod()&&!pred.resolved?`<button onclick="resolvePrediction(${i})" style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(46,213,115,.15);border:1px solid rgba(46,213,115,.3);color:var(--green);cursor:pointer;margin-left:6px">✓ Winner</button>`:"";
+      return `<button class="pred-opt ${cls}" onclick="votePrediction(${i})">
+        <span>${esc(o)}${resolveBtn}</span>
+        <span style="font-size:10px;color:var(--muted)">${counts?pct+"%":""}</span>
+      </button>
+      <div class="pred-bar"><div class="pred-bar-fill" style="width:${pct}%"></div></div>`;
+    }).join("")}
+    ${pred.resolved?`<div style="font-size:11px;color:var(--green);margin-top:8px;text-align:center">✅ Winner: ${esc(pred.options[pred.winner])}</div>`:""}
+  </div>`;
+}
+
+function showPredToast(pred){
+  const toast=document.getElementById("predToast");
+  document.getElementById("predToastQ").textContent=pred.question;
+  document.getElementById("predToastOpts").innerHTML=pred.options.map((o,i)=>
+    `<button class="pred-toast-opt" onclick="votePrediction(${i})">${esc(o)}</button>`
+  ).join("");
+  toast.classList.add("show");
+  setTimeout(()=>toast.classList.remove("show"),15000);
+}
+
+// ── SOCKET ────────────────────────────────────────────────────────────────────
+const socket=io({transports:["websocket","polling"]});
+
+socket.on("connect",()=>{
+  initVideo();
+  // Fetch Discord identity first, then join (so role level is correct)
+  _fetchDiscordIdentity().then(()=>{
+    socket.emit("watch_join",{room_id:ROOM_ID,username:MY_NAME,user_id:MY_ID,avatar:MY_AVATAR});
+  });
+});
+
+socket.on("watch_state",d=>{
+  initVideo();
+socket.on("watch_state",d=>{
+  initVideo();
+  if(Math.abs(vid.currentTime-(d.current_time||0))>2) vid.currentTime=d.current_time||0;
+  if(d.is_playing){
+    safePlay();
+  } else {
+    // Only pause if video has actually started playing — avoids AbortError
+    if(!vid.paused) safePause();
+  }
+  myRoleLevel = Math.max(myRoleLevel, d.my_role_level ?? 0);
+  if(d.my_discord_id) MY_ID = d.my_discord_id;
+  if(d.my_avatar && !MY_AVATAR) MY_AVATAR = d.my_avatar;
+  IS_HOST = MY_ID === HOST_ID || MY_NAME === HOST_NAME;
+  document.getElementById("viewerCount").textContent=d.viewer_count||1;
+  chatMsgs.innerHTML="";
+  (d.chat_history||[]).forEach(m=>appendMsg(m));
+  chatMsgs.scrollTop=chatMsgs.scrollHeight;
+  showRoleBadge();
+  updateCtrlLock();
+  if(canMod()) document.getElementById("predCreate").style.display="block";
+  if(d.viewers) renderViewers(d.viewers);
+});
+
+socket.on("watch_sync",d=>{
+  if(isSyncing) return;
+  isSyncing=true;
+  if(Math.abs(vid.currentTime-(d.current_time||0))>1.5){
+    syncToast.style.display="block";
+    vid.currentTime=d.current_time;
+    setTimeout(()=>syncToast.style.display="none",1200);
+  }
+  if(d.action==="play"||(d.is_playing&&vid.paused)) safePlay();
+  else if(d.action==="pause"||(!d.is_playing&&!vid.paused)) safePause();
+  if(d.action==="seek") vid.currentTime=d.current_time;
+  setTimeout(()=>isSyncing=false,300);
+});
+
+socket.on("watch_chat_msg",appendMsg);
+
+socket.on("mood_effect",d=>{
+  applyMoodEffect(d.emoji);
+  floatEmoji(d.emoji);
+});
+
+socket.on("bookmark_added",bm=>{
+  bookmarks.push(bm);
+  renderBookmarks();
+  addSysMsg(`📍 ${bm.user} bookmarked "${bm.label}" at ${fmt(bm.ts)}`);
+});
+
+socket.on("prediction_started",pred=>{
+  currentPrediction=pred; myVote=null;
+  renderPrediction(pred,[]);
+  showPredToast(pred);
+  addSysMsg(`🎯 Prediction: "${pred.question}"`);
+  switchTab("predict",document.querySelectorAll(".ctab")[2]);
+});
+
+socket.on("prediction_votes",d=>{
+  if(currentPrediction) renderPrediction(currentPrediction,d.counts);
+});
+
+socket.on("prediction_resolved",d=>{
+  currentPrediction=d.prediction;
+  renderPrediction(d.prediction,d.prediction.options.map((_,i)=>
+    Object.values(d.prediction.votes||{}).filter(v=>v===i).length
+  ));
+  document.getElementById("predToast").classList.remove("show");
+  addSysMsg(`🎯 Prediction resolved! Winner: "${d.prediction.options[d.prediction.winner]}" — ${d.correct_count} correct`);
+  showToast(`🎯 Winner: ${d.prediction.options[d.prediction.winner]}`,4000);
+});
+
+socket.on("viewer_joined",d=>{
+  document.getElementById("viewerCount").textContent=d.viewer_count;
+  addSysMsg(`${d.name} joined 👋`);
+  if(d.viewers) renderViewers(d.viewers);
+});
+socket.on("viewer_left",d=>{
+  document.getElementById("viewerCount").textContent=d.viewer_count;
+  addSysMsg(`${d.name} left`);
+  if(d.viewers) renderViewers(d.viewers);
+});
+socket.on("room_closed",()=>{ addSysMsg("🎬 Watch party ended."); setTimeout(()=>window.location.href="/",3000); });
+socket.on("error",d=>addSysMsg("⚠️ "+(d.message||d)));
+
+// ── CHAT ──────────────────────────────────────────────────────────────────────
+function sendChat(){
+  const inp=document.getElementById("chatInp");
+  const msg=inp.value.trim();
+  if(!msg) return;
+  socket.emit("watch_chat",{room_id:ROOM_ID,message:msg,username:MY_NAME});
+  inp.value="";
+}
+
+function appendMsg(d){
+  const rl=d.role_level??0;
+  const isMe=IS_HOST&&d.user===MY_NAME;
+  const avCls=isMe?"av-host":(RAV[rl]||"av-guest");
+  const nmCls=isMe?"n-host":(RNM[rl]||"n-guest");
+  const nbCls=isMe?"nb-host":(RNB[rl]||"nb-guest");
+  const label=isMe?"HOST":(RN[rl]||"GUEST");
+  const avHtml=d.avatar?`<img src="${d.avatar}" alt="">`:(d.user||"?")[0].toUpperCase();
+  const div=document.createElement("div");
+  div.className="cmsg";
+  div.innerHTML=`<div class="cmsg-av ${avCls}">${avHtml}</div>
+    <div class="cmsg-body">
+      <div class="cmsg-name ${nmCls}">${esc(d.user)}<span class="nbadge ${nbCls}">${label}</span></div>
+      <div class="cmsg-text">${esc(d.msg)}</div>
+      <div class="cmsg-ts">${d.ts||""}</div>
+    </div>`;
+  chatMsgs.appendChild(div);
+  chatMsgs.scrollTop=chatMsgs.scrollHeight;
+}
+
+function addSysMsg(t){
+  const d=document.createElement("div");
+  d.className="sys-msg"; d.textContent=t;
+  chatMsgs.appendChild(d);
+  chatMsgs.scrollTop=chatMsgs.scrollHeight;
+}
+
+// ── VIEWERS ───────────────────────────────────────────────────────────────────
+function renderViewers(viewers){
+  const strip=document.getElementById("vstrip");
+  const tab=document.getElementById("viewersTab");
+  strip.innerHTML=""; tab.innerHTML="";
+  (viewers||[]).forEach(v=>{
+    const rl=v.role_level??0;
+    const chip=document.createElement("div");
+    chip.className="vchip";
+    chip.innerHTML=`<span class="vdot"></span>${esc(v.name)}`;
+    strip.appendChild(chip);
+    const avCls=RAV[rl]||"av-guest";
+    const row=document.createElement("div");
+    row.className="vrow";
+    row.innerHTML=`<div class="vrow-av ${avCls}">${(v.name||"?")[0].toUpperCase()}</div>
+      <div class="vrow-info"><div class="vrow-name">${esc(v.name)}</div><div class="vrow-role">${RL[rl]||"Guest"}</div></div>
+      <div class="online-dot"></div>`;
+    tab.appendChild(row);
+  });
+}
+
+// ── AUTO PREDICTIONS ─────────────────────────────────────────────────────────
+// Automatically fire prediction questions at key movie moments
+const AUTO_PRED_QUESTIONS = [
+  { pct: 0.10, q: "What do you think will happen next?", opts: ["Something unexpected", "Exactly what we expect", "A plot twist", "Nothing much"] },
+  { pct: 0.25, q: "Who is your favorite character so far?", opts: ["The main hero", "The villain", "The sidekick", "Someone else"] },
+  { pct: 0.40, q: "How would you rate the movie so far?", opts: ["🔥 Amazing!", "👍 Pretty good", "😐 It's okay", "😴 Boring"] },
+  { pct: 0.55, q: "What's the best scene so far?", opts: ["The opening", "The action scene", "The emotional moment", "The funny part"] },
+  { pct: 0.70, q: "How do you think it ends?", opts: ["Happy ending", "Sad ending", "Cliffhanger", "Twist ending"] },
+  { pct: 0.85, q: "Would you watch this again?", opts: ["Definitely yes!", "Maybe someday", "Probably not", "Never again 😅"] },
+];
+
+let _autoPredFired = new Set();
+let _autoPredInterval = null;
+
+function _startAutoPredictions(){
+  if(_autoPredInterval) return;
+  _autoPredInterval = setInterval(()=>{
+    if(!vid||!vid.duration||vid.paused) return;
+    // Only host/mod fires auto predictions
+    if(!canMod()) return;
+    const pct = vid.currentTime / vid.duration;
+    for(const ap of AUTO_PRED_QUESTIONS){
+      const key = ap.pct.toString();
+      if(!_autoPredFired.has(key) && pct >= ap.pct && pct < ap.pct + 0.05){
+        _autoPredFired.add(key);
+        // Don't fire if there's already an active prediction
+        if(currentPrediction && !currentPrediction.resolved) return;
+        socket.emit("watch_prediction_create",{
+          room_id: ROOM_ID,
+          question: ap.q,
+          options: ap.opts
+        });
+        showToast("🎯 Auto prediction launched!", 3000);
+        break;
+      }
+    }
+  }, 10000); // check every 10s
+}
+
+function _stopAutoPredictions(){
+  if(_autoPredInterval){ clearInterval(_autoPredInterval); _autoPredInterval=null; }
+}
+
+// Start auto predictions when video plays
+vid.addEventListener('play', _startAutoPredictions);
+vid.addEventListener('pause', ()=>{}); // keep interval running so we catch resume
+vid.addEventListener('ended', _stopAutoPredictions);
+
+// ── CTRL LOCK ─────────────────────────────────────────────────────────────────
+function updateCtrlLock(){
+  // Visual indicator only — play always works locally, sync requires mod+
+  const locked=!canControl();
+  ["skipBackBtn","skipFwdBtn"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){ el.classList.toggle("locked",false); el.title=locked?"Seek (local only)":"Seek"; }
+  });
+  document.getElementById("progWrap").style.cursor="pointer";
+  // Show sync-locked indicator on play button if not mod
+  if(playBtn) playBtn.title = locked ? "Play (local only — mods sync for everyone)" : "Play/Pause";
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function esc(s){ const d=document.createElement("div"); d.textContent=String(s||""); return d.innerHTML; }
+function closeRoom(){ if(!confirm("End the watch party for everyone?")) return; fetch(`/api/watch/${ROOM_ID}/close`,{method:"POST"}).then(()=>window.location.href="/"); }
+
+// Keyboard shortcuts
+document.addEventListener("keydown",e=>{
+  if(e.target.tagName==="INPUT") return;
+  if(e.code==="Space"){e.preventDefault();togglePlay();}
+  if(e.code==="ArrowLeft") skip(-10);
+  if(e.code==="ArrowRight") skip(10);
+  if(e.code==="KeyF") toggleFullscreen();
+  if(e.code==="KeyM") toggleMute();
+  if(e.code==="KeyC") toggleCinema();
+  if(e.code==="Period") cycleSpeed();
+});
+
+window.addEventListener("beforeunload",()=>socket.emit("watch_leave",{room_id:ROOM_ID}));
+</script>
+</body>
+</html>
