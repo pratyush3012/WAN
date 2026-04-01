@@ -38,10 +38,7 @@ YT_OPTS = {
     "socket_timeout": 15,
 }
 FFMPEG_OPTS = {
-    "before_options": (
-        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 30 "
-        "-bufsize 16384k -probesize 200M -analyzeduration 200M"
-    ),
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 30",
     "options": "-vn",
 }
 
