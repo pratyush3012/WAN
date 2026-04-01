@@ -2070,6 +2070,8 @@ async function loadServerDetails(id){
     allTextChannels=d.channels.text||[];
     allVoiceChannels=d.channels.voice||[];
     populateChannelDropdowns(allTextChannels);
+    // Populate ALL role dropdowns now that allRoles is loaded
+    populateAllRoleDropdowns();
     animateCounter(document.getElementById('statMembers'),d.members.total);
     animateCounter(document.getElementById('statChannels'),d.channels.text.length+d.channels.voice.length);
     animateCounter(document.getElementById('statRoles'),d.roles.length);
@@ -2108,6 +2110,47 @@ function populateChannelDropdowns(channels){
     });
     if(cur)sel.value=cur;
   });
+}
+
+function populateAllRoleDropdowns(){
+  // Watch Party role restriction
+  const wpRole=document.getElementById('wpRole');
+  if(wpRole){
+    const cur=wpRole.value;
+    wpRole.innerHTML='<option value="">Everyone can join</option>'+
+      allRoles.filter(r=>r.name!=='@everyone').map(r=>`<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
+    if(cur)wpRole.value=cur;
+  }
+  // Welcome auto-role
+  const wAutoRole=document.getElementById('wAutoRole');
+  if(wAutoRole){
+    const cur=wAutoRole.value;
+    wAutoRole.innerHTML='<option value="">None (disabled)</option>'+
+      allRoles.filter(r=>r.name!=='@everyone').map(r=>`<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
+    if(cur)wAutoRole.value=cur;
+  }
+  // Welcome channels
+  const chOpts='<option value="">Select channel...</option>'+
+    allTextChannels.map(c=>`<option value="${c.id}"># ${escHtml(c.name)}</option>`).join('');
+  ['wJoinChannel','wLeaveChannel','wPromoChannel'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){const cur=el.value;el.innerHTML=chOpts;if(cur)el.value=cur;}
+  });
+  // All generic role-select dropdowns
+  document.querySelectorAll('select.role-select').forEach(sel=>{
+    const cur=sel.value;
+    const first=sel.options[0];
+    sel.innerHTML='';
+    sel.appendChild(first);
+    allRoles.filter(r=>r.name!=='@everyone').forEach(r=>{
+      const opt=document.createElement('option');
+      opt.value=r.id;opt.textContent=r.name;
+      sel.appendChild(opt);
+    });
+    if(cur)sel.value=cur;
+  });
+  // Re-init promo role tag picker with fresh roles
+  if(typeof setupPromoRolePicker==='function')setupPromoRolePicker();
 }
 
 async function loadBotStatus(){
@@ -2485,15 +2528,8 @@ function removePromoRoleTag(name){
 }
 
 function populateWelcomeChannels(){
-  const chOpts='<option value="">Select channel...</option>'+allTextChannels.map(c=>`<option value="${c.id}"># ${escHtml(c.name)}</option>`).join('');
-  const roleOpts='<option value="">None</option>'+allRoles.filter(r=>r.name!=='@everyone').map(r=>`<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
-  ['wJoinChannel','wLeaveChannel','wPromoChannel'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=chOpts;});
-  const ar=document.getElementById('wAutoRole');if(ar)ar.innerHTML=roleOpts;
-
-  // Setup role tag picker for promo roles
-  setupPromoRolePicker();
-
-  // Load saved config from API
+  // Roles and channels are already populated by populateAllRoleDropdowns()
+  // Just load saved config from API
   apiFetch('/api/server/'+currentServer+'/welcome').then(r=>r.json()).then(cfg=>{
     if(cfg.error)return;
     const set=(id,val)=>{const el=document.getElementById(id);if(el&&val!=null)el.value=val;};
@@ -2502,7 +2538,6 @@ function populateWelcomeChannels(){
     set('wLeaveChannel',cfg.goodbye_channel);set('wLeaveTitle',cfg.goodbye_title);
     set('wLeaveMsg',cfg.goodbye_message);set('wLeaveColor',cfg.goodbye_color);
     set('wPromoChannel',cfg.promo_channel);set('wPromoMsg',cfg.promo_message);
-    // Restore saved promo roles as tags
     if(cfg.promo_roles){
       cfg.promo_roles.split(',').map(r=>r.trim()).filter(Boolean).forEach(addPromoRoleTag);
     }
@@ -3406,14 +3441,11 @@ async function loadWatchRooms(){
         </div>
         <a href="/watch/${r.room_id}" target="_blank" class="btn btn-primary btn-sm"><i class="fas fa-play"></i> Join</a>
       </div>`).join('');
-    // Populate role selector
+    // Populate role selector if not already done
     const sel=document.getElementById('wpRole');
-    if(allRoles&&allRoles.length&&sel.options.length<=1){
-      allRoles.forEach(r=>{
-        const o=document.createElement('option');
-        o.value=r.id;o.textContent=r.name;
-        sel.appendChild(o);
-      });
+    if(sel&&allRoles.length&&sel.options.length<=1){
+      sel.innerHTML='<option value="">Everyone can join</option>'+
+        allRoles.filter(r=>r.name!=='@everyone').map(r=>`<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
     }
   }catch(e){}
 }
