@@ -90,6 +90,11 @@ class Database:
             return
         
         db_url = os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///bot.db')
+        # Render PostgreSQL URLs use postgres:// but SQLAlchemy needs postgresql+asyncpg://
+        if db_url.startswith('postgres://'):
+            db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
+        elif db_url.startswith('postgresql://') and '+asyncpg' not in db_url:
+            db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
         
         # Connection pooling configuration
         pool_config = {
