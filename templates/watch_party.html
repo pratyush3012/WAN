@@ -280,6 +280,16 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.15}
           <span class="time-txt" id="timeTxt">0:00 / 0:00</span>
           <span class="spacer"></span>
           <button class="cbtn speed-btn" id="speedBtn" onclick="cycleSpeed()">1×</button>
+          <!-- Audio track selector — only shown when multiple audio tracks exist -->
+          <div id="audioTrackWrap" style="display:none;position:relative">
+            <button class="cbtn" id="audioTrackBtn" onclick="toggleAudioMenu()" title="Audio Language" style="gap:4px;font-size:11px;font-weight:700;padding:4px 8px;min-width:auto">
+              <i class="fas fa-language"></i> <span id="audioTrackLabel">Audio</span>
+            </button>
+            <div id="audioMenu" style="display:none;position:absolute;bottom:44px;right:0;background:rgba(10,13,26,.97);border:1px solid var(--border);border-radius:10px;padding:6px;min-width:160px;z-index:50;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.6)">
+              <div style="font-size:10px;color:var(--muted);padding:4px 8px 6px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);margin-bottom:4px">🎵 Audio Track</div>
+              <div id="audioMenuItems"></div>
+            </div>
+          </div>
           <div class="vol-wrap">
             <button class="cbtn" onclick="toggleMute()" id="muteBtn"><i class="fas fa-volume-up"></i></button>
             <input type="range" class="vol-sl" id="volSl" min="0" max="1" step="0.02" value="1" oninput="setVol(this.value)">
@@ -419,6 +429,94 @@ function switchTab(name,el){
 function initVideo(){
   if(VIDEO_URL && !vid.src){ vid.src=VIDEO_URL; vid.load(); }
 }
+
+// ── AUDIO TRACK SWITCHING (per-user, stored in localStorage) ─────────────────
+const AUDIO_PREF_KEY = `wan_audio_track_${ROOM_ID}`;
+
+// Language name map for common audio track labels
+const LANG_NAMES = {
+  'und':'Unknown','eng':'English','hin':'Hindi','pun':'Punjabi','tam':'Tamil',
+  'tel':'Telugu','mal':'Malayalam','kan':'Kannada','ben':'Bengali','mar':'Marathi',
+  'guj':'Gujarati','urd':'Urdu','fra':'French','spa':'Spanish','deu':'German',
+  'jpn':'Japanese','kor':'Korean','zho':'Chinese','ara':'Arabic','rus':'Russian',
+  'por':'Portuguese','ita':'Italian','nld':'Dutch','pol':'Polish','tur':'Turkish',
+};
+
+function getLangName(track){
+  const lang = (track.language||'').toLowerCase();
+  const label = track.label||'';
+  if(label) return label;
+  return LANG_NAMES[lang] || lang.toUpperCase() || `Track ${track.id}`;
+}
+
+function initAudioTracks(){
+  const tracks = vid.audioTracks;
+  if(!tracks || tracks.length <= 1){
+    document.getElementById('audioTrackWrap').style.display='none';
+    return;
+  }
+
+  document.getElementById('audioTrackWrap').style.display='flex';
+
+  // Restore saved preference
+  const saved = localStorage.getItem(AUDIO_PREF_KEY);
+
+  const items = document.getElementById('audioMenuItems');
+  items.innerHTML = '';
+
+  for(let i=0; i<tracks.length; i++){
+    const track = tracks[i];
+    const name = getLangName(track);
+    const isActive = saved ? track.language === saved || track.label === saved : i === 0;
+
+    if(isActive){
+      track.enabled = true;
+      document.getElementById('audioTrackLabel').textContent = name;
+    } else {
+      track.enabled = false;
+    }
+
+    const btn = document.createElement('button');
+    btn.style.cssText = 'width:100%;text-align:left;background:none;border:none;color:var(--text);padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;transition:.15s';
+    btn.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${isActive?'var(--a2)':'rgba(255,255,255,.2)'};flex-shrink:0" id="dot_${i}"></span>${name}`;
+    btn.onmouseover = ()=>btn.style.background='rgba(255,255,255,.06)';
+    btn.onmouseout = ()=>btn.style.background='none';
+    btn.onclick = ()=>selectAudioTrack(i, name, track.language||track.label);
+    items.appendChild(btn);
+  }
+}
+
+function selectAudioTrack(idx, name, langKey){
+  const tracks = vid.audioTracks;
+  if(!tracks) return;
+
+  for(let i=0; i<tracks.length; i++){
+    tracks[i].enabled = (i === idx);
+    const dot = document.getElementById(`dot_${i}`);
+    if(dot) dot.style.background = i===idx ? 'var(--a2)' : 'rgba(255,255,255,.2)';
+  }
+
+  document.getElementById('audioTrackLabel').textContent = name;
+  localStorage.setItem(AUDIO_PREF_KEY, langKey);
+  document.getElementById('audioMenu').style.display='none';
+  showToast(`🎵 Audio: ${name}`);
+}
+
+function toggleAudioMenu(){
+  const menu = document.getElementById('audioMenu');
+  menu.style.display = menu.style.display==='none' ? 'block' : 'none';
+}
+
+// Close audio menu when clicking outside
+document.addEventListener('click', e=>{
+  if(!e.target.closest('#audioTrackWrap'))
+    document.getElementById('audioMenu').style.display='none';
+});
+
+// Init audio tracks when video metadata loads
+vid.addEventListener('loadedmetadata', ()=>{
+  initAudioTracks();
+});
 function togglePlay(){
   if(!canControl()){ showToast("⛔ Only mods/admins/owners can control playback"); return; }
   if(vid.paused){ vid.play().catch(()=>{}); socket.emit("watch_play",{room_id:ROOM_ID,current_time:vid.currentTime}); }
