@@ -64,19 +64,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;displ
 .speed-btn{font-size:10px;font-weight:800;min-width:32px;padding:4px 6px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:5px;color:rgba(255,255,255,.7)}
 .speed-btn:hover{background:rgba(124,111,255,.25);color:#fff;border-color:var(--accent)}
 .spacer{flex:1}
-/* Audio track button */
-.audio-wrap{position:relative}
-.audio-btn{font-size:10px;font-weight:700;padding:4px 8px;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.25);border-radius:6px;color:var(--a2);gap:4px}
-.audio-btn:hover{background:rgba(0,229,255,.18)}
-.audio-menu{display:none;position:absolute;bottom:44px;right:0;background:rgba(8,10,20,.97);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:6px;min-width:170px;z-index:50;backdrop-filter:blur(20px);box-shadow:0 8px 32px rgba(0,0,0,.8)}
-.audio-menu.open{display:block}
-.audio-menu-hdr{font-size:10px;color:var(--muted);padding:4px 8px 6px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:4px}
-.audio-opt{width:100%;text-align:left;background:none;border:none;color:var(--text);padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;transition:.15s;font-family:inherit}
-.audio-opt:hover{background:rgba(255,255,255,.07)}
-.audio-opt.active{color:var(--a2)}
-.audio-dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.2);flex-shrink:0}
-.audio-opt.active .audio-dot{background:var(--a2)}
-/* Sidebar */
 .chat-side{width:320px;display:flex;flex-direction:column;background:rgba(8,10,20,.7);backdrop-filter:blur(24px);border-left:1px solid rgba(255,255,255,.07);flex-shrink:0;z-index:10}
 .ctabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
 .ctab{flex:1;padding:9px 4px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:.2s;text-transform:uppercase;letter-spacing:.4px}
@@ -92,8 +79,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;displ
 .chat-msgs::-webkit-scrollbar-thumb{background:rgba(124,111,255,.25);border-radius:2px}
 .cmsg{display:flex;gap:8px;align-items:flex-start;animation:msgIn .2s ease-out}
 @keyframes msgIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-.cmsg-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;overflow:hidden;border:2px solid transparent}
-.cmsg-av img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.cmsg-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;overflow:hidden;border:2px solid transparent}
+.cmsg-av img{width:100%;height:100%;object-fit:cover}
 .av-host,.av-owner{border-color:var(--gold);background:linear-gradient(135deg,#8b6914,var(--gold));color:#000}
 .av-admin{border-color:var(--red);background:linear-gradient(135deg,#8b1a1a,var(--red));color:#fff}
 .av-mod{border-color:var(--green);background:linear-gradient(135deg,#1a6b3a,var(--green));color:#000}
@@ -126,8 +113,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;displ
 .send-btn:hover{transform:scale(1.1)}
 .viewers-tab{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:5px}
 .vrow{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--s1);border-radius:9px;border:1px solid var(--border)}
-.vrow-av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;overflow:hidden}
-.vrow-av img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.vrow-av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0}
 .vrow-info{flex:1;min-width:0}
 .vrow-name{font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vrow-role{font-size:9px;color:var(--muted)}
@@ -144,7 +130,7 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.2}
 </head>
 <body>
 <div class="topbar">
-  <span class="t-logo">🎬</span>
+  <span class="t-logo">��</span>
   <span class="t-title">{{ room.title }}</span>
   <div class="pill pill-live"><span class="live-dot"></span>LIVE</div>
   <div class="pill pill-viewers"><i class="fas fa-eye"></i>&nbsp;<span id="viewerCount">1</span></div>
@@ -178,16 +164,6 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.2}
           <span class="time-txt" id="timeTxt">0:00 / 0:00</span>
           <span class="spacer"></span>
           <button class="cbtn speed-btn" id="speedBtn" onclick="cycleSpeed()">1x</button>
-          <!-- Per-user audio track switcher -->
-          <div class="audio-wrap" id="audioWrap">
-            <button class="cbtn audio-btn" id="audioBtn" onclick="toggleAudioMenu()">
-              <i class="fas fa-language"></i> <span id="audioLabel">Audio</span>
-            </button>
-            <div class="audio-menu" id="audioMenu">
-              <div class="audio-menu-hdr">Audio Track</div>
-              <div id="audioOpts"></div>
-            </div>
-          </div>
           <div class="vol-wrap">
             <button class="cbtn" onclick="toggleMute()" id="muteBtn"><i class="fas fa-volume-up"></i></button>
             <input type="range" class="vol-sl" id="volSl" min="0" max="1" step="0.02" value="1" oninput="setVol(this.value)">
@@ -199,8 +175,8 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.2}
   </div>
   <div class="chat-side">
     <div class="ctabs">
-      <div class="ctab active" onclick="switchTab('chat',this)">💬 Chat</div>
-      <div class="ctab" onclick="switchTab('viewers',this)">👥 Viewers</div>
+      <div class="ctab active" onclick="switchTab('chat',this)">Chat</div>
+      <div class="ctab" onclick="switchTab('viewers',this)">Viewers</div>
     </div>
     <div class="tab-pane active" id="pane-chat">
       <div class="vstrip" id="vstrip"></div>
@@ -210,7 +186,7 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.2}
         <button class="rbtn" onclick="sendReact('😂')">😂</button>
         <button class="rbtn" onclick="sendReact('😮')">😮</button>
         <button class="rbtn" onclick="sendReact('👏')">👏</button>
-        <button class="rbtn" onclick="sendReact('🔥')">🔥</button>
+        <button class="rbtn" onclick="sendReact('🔥')">��</button>
         <button class="rbtn" onclick="sendReact('💀')">💀</button>
         <button class="rbtn" onclick="sendReact('🎉')">🎉</button>
         <button class="rbtn" onclick="sendReact('😭')">😭</button>
@@ -227,7 +203,6 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.2}
 </div>
 <div class="toast" id="toast"></div>
 <script>
-// ── CONFIG ────────────────────────────────────────────────────────────────────
 var ROOM_ID   = "{{ room.room_id }}";
 var VIDEO_URL = {{ room.video_url | tojson }};
 var HOST_ID   = "{{ room.host_id }}";
@@ -242,7 +217,6 @@ var _playPromise = null;
 var speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 var speedIdx = 2;
 
-// ── DOM ───────────────────────────────────────────────────────────────────────
 var vid        = document.getElementById("vid");
 var playBtn    = document.getElementById("playBtn");
 var centerIcon = document.getElementById("centerIcon");
@@ -252,29 +226,29 @@ var chatMsgs   = document.getElementById("chatMsgs");
 var syncToast  = document.getElementById("syncToast");
 var videoWrap  = document.getElementById("videoWrap");
 
-// ── ROLE MAPS ─────────────────────────────────────────────────────────────────
 var RN  = {4:"Owner",3:"Admin",2:"Mod",1:"Member",0:"Guest"};
-var RL  = {4:"👑 Owner",3:"⚙️ Admin",2:"🛡️ Mod",1:"👥 Member",0:"👤 Guest"};
+var RL  = {4:"Owner",3:"Admin",2:"Mod",1:"Member",0:"Guest"};
 var RAV = {4:"av-owner",3:"av-admin",2:"av-mod",1:"av-member",0:"av-guest"};
 var RNM = {4:"n-owner",3:"n-admin",2:"n-mod",1:"n-member",0:"n-guest"};
 var RNB = {4:"nb-owner",3:"nb-admin",2:"nb-mod",1:"nb-member",0:"nb-guest"};
 
 function canControl(){ return IS_HOST || myRoleLevel >= 2; }
 
-// ── TOAST ─────────────────────────────────────────────────────────────────────
 function showToast(msg, dur) {
   dur = dur || 2500;
   var t = document.getElementById("toast");
   t.textContent = msg;
-  t.classList.add("shovar RN  = {4:"Owner",3:"Admin",2:"Mod",1:"Member",0:"Guest"};
-var RL  = {4:"👑 Owne───────────────────────────────────────────?ar RL  = {4:"👑 ──────────────?ar RAV = {4:"av-owner",3:"av-admin",2:"av-mod"{
+  t.classList.add("show");
+  setTimeout(function(){ t.classList.remove("show"); }, dur);
+}
+
+function switchTab(name, el) {
   document.querySelectorAll(".ctab").forEach(function(t){ t.classList.remove("active"); });
   document.querySelectorAll(".tab-pane").forEach(function(p){ p.classList.remove("active"); });
   el.classList.add("active");
   document.getElementById("pane-" + name).classList.add("active");
 }
 
-// ── VIDEO ─────────────────────────────────────────────────────────────────────
 function initVideo() {
   if (VIDEO_URL && !vid.src) {
     vid.src = VIDEO_URL;
@@ -359,112 +333,6 @@ function toggleCinema() {
   showToast(document.body.classList.contains("cinema") ? "Cinematic ON — hover to reveal" : "Cinematic OFF");
 }
 
-// ── AUDIO TRACK SWITCHER (per-user, local only) ───────────────────────────────
-// Each viewer picks their own audio track — does NOT affect anyone else's playback.
-// Works with native multi-track files (MKV/MP4 with multiple audio streams).
-var AUDIO_PREF_KEY = "wan_audio_" + ROOM_ID;
-var LANG_MAP = {
-  und:"Unknown",eng:"English",hin:"Hindi",pun:"Punjabi",tam:"Tamil",
-  tel:"Telugu",mal:"Malayalam",kan:"Kannada",ben:"Bengali",mar:"Marathi",
-  jpn:"Japanese",kor:"Korean",zho:"Chinese",ara:"Arabic",rus:"Russian",
-  fra:"French",spa:"Spanish",deu:"German",por:"Portuguese",ita:"Italian"
-};
-
-function getLangName(track) {
-  var lang = (track.language || "").toLowerCase();
-  if (track.label) return track.label;
-  return LANG_MAP[lang] || (lang ? lang.toUpperCase() : "Track " + track.id);
-}
-
-function buildAudioMenu() {
-  var opts = document.getElementById("audioOpts");
-  var label = document.getElementById("audioLabel");
-  opts.innerHTML = "";
-
-  var tracks = vid.audioTracks;
-  if (tracks && tracks.length > 1) {
-    // Native multi-track — browser exposes AudioTrackList
-    var saved = localStorage.getItem(AUDIO_PREF_KEY);
-    for (var i = 0; i < tracks.length; i++) {
-      (function(idx) {
-        var track = tracks[idx];
-        var name = getLangName(track);
-        var isActive = saved ? (track.language === saved || track.label === saved) : idx === 0;
-        if (isActive) { track.enabled = true; label.textContent = name; }
-        else track.enabled = false;
-        var btn = document.createElement("button");
-        btn.className = "audio-opt" + (isActive ? " active" : "");
-        btn.innerHTML = '<span class="audio-dot"></span>' + name;
-        btn.onclick = function() {
-          for (var j = 0; j < tracks.length; j++) tracks[j].enabled = (j === idx);
-          label.textContent = name;
-          localStorage.setItem(AUDIO_PREF_KEY, track.language || track.label || String(idx));
-          document.querySelectorAll(".audio-opt").forEach(function(b){ b.classList.remove("active"); });
-          btn.classList.add("active");
-          document.getElementById("audioMenu").classList.remove("open");
-          showToast("🎵 Audio: " + name);
-        };
-        opts.appendChild(btn);
-      })(i);
-    }
-    document.getElementById("audioWrap").style.display = "flex";
-  } else {
-    // Single-track file — hide the button, nothing to switch
-    document.getElementById("audioWrap").style.display = "none";
-  }
-}
-
-function toggleAudioMenu() {
-  document.getElementById("audioMenu").classList.toggle("open");
-}
-
-// Close audio menu on outside click
-document.addEventListener("click", function(e) {
-  if (!e.target.closest("#audioWrap")) {
-    document.getElementById("audioMenu").classList.remove("open");
-  }
-});
-
-vid.addEventListener("loadedmetadata", function() {
-  buildAudioMenu();
-  showToast("Video ready — click play!");
-});
-
-// ── DISCORD IDENTITY FETCH ────────────────────────────────────────────────────
-// Fetches real Discord display name, avatar, and role level from the server.
-// Called once on connect so chat shows the correct Discord identity + role badge.
-function fetchDiscordIdentity(callback) {
-  fetch("/api/watch/me/" + ROOM_ID, {credentials: "include"})
-    .then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(d) {
-      if (!d) { callback(); return; }
-      if (d.username) MY_NAME   = d.username;
-      if (d.user_id)  MY_ID     = d.user_id;
-      if (d.avatar)   MY_AVATAR = d.avatar;
-      if (d.role_level != null) myRoleLevel = d.role_level;
-      IS_HOST = d.is_host || MY_ID === HOST_ID || MY_NAME === HOST_NAME;
-      showRoleBadge();
-      // Update topbar avatar if we have one
-      if (MY_AVATAR) {
-        var logo = document.querySelector(".t-logo");
-        if (logo) logo.innerHTML = '<img src="' + MY_AVATAR + '" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid rgba(124,111,255,.5)">';
-      }
-      callback();
-    })
-    .catch(function(){ callback(); });
-}
-
-// ── ROLE BADGE ────────────────────────────────────────────────────────────────
-function showRoleBadge() {
-  var b = document.getElementById("roleBadge");
-  if (IS_HOST) { b.textContent = "👑 Host"; b.className = "role-badge rb-host"; b.style.display = "block"; return; }
-  var map = {4:["👑 Owner","rb-owner"],3:["⚙️ Admin","rb-admin"],2:["🛡️ Mod","rb-mod"],1:["👥 Member","rb-member"]};
-  var m = map[myRoleLevel];
-  if (m) { b.textContent = m[0]; b.className = "role-badge " + m[1]; b.style.display = "block"; }
-  else b.style.display = "none";
-}
-
-// ── REACTIONS ─────────────────────────────────────────────────────────────────
 function sendReact(emoji) {
   socket.emit("watch_mood_react", {room_id: ROOM_ID, emoji: emoji});
   socket.emit("watch_chat", {room_id: ROOM_ID, message: emoji, username: MY_NAME});
@@ -481,7 +349,15 @@ function floatEmoji(e) {
   setTimeout(function(){ el.remove(); }, 2300);
 }
 
-// ── CHAT ──────────────────────────────────────────────────────────────────────
+function showRoleBadge() {
+  var b = document.getElementById("roleBadge");
+  if (IS_HOST) { b.textContent = "Host"; b.className = "role-badge rb-host"; b.style.display = "block"; return; }
+  var map = {4:["Owner","rb-owner"],3:["Admin","rb-admin"],2:["Mod","rb-mod"],1:["Member","rb-member"]};
+  var m = map[myRoleLevel];
+  if (m) { b.textContent = m[0]; b.className = "role-badge " + m[1]; b.style.display = "block"; }
+  else b.style.display = "none";
+}
+
 function sendChat() {
   var inp = document.getElementById("chatInp");
   var msg = inp.value.trim();
@@ -494,29 +370,20 @@ function esc(s) { var d = document.createElement("div"); d.textContent = String(
 
 function appendMsg(d) {
   var rl = d.role_level != null ? d.role_level : 0;
-  // Determine if this message is from me — match by user_id or name
-  var isMe = (d.user_id && d.user_id === MY_ID) || d.user === MY_NAME;
-  var isHost = isMe && IS_HOST;
-  var avCls = isHost ? "av-host" : (RAV[rl] || "av-guest");
-  var nmCls = isHost ? "n-host"  : (RNM[rl] || "n-guest");
-  var nbCls = isHost ? "nb-host" : (RNB[rl] || "nb-guest");
-  // Label: show actual role name, HOST for host
-  var label = isHost ? "HOST" : (RN[rl] || "GUEST");
-  // Avatar: use Discord avatar if available, else initial
-  var avHtml = d.avatar
-    ? '<img src="' + d.avatar + '" alt="">'
-    : (d.user || "?")[0].toUpperCase();
+  var isMe = d.user === MY_NAME;
+  var avCls = isMe ? "av-host" : (RAV[rl] || "av-guest");
+  var nmCls = isMe ? "n-host"  : (RNM[rl] || "n-guest");
+  var nbCls = isMe ? "nb-host" : (RNB[rl] || "nb-guest");
+  var label = isMe ? "HOST" : (RN[rl] || "GUEST");
+  var avHtml = d.avatar ? '<img src="' + d.avatar + '" alt="">' : (d.user || "?")[0].toUpperCase();
   var div = document.createElement("div");
   div.className = "cmsg";
-  div.innerHTML =
-    '<div class="cmsg-av ' + avCls + '">' + avHtml + '</div>' +
-    '<div class="cmsg-body">' +
-      '<div class="cmsg-name ' + nmCls + '">' + esc(d.user) +
-        '<span class="nbadge ' + nbCls + '">' + label + '</span>' +
-      '</div>' +
-      '<div class="cmsg-text">' + esc(d.msg) + '</div>' +
-      '<div class="cmsg-ts">' + (d.ts || "") + '</div>' +
-    '</div>';
+  div.innerHTML = '<div class="cmsg-av ' + avCls + '">' + avHtml + '</div>'
+    + '<div class="cmsg-body">'
+    + '<div class="cmsg-name ' + nmCls + '">' + esc(d.user) + '<span class="nbadge ' + nbCls + '">' + label + '</span></div>'
+    + '<div class="cmsg-text">' + esc(d.msg) + '</div>'
+    + '<div class="cmsg-ts">' + (d.ts || "") + '</div>'
+    + '</div>';
   chatMsgs.appendChild(div);
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
@@ -529,7 +396,6 @@ function addSysMsg(t) {
   chatMsgs.scrollTop = chatMsgs.scrollHeight;
 }
 
-// ── VIEWERS ───────────────────────────────────────────────────────────────────
 function renderViewers(viewers) {
   var strip = document.getElementById("vstrip");
   var tab   = document.getElementById("viewersTab");
@@ -542,23 +408,20 @@ function renderViewers(viewers) {
     chip.innerHTML = '<span class="vdot"></span>' + esc(v.name);
     strip.appendChild(chip);
     var avCls = RAV[rl] || "av-guest";
-    var avHtml = v.avatar
-      ? '<img src="' + v.avatar + '" alt="">'
-      : (v.name || "?")[0].toUpperCase();
     var row = document.createElement("div");
     row.className = "vrow";
-    row.innerHTML =
-      '<div class="vrow-av ' + avCls + '">' + avHtml + '</div>' +
-      '<div class="vrow-info">' +
-        '<div class="vrow-name">' + esc(v.name) + '</div>' +
-        '<div class="vrow-role">' + (RL[rl] || "Guest") + '</div>' +
-      '</div>' +
-      '<div class="online-dot"></div>';
+    row.innerHTML = '<div class="vrow-av ' + avCls + '">' + (v.name || "?")[0].toUpperCase() + '</div>'
+      + '<div class="vrow-info"><div class="vrow-name">' + esc(v.name) + '</div><div class="vrow-role">' + (RL[rl] || "Guest") + '</div></div>'
+      + '<div class="online-dot"></div>';
     tab.appendChild(row);
   });
 }
 
-// ── VIDEO EVENTS ──────────────────────────────────────────────────────────────
+function closeRoom() {
+  if (!confirm("End the watch party for everyone?")) return;
+  fetch("/api/watch/" + ROOM_ID + "/close", {method: "POST"}).then(function(){ window.location.href = "/"; });
+}
+
 vid.addEventListener("play", function() {
   playBtn.innerHTML = '<i class="fas fa-pause"></i>';
   centerIcon.className = "fas fa-pause";
@@ -578,17 +441,14 @@ vid.addEventListener("timeupdate", function() {
 vid.addEventListener("error", function() {
   showToast("Video error — check the file or URL", 4000);
 });
+vid.addEventListener("loadedmetadata", function() {
+  showToast("Video ready — click play!");
+});
 
 function fmt(s) {
   if (!s || isNaN(s)) return "0:00";
   var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
   return h ? (h + ":" + String(m).padStart(2,"0") + ":" + String(sec).padStart(2,"0")) : (m + ":" + String(sec).padStart(2,"0"));
-}
-
-// ── HELPERS ───────────────────────────────────────────────────────────────────
-function closeRoom() {
-  if (!confirm("End the watch party for everyone?")) return;
-  fetch("/api/watch/" + ROOM_ID + "/close", {method: "POST"}).then(function(){ window.location.href = "/"; });
 }
 
 document.addEventListener("keydown", function(e) {
@@ -601,20 +461,11 @@ document.addEventListener("keydown", function(e) {
   if (e.code === "KeyC") toggleCinema();
 });
 
-// ── SOCKET.IO ─────────────────────────────────────────────────────────────────
 var socket = io({transports: ["websocket", "polling"]});
 
 socket.on("connect", function() {
   initVideo();
-  // Fetch Discord identity first, then join with correct name/role/avatar
-  fetchDiscordIdentity(function() {
-    socket.emit("watch_join", {
-      room_id:  ROOM_ID,
-      username: MY_NAME,
-      user_id:  MY_ID,
-      avatar:   MY_AVATAR
-    });
-  });
+  socket.emit("watch_join", {room_id: ROOM_ID, username: MY_NAME, user_id: MY_ID, avatar: MY_AVATAR});
 });
 
 socket.on("watch_state", function(d) {
@@ -622,10 +473,12 @@ socket.on("watch_state", function(d) {
   if (Math.abs(vid.currentTime - (d.current_time || 0)) > 2) {
     vid.currentTime = d.current_time || 0;
   }
-  if (d.is_playing) { safePlay(); }
-  else { if (!vid.paused) safePause(); }
-  // Update identity from server (server is authoritative for role)
-  if (d.my_role_level != null) myRoleLevel = d.my_role_level;
+  if (d.is_playing) {
+    safePlay();
+  } else {
+    if (!vid.paused) safePause();
+  }
+  myRoleLevel = d.my_role_level != null ? d.my_role_level : 0;
   if (d.my_discord_id) MY_ID = d.my_discord_id;
   if (d.my_avatar && !MY_AVATAR) MY_AVATAR = d.my_avatar;
   IS_HOST = MY_ID === HOST_ID || MY_NAME === HOST_NAME;
@@ -652,11 +505,12 @@ socket.on("watch_sync", function(d) {
 });
 
 socket.on("watch_chat_msg", appendMsg);
+
 socket.on("mood_effect", function(d){ floatEmoji(d.emoji); });
 
 socket.on("viewer_joined", function(d) {
   document.getElementById("viewerCount").textContent = d.viewer_count;
-  addSysMsg(d.name + " joined 👋");
+  addSysMsg(d.name + " joined");
   if (d.viewers) renderViewers(d.viewers);
 });
 
@@ -671,10 +525,12 @@ socket.on("room_closed", function() {
   setTimeout(function(){ window.location.href = "/"; }, 3000);
 });
 
-socket.on("error", function(d){ addSysMsg("⚠️ " + (d.message || d)); });
+socket.on("error", function(d){ addSysMsg("Error: " + (d.message || d)); });
+
 socket.on("disconnect", function(){ addSysMsg("Disconnected — reconnecting..."); });
+
 socket.on("reconnect", function() {
-  addSysMsg("Reconnected ✅");
+  addSysMsg("Reconnected");
   socket.emit("watch_join", {room_id: ROOM_ID, username: MY_NAME, user_id: MY_ID, avatar: MY_AVATAR});
 });
 

@@ -4593,9 +4593,9 @@ def watch_upload_video(server_id):
 
 @app.route("/watch/stream/<room_id>")
 def watch_stream_file(room_id):
-    """Stream an uploaded video file with range support.
-    No login required — the watch party page itself handles access control.
-    """
+    """Stream an uploaded video file with range support."""
+    if 'user_id' not in session:
+        return redirect(url_for('login', next=request.url))
     room = _watch_rooms.get(room_id)
     if not room or not room.file_path or not os.path.exists(room.file_path):
         return jsonify({"error": "File not found"}), 404
@@ -5181,18 +5181,12 @@ def on_watch_chat(data):
     
     # Everyone can chat — guests included
     avatar = session.get("avatar_url", "")
-    # Get role_level from the viewer's session data in the room
-    viewer_data = room.viewers.get(request.sid, {})
-    role_level = viewer_data.get("role_level", 0)
-    if not avatar:
-        avatar = viewer_data.get("avatar", "")
     entry = {
-        "user":       username,
-        "avatar":     avatar,
-        "msg":        msg,
-        "ts":         datetime.now(timezone.utc).strftime("%H:%M"),
-        "user_id":    session.get("user_id", viewer_data.get("user_id", "")),
-        "role_level": role_level,
+        "user":   username,
+        "avatar": avatar,
+        "msg":    msg,
+        "ts":     datetime.now(timezone.utc).strftime("%H:%M"),
+        "user_id": session.get("user_id", ""),
     }
     room.chat.append(entry)
     if len(room.chat) > 200:
