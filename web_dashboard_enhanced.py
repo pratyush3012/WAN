@@ -4991,21 +4991,21 @@ def on_watch_leave(data):
 
 @socketio.on("watch_play")
 def on_watch_play(data):
-    """Host plays the video — sync all viewers."""
+    """Host/mod plays the video — sync all viewers."""
     room_id = data.get("room_id")
     room = _watch_rooms.get(room_id)
     if not room:
         return
-    
-    user_id = session.get("user_id", "")
     viewer = room.viewers.get(request.sid, {})
     role_level = viewer.get("role_level", 0)
-    
-    # Only host (role_level >= 2 = Mod+) or owner can control
-    if user_id != room.host_id and role_level < 2:
-        emit("error", {"message": "Only mods and above can control playback"})
+    viewer_uid = viewer.get("user_id", "")
+    # Allow: host (by user_id match), mod+, or room owner
+    is_host = (viewer_uid == room.host_id or
+               session.get("user_id", "") == room.host_id or
+               session.get("username", "") == room.host_name)
+    if not is_host and role_level < 2:
+        emit("error", {"message": "Only mods and above can sync playback"})
         return
-    
     room.current_time = float(data.get("current_time", room.sync_time()))
     room.is_playing   = True
     room.last_sync    = _time.time()
@@ -5021,16 +5021,15 @@ def on_watch_pause(data):
     room = _watch_rooms.get(room_id)
     if not room:
         return
-    
-    user_id = session.get("user_id", "")
     viewer = room.viewers.get(request.sid, {})
     role_level = viewer.get("role_level", 0)
-    
-    # Only host or mods+ can control
-    if user_id != room.host_id and role_level < 2:
-        emit("error", {"message": "Only mods and above can control playback"})
+    viewer_uid = viewer.get("user_id", "")
+    is_host = (viewer_uid == room.host_id or
+               session.get("user_id", "") == room.host_id or
+               session.get("username", "") == room.host_name)
+    if not is_host and role_level < 2:
+        emit("error", {"message": "Only mods and above can sync playback"})
         return
-    
     room.current_time = float(data.get("current_time", room.sync_time()))
     room.is_playing   = False
     room.last_sync    = _time.time()
@@ -5046,16 +5045,15 @@ def on_watch_seek(data):
     room = _watch_rooms.get(room_id)
     if not room:
         return
-    
-    user_id = session.get("user_id", "")
     viewer = room.viewers.get(request.sid, {})
     role_level = viewer.get("role_level", 0)
-    
-    # Only host or mods+ can seek
-    if user_id != room.host_id and role_level < 2:
-        emit("error", {"message": "Only mods and above can skip/seek"})
+    viewer_uid = viewer.get("user_id", "")
+    is_host = (viewer_uid == room.host_id or
+               session.get("user_id", "") == room.host_id or
+               session.get("username", "") == room.host_name)
+    if not is_host and role_level < 2:
+        emit("error", {"message": "Only mods and above can seek"})
         return
-    
     room.current_time = float(data.get("current_time", 0))
     room.last_sync    = _time.time()
     emit("watch_sync", {

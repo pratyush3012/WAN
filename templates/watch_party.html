@@ -417,12 +417,17 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.15}
 const ROOM_ID   = "{{ room.room_id }}";
 const VIDEO_URL = {{ room.video_url | tojson }};
 const HOST_ID   = "{{ room.host_id }}";
+const HOST_NAME = "{{ room.host_name }}";
 
-// These will be overridden by Discord identity fetch below
+// Identity — set from session, then refined by Discord fetch
 let MY_ID     = "{{ user_id }}";
 let MY_NAME   = "{{ username }}";
 let MY_AVATAR = "";
-let IS_HOST   = MY_ID === HOST_ID;
+// IS_HOST: true if session user_id matches host_id OR session username matches host_name
+let IS_HOST   = (MY_ID === HOST_ID) || (MY_NAME === HOST_NAME) || ("{{ username }}" === HOST_NAME);
+
+// While identity is loading, grant control if session says we're the host
+let _identityLoaded = false;
 
 const vid       = document.getElementById("vid");
 const playBtn   = document.getElementById("playBtn");
@@ -447,23 +452,23 @@ const RL={4:"👑 Owner",3:"⚙️ Admin",2:"🛡️ Mod",1:"👥 Member",0:"�
 async function _fetchDiscordIdentity(){
   try{
     const r = await fetch(`/api/watch/me/${ROOM_ID}`, {credentials:'include'});
-    if(!r.ok) return;
+    if(!r.ok){ _identityLoaded = true; return; }
     const d = await r.json();
     if(d.username) MY_NAME = d.username;
     if(d.user_id)  MY_ID   = d.user_id;
     if(d.avatar)   MY_AVATAR = d.avatar;
     if(d.role_level != null) myRoleLevel = d.role_level;
-    IS_HOST = d.is_host || MY_ID === HOST_ID;
-    // Update role badge now that we have real data
+    // IS_HOST: server says so, OR any of the IDs/names match
+    IS_HOST = d.is_host || MY_ID === HOST_ID || MY_NAME === HOST_NAME;
+    _identityLoaded = true;
     showRoleBadge();
     updateCtrlLock();
     if(canMod()) document.getElementById("predCreate").style.display="block";
-    // Show Discord avatar in topbar if available
     if(MY_AVATAR){
       const logo = document.querySelector('.t-logo');
       if(logo) logo.innerHTML = `<img src="${MY_AVATAR}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid rgba(124,111,255,.5)">`;
     }
-  }catch(e){}
+  }catch(e){ _identityLoaded = true; }
 }const RAV={4:"av-owner",3:"av-admin",2:"av-mod",1:"av-member",0:"av-guest"};
 const RNM={4:"n-owner",3:"n-admin",2:"n-mod",1:"n-member",0:"n-guest"};
 const RNB={4:"nb-owner",3:"nb-admin",2:"nb-mod",1:"nb-member",0:"nb-guest"};
@@ -717,20 +722,24 @@ vid.addEventListener('loadedmetadata', ()=>{
   initAudioTracks();
 });
 function togglePlay(){
-  if(!canControl()){ showToast("⛔ Only mods/admins/owners can control playback"); return; }
-  if(vid.paused){ vid.play().catch(()=>{}); socket.emit("watch_play",{room_id:ROOM_ID,current_time:vid.currentTime}); }
-  else { vid.pause(); socket.emit("watch_pause",{room_id:ROOM_ID,current_time:vid.currentTime}); }
+  // Everyone can play/pause locally — only sync to others requires mod+
+  if(vid.paused){
+    vid.play().catch(e=>showToast("❌ Could not play: "+e.message));
+    if(canControl()) socket.emit("watch_play",{room_id:ROOM_ID,current_time:vid.currentTime});
+  } else {
+    vid.pause();
+    if(canControl()) socket.emit("watch_pause",{room_id:ROOM_ID,current_time:vid.currentTime});
+  }
 }
 function skip(s){
-  if(!canControl()){ showToast("⛔ Only mods/admins/owners can seek"); return; }
   vid.currentTime=Math.max(0,Math.min(vid.duration||0,vid.currentTime+s));
-  socket.emit("watch_seek",{room_id:ROOM_ID,current_time:vid.currentTime});
+  if(canControl()) socket.emit("watch_seek",{room_id:ROOM_ID,current_time:vid.currentTime});
 }
 function seekTo(e){
-  if(!canControl()) return;
   const r=e.currentTarget.getBoundingClientRect();
-  vid.currentTime=((e.clientX-r.left)/r.width)*(vid.duration||0);
-  socket.emit("watch_seek",{room_id:ROOM_ID,current_time:vid.currentTime});
+  const t=((e.clientX-r.left)/r.width)*(vid.duration||0);
+  vid.currentTime=t;
+  if(canControl()) socket.emit("watch_seek",{room_id:ROOM_ID,current_time:t});
 }
 function setVol(v){ vid.volume=v; }
 function toggleMute(){
@@ -1112,9 +1121,15 @@ vid.addEventListener('ended', _stopAutoPredictions);
 
 // ── CTRL LOCK ─────────────────────────────────────────────────────────────────
 function updateCtrlLock(){
+  // Visual indicator only — play always works locally, sync requires mod+
   const locked=!canControl();
-  ["skipBackBtn","skipFwdBtn"].forEach(id=>{ const el=document.getElementById(id); if(el) el.classList.toggle("locked",locked); });
-  document.getElementById("progWrap").style.cursor=locked?"default":"pointer";
+  ["skipBackBtn","skipFwdBtn"].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){ el.classList.toggle("locked",false); el.title=locked?"Seek (local only)":"Seek"; }
+  });
+  document.getElementById("progWrap").style.cursor="pointer";
+  // Show sync-locked indicator on play button if not mod
+  if(playBtn) playBtn.title = locked ? "Play (local only — mods sync for everyone)" : "Play/Pause";
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
