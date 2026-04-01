@@ -4,6 +4,7 @@ React with 🌐 to translate any message to English instantly.
 Use /translate for custom language.
 """
 import discord
+from discord import app_commands
 from discord.ext import commands
 from deep_translator import GoogleTranslator
 import asyncio

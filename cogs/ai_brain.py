@@ -328,8 +328,8 @@ class AIBrain(commands.Cog):
             f"Discord server analysis for AI bot improvement.\n"
             f"Server: {guild.name} | Members: {guild.member_count}\n"
             f"Messages today: {stats.get('messages', 0)} | Joins: {stats.get('joins', 0)} | Leaves: {stats.get('leaves', 0)}\n"
-            f"Active features: {", ".join(features_active) or "unknown"}\n"
-            f"Missing features: {", ".join(features_missing) or "none"}\n\n"
+            f"Active features: {', '.join(features_active) or 'unknown'}\n"
+            f"Missing features: {', '.join(features_missing) or 'none'}\n\n"
             "Give ONE specific actionable suggestion to improve this server's bot usage. Under 2 sentences."
         )
         suggestion = await _gemini(prompt, max_tokens=100)
