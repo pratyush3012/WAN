@@ -4593,9 +4593,9 @@ def watch_upload_video(server_id):
 
 @app.route("/watch/stream/<room_id>")
 def watch_stream_file(room_id):
-    """Stream an uploaded video file with range support."""
-    if 'user_id' not in session:
-        return redirect(url_for('login', next=request.url))
+    """Stream an uploaded video file with range support.
+    No login required — the watch party page itself handles access control.
+    """
     room = _watch_rooms.get(room_id)
     if not room or not room.file_path or not os.path.exists(room.file_path):
         return jsonify({"error": "File not found"}), 404
