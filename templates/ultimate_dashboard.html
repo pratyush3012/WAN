@@ -101,17 +101,17 @@ select.form-control option{background:var(--surface2);}
 .btn-sm{padding:7px 13px;font-size:12px;border-radius:8px;}
 .cinema-day-hdr{font-size:11px;font-weight:700;color:var(--text-muted);padding:6px 4px;text-align:center;border-radius:6px}
 .cinema-day-hdr.today{color:var(--accent2);background:rgba(0,229,255,.08)}
-.cinema-slot{padding:4px;border-radius:6px;min-height:52px;border:1px solid var(--border);background:rgba(255,255,255,.02);cursor:pointer;transition:.2s;position:relative}
-.cinema-slot:hover{background:rgba(124,111,255,.08);border-color:rgba(124,111,255,.3)}
-.cinema-slot.booked{background:rgba(124,111,255,.15);border-color:rgba(124,111,255,.4);cursor:default}
-.cinema-slot.booked:hover{background:rgba(124,111,255,.2)}
-.cinema-slot.past{opacity:.4;cursor:not-allowed}
-.cinema-slot.now-playing{background:rgba(0,229,255,.12);border-color:var(--a2);animation:cinePulse 2s infinite}
-@keyframes cinePulse{0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,.3)}50%{box-shadow:0 0 0 6px rgba(0,229,255,0)}}
-.cinema-time-label{font-size:10px;color:var(--text-muted);padding:4px 6px;text-align:right;display:flex;align-items:center;justify-content:flex-end}
-.cinema-movie-card{font-size:10px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 4px}
-.cinema-movie-sub{font-size:9px;color:var(--a2);padding:0 4px}
-.cinema-repeat-badge{position:absolute;top:3px;right:3px;font-size:8px;background:rgba(124,111,255,.3);color:var(--accent);border-radius:3px;padding:1px 4px}
+.cinema-slot{padding:6px;border-radius:8px;min-height:64px;border:1px solid var(--border);background:rgba(255,255,255,.02);cursor:pointer;transition:.2s;position:relative;overflow:hidden}
+.cinema-slot:hover{background:rgba(124,111,255,.1);border-color:rgba(124,111,255,.4);transform:scale(1.02)}
+.cinema-slot.booked{background:linear-gradient(135deg,rgba(124,111,255,.18),rgba(0,229,255,.08));border-color:rgba(124,111,255,.5);cursor:default}
+.cinema-slot.booked:hover{background:linear-gradient(135deg,rgba(124,111,255,.25),rgba(0,229,255,.12));transform:none}
+.cinema-slot.past{opacity:.3;cursor:not-allowed;pointer-events:none}
+.cinema-slot.now-playing{background:linear-gradient(135deg,rgba(0,229,255,.2),rgba(124,111,255,.15));border-color:var(--a2);animation:cinePulse 2s infinite}
+@keyframes cinePulse{0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,.3)}50%{box-shadow:0 0 0 8px rgba(0,229,255,0)}}
+.cinema-time-label{font-size:10px;color:var(--text-muted);padding:4px 6px;text-align:right;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:2px}
+.cinema-movie-card{font-size:10px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 4px;line-height:1.3}
+.cinema-movie-sub{font-size:9px;color:var(--a2);padding:0 4px;opacity:.8}
+.cinema-repeat-badge{position:absolute;top:3px;right:3px;font-size:8px;background:rgba(124,111,255,.4);color:var(--accent);border-radius:3px;padding:1px 4px;font-weight:700}
 .mq-chip{padding:6px 14px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,.1);background:#212121;color:#fff;font-weight:500;transition:.2s}
 .mq-chip:hover{background:#303030}
 .mq-chip.active{background:#fff;color:#000;border-color:#fff}
@@ -1118,7 +1118,7 @@ select.form-control option{background:var(--surface2);}
     <div class="card" id="scheduleMovieCard">
       <div class="card-header">
         <h3 class="card-title"><i class="fas fa-calendar-plus"></i> Schedule a Movie</h3>
-        <span style="font-size:11px;color:var(--text-muted)">Admins, Mods & Owners only</span>
+        <span style="font-size:11px;color:var(--text-muted)">🔒 Admins, Mods & Owners only</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <div class="form-group">
@@ -3514,18 +3514,42 @@ function initCinemaDate(){
 
 function loadCinemaSchedule(){
   if(!currentServer) return;
-  // Load from localStorage (persists per server)
   const key = `cinema_schedule_${currentServer}`;
   try{ cinemaSchedule = JSON.parse(localStorage.getItem(key)||'[]'); }
   catch(e){ cinemaSchedule = []; }
+
+  // Check if current user is admin/mod/owner — show schedule form only for them
+  const isPrivileged = currentUserRole && ['owner','admin','moderator'].includes(currentUserRole.toLowerCase());
+  const card = document.getElementById('scheduleMovieCard');
+  if(card) card.style.display = isPrivileged !== false ? 'block' : 'none';
+
   renderCinemaGrid();
   renderUpcoming();
+  checkAutoStartShows();
 }
 
 function saveCinemaSchedule(){
   const key = `cinema_schedule_${currentServer}`;
   localStorage.setItem(key, JSON.stringify(cinemaSchedule));
 }
+
+function checkAutoStartShows(){
+  // Auto-open watch room when a scheduled show starts
+  const now = new Date();
+  cinemaSchedule.forEach(s => {
+    if(!s.room_id) return;
+    const showTime = new Date(s.date + 'T' + s.time);
+    const diff = now - showTime;
+    // If show started within the last 5 minutes and hasn't been auto-opened
+    if(diff >= 0 && diff < 5 * 60 * 1000 && !s._autoOpened){
+      s._autoOpened = true;
+      notify(`🎬 "${s.title}" is starting now! Click to join.`, 'success', 8000);
+    }
+  });
+}
+
+// Refresh cinema grid every minute to update "now playing" state
+setInterval(()=>{ if(currentServer) renderCinemaGrid(); }, 60000);
 
 function renderCinemaGrid(){
   const today = new Date();
@@ -3627,9 +3651,32 @@ function renderUpcoming(){
   const el = document.getElementById('wpUpcomingList');
   if(!el) return;
   const now = new Date();
+
+  // Get next occurrence for repeating shows
+  function getNextOccurrence(s){
+    const base = new Date(s.date + 'T' + s.time);
+    if(base > now) return base;
+    if(s.repeat === 'none') return null;
+    const next = new Date(now);
+    next.setHours(...s.time.split(':').map(Number), 0, 0);
+    if(next <= now) next.setDate(next.getDate() + 1);
+    if(s.repeat === 'weekly'){
+      const origDay = base.getDay();
+      while(next.getDay() !== origDay) next.setDate(next.getDate() + 1);
+    }
+    if(s.repeat === 'weekdays'){
+      while(next.getDay()===0||next.getDay()===6) next.setDate(next.getDate()+1);
+    }
+    if(s.repeat === 'weekends'){
+      while(next.getDay()!==0&&next.getDay()!==6) next.setDate(next.getDate()+1);
+    }
+    return next;
+  }
+
   const upcoming = cinemaSchedule
-    .filter(s => new Date(s.date + 'T' + s.time) > now || s.repeat !== 'none')
-    .sort((a,b) => new Date(a.date+'T'+a.time) - new Date(b.date+'T'+b.time))
+    .map(s => ({...s, _next: getNextOccurrence(s)}))
+    .filter(s => s._next !== null)
+    .sort((a,b) => a._next - b._next)
     .slice(0, 10);
 
   if(!upcoming.length){
@@ -3638,21 +3685,32 @@ function renderUpcoming(){
   }
 
   el.innerHTML = upcoming.map(s => {
-    const dt = new Date(s.date + 'T' + s.time);
+    const dt = s._next;
     const slotIdx = SLOTS.indexOf(s.time);
     const label = slotIdx >= 0 ? SLOT_LABELS[slotIdx] : s.time;
     const repeatLabel = {none:'',daily:'🔁 Daily',weekly:'🔁 Weekly',weekdays:'🔁 Weekdays',weekends:'🔁 Weekends'}[s.repeat]||'';
+    const diff = dt - now;
+    const isNow = diff <= 0 && diff > -3*60*60*1000;
+    const countdown = isNow ? '<span style="color:var(--a2);font-weight:700;font-size:11px">▶ NOW PLAYING</span>' :
+      diff < 3600000 ? `<span style="color:var(--orange);font-size:11px">⏱ ${Math.ceil(diff/60000)}m</span>` :
+      diff < 86400000 ? `<span style="color:var(--text-muted);font-size:11px">⏱ ${Math.floor(diff/3600000)}h ${Math.floor((diff%3600000)/60000)}m</span>` :
+      `<span style="color:var(--text-muted);font-size:11px">${dt.toLocaleDateString()}</span>`;
+
     return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div style="font-size:24px">🎬</div>
+      <div style="font-size:28px;flex-shrink:0">${isNow?'🔴':'🎬'}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.title)}</div>
-        <div style="font-size:11px;color:var(--text-muted)">${dt.toLocaleDateString()} • ${label} ${repeatLabel}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${label} ${repeatLabel}</div>
+        <div style="margin-top:3px">${countdown}</div>
       </div>
-      ${s.room_id?`<a href="/watch/${s.room_id}" target="_blank" class="btn btn-primary btn-sm"><i class="fas fa-play"></i> Join</a>`:''}
+      ${s.room_id?`<a href="/watch/${s.room_id}" target="_blank" class="btn btn-primary btn-sm" style="${isNow?'animation:cinePulse 1.5s infinite':''}"><i class="fas fa-play"></i> ${isNow?'Join Now':'Join'}</a>`:''}
       <button onclick="removeCinemaShow('${s.id}')" class="btn btn-ghost btn-sm" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
     </div>`;
   }).join('');
 }
+
+// Refresh upcoming list every 30s for countdown updates
+setInterval(()=>{ if(currentServer && document.getElementById('wpUpcomingList')) renderUpcoming(); }, 30000);
 
 async function scheduleMovie(){
   if(!currentServer){notify('Select a server first','warning');return;}
