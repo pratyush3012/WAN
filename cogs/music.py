@@ -813,10 +813,20 @@ class Music(commands.Cog):
 
         def _after(error):
             if error:
+                err_str = str(error).lower()
                 logger.error(f"❌ FFmpeg playback error '{song.title}': {error}")
-                # Don't trigger autoplay on error — just stop
                 gp.vc_playing = False
                 gp.current = None
+                # 403 / HLS errors = expired URL — refetch instead of stopping
+                if any(x in err_str for x in ('403', 'forbidden', 'invalid data', 'not in allowed', 'server returned')):
+                    logger.info(f"🔄 Stream URL expired for '{song.title}' — refetching...")
+                    asyncio.run_coroutine_threadsafe(
+                        self._refetch_and_play(channel, guild, gp, song), self.bot.loop)
+                else:
+                    # Other errors — skip to next
+                    vc_check = guild.voice_client
+                    if vc_check and vc_check.is_connected():
+                        self._play_next(channel, guild, gp)
             else:
                 logger.info(f"✅ Finished playing '{song.title}'")
                 gp.vc_playing = False
@@ -1109,7 +1119,13 @@ class Music(commands.Cog):
             vc.stop()
             if not gp.mode_247:
                 await vc.disconnect()
-        await interaction.response.send_message("⏹ Stopped.")
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send("⏹ Stopped.")
+            else:
+                await interaction.response.send_message("⏹ Stopped.")
+        except Exception:
+            pass
 
     @app_commands.command(name="pause", description="⏸ Pause the current song")
     async def slash_pause(self, interaction: discord.Interaction):
