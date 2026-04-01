@@ -4751,6 +4751,56 @@ def watch_delete_movie(server_id, movie_id):
     return jsonify({"success": True})
 
 
+# ── Watch party viewer identity endpoint ──────────────────────────────────────
+@app.route("/api/watch/me/<room_id>")
+def watch_get_me(room_id):
+    """Return current viewer's Discord identity for a watch room."""
+    room = _watch_rooms.get(room_id)
+    user_id = session.get("user_id", "")
+    username = session.get("username", "Viewer")
+    avatar = session.get("avatar_url", "")
+    role_level = 0
+    discord_id = None
+
+    if room and bot_instance and bot_instance.is_ready():
+        try:
+            guild = bot_instance.get_guild(int(room.guild_id))
+            if guild:
+                # Try numeric Discord ID
+                try:
+                    uid_int = int(user_id)
+                    member = guild.get_member(uid_int)
+                    if member:
+                        role_level = _get_user_role_level(int(room.guild_id), uid_int)
+                        discord_id = str(uid_int)
+                        username = member.display_name
+                        if member.display_avatar:
+                            avatar = str(member.display_avatar.url)
+                except (ValueError, TypeError):
+                    pass
+                # Fallback: search by name
+                if not discord_id:
+                    for m in guild.members:
+                        if m.display_name.lower() == username.lower() or m.name.lower() == username.lower():
+                            role_level = _get_user_role_level(int(room.guild_id), m.id)
+                            discord_id = str(m.id)
+                            if m.display_avatar:
+                                avatar = str(m.display_avatar.url)
+                            break
+        except Exception:
+            pass
+
+    is_host = room and (user_id == room.host_id or discord_id == room.host_id)
+    return jsonify({
+        "user_id": discord_id or user_id,
+        "username": username,
+        "avatar": avatar,
+        "role_level": role_level,
+        "is_host": is_host,
+        "logged_in": bool(session.get("user_id")),
+    })
+
+
 # ── Movie Schedule API (multiple time slots, loop support) ────────────────────
 _movie_schedules: dict = {}  # {server_id: [schedule_entry, ...]}
 
@@ -4855,25 +4905,50 @@ def on_watch_join(data):
     room_id  = data.get("room_id")
     username = session.get("username", data.get("username", "Viewer"))
     user_id  = session.get("user_id", data.get("user_id", secrets.token_hex(4)))
-    avatar   = session.get("avatar_url", "")
+    avatar   = session.get("avatar_url", data.get("avatar", ""))
 
     room = _watch_rooms.get(room_id)
     if not room:
         emit("error", {"message": "Room not found"})
         return
 
-    # Get user's role level
+    # Resolve Discord role level — handle both numeric Discord IDs and username-based logins
+    role_level = 0
+    resolved_discord_id = None
     try:
         guild_id = int(room.guild_id)
-        user_id_int = int(user_id)
-        role_level = _get_user_role_level(guild_id, user_id_int)
-    except (ValueError, TypeError):
-        role_level = 0
+        guild = bot_instance.get_guild(guild_id) if bot_instance else None
+        if guild:
+            # Try numeric Discord ID first (from /web command token auth or Discord OAuth)
+            try:
+                uid_int = int(user_id)
+                member = guild.get_member(uid_int)
+                if member:
+                    role_level = _get_user_role_level(guild_id, uid_int)
+                    resolved_discord_id = str(uid_int)
+                    if not avatar and member.display_avatar:
+                        avatar = str(member.display_avatar.url)
+                    username = member.display_name
+            except (ValueError, TypeError):
+                pass
+            # Fallback: search by display name / username
+            if not resolved_discord_id:
+                for m in guild.members:
+                    if m.display_name.lower() == username.lower() or m.name.lower() == username.lower():
+                        role_level = _get_user_role_level(guild_id, m.id)
+                        resolved_discord_id = str(m.id)
+                        if not avatar and m.display_avatar:
+                            avatar = str(m.display_avatar.url)
+                        break
+    except Exception:
+        pass
 
     join_room(f"watch_{room_id}")
     room.viewers[request.sid] = {
-        "name": username, "user_id": user_id,
-        "avatar": avatar, "joined_at": datetime.now(timezone.utc).isoformat(),
+        "name": username,
+        "user_id": resolved_discord_id or user_id,
+        "avatar": avatar,
+        "joined_at": datetime.now(timezone.utc).isoformat(),
         "role_level": role_level,
     }
 
@@ -4890,11 +4965,15 @@ def on_watch_join(data):
         "my_role_level": role_level,
         "volume":        room.volume,
         "is_looping":    room.is_looping,
+        "my_discord_id": resolved_discord_id or user_id,
+        "my_avatar":     avatar,
     })
 
     # Notify others
     emit("viewer_joined", {
-        "name": username, "viewer_count": len(room.viewers)
+        "name": username,
+        "viewer_count": len(room.viewers),
+        "viewers": list(room.viewers.values()),
     }, room=f"watch_{room_id}", include_self=False)
 
 

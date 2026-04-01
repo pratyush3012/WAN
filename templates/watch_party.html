@@ -24,7 +24,7 @@ body::before{content:'';position:fixed;inset:0;background:
   pointer-events:none;z-index:0}
 
 /* ── TOPBAR ── */
-.topbar{position:relative;z-index:20;height:50px;
+.topbar{position:relative;z-index:30;height:50px;
   background:rgba(255,255,255,.04);
   backdrop-filter:blur(32px) saturate(1.8);
   -webkit-backdrop-filter:blur(32px) saturate(1.8);
@@ -46,12 +46,11 @@ body::before{content:'';position:fixed;inset:0;background:
 .tbtn-danger{background:linear-gradient(135deg,#c0392b,var(--red));color:#fff;box-shadow:0 2px 12px rgba(255,71,87,.3)}
 .tbtn-danger:hover{transform:translateY(-1px)}
 
-/* ── AMBIENT RGB CANVAS (behind everything) ── */
-#ambientCanvas{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;filter:blur(70px) saturate(1.5);transition:opacity 1s}
-body::after{content:'';position:fixed;inset:0;background:rgba(5,7,15,.5);pointer-events:none;z-index:0}
+/* ── AMBIENT RGB CANVAS (behind everything, never blocks video) ── */
+#ambientCanvas{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.45;filter:blur(80px) saturate(1.4);transition:opacity 1.2s}
 
-/* ── MAIN ── */
-.main{display:flex;flex:1;overflow:hidden;position:relative;z-index:1}
+/* ── MAIN layout — z-index above ambient ── */
+.main{display:flex;flex:1;overflow:hidden;position:relative;z-index:2}
 
 /* ── VIDEO SIDE ── */
 .video-side{flex:1;display:flex;flex-direction:column;background:transparent;position:relative;min-width:0}
@@ -418,9 +417,12 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.15}
 const ROOM_ID   = "{{ room.room_id }}";
 const VIDEO_URL = {{ room.video_url | tojson }};
 const HOST_ID   = "{{ room.host_id }}";
-const MY_ID     = "{{ user_id }}";
-const MY_NAME   = "{{ username }}";
-const IS_HOST   = MY_ID === HOST_ID;
+
+// These will be overridden by Discord identity fetch below
+let MY_ID     = "{{ user_id }}";
+let MY_NAME   = "{{ username }}";
+let MY_AVATAR = "";
+let IS_HOST   = MY_ID === HOST_ID;
 
 const vid       = document.getElementById("vid");
 const playBtn   = document.getElementById("playBtn");
@@ -439,7 +441,30 @@ let moodTimeout = null;
 // ── ROLE ──────────────────────────────────────────────────────────────────────
 const RN={4:"Owner",3:"Admin",2:"Mod",1:"Member",0:"Guest"};
 const RL={4:"👑 Owner",3:"⚙️ Admin",2:"🛡️ Mod",1:"👥 Member",0:"👤 Guest"};
-const RAV={4:"av-owner",3:"av-admin",2:"av-mod",1:"av-member",0:"av-guest"};
+
+// ── FETCH DISCORD IDENTITY ────────────────────────────────────────────────────
+// Resolves real Discord username, avatar, and role level from the server
+async function _fetchDiscordIdentity(){
+  try{
+    const r = await fetch(`/api/watch/me/${ROOM_ID}`, {credentials:'include'});
+    if(!r.ok) return;
+    const d = await r.json();
+    if(d.username) MY_NAME = d.username;
+    if(d.user_id)  MY_ID   = d.user_id;
+    if(d.avatar)   MY_AVATAR = d.avatar;
+    if(d.role_level != null) myRoleLevel = d.role_level;
+    IS_HOST = d.is_host || MY_ID === HOST_ID;
+    // Update role badge now that we have real data
+    showRoleBadge();
+    updateCtrlLock();
+    if(canMod()) document.getElementById("predCreate").style.display="block";
+    // Show Discord avatar in topbar if available
+    if(MY_AVATAR){
+      const logo = document.querySelector('.t-logo');
+      if(logo) logo.innerHTML = `<img src="${MY_AVATAR}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid rgba(124,111,255,.5)">`;
+    }
+  }catch(e){}
+}const RAV={4:"av-owner",3:"av-admin",2:"av-mod",1:"av-member",0:"av-guest"};
 const RNM={4:"n-owner",3:"n-admin",2:"n-mod",1:"n-member",0:"n-guest"};
 const RNB={4:"nb-owner",3:"nb-admin",2:"nb-mod",1:"nb-member",0:"nb-guest"};
 function canControl(){ return IS_HOST || myRoleLevel >= 2; }
@@ -475,65 +500,76 @@ function initVideo(){
   if(VIDEO_URL && !vid.src){ vid.src=VIDEO_URL; vid.load(); }
 }
 
-// ── AMBIENT RGB SYNC (extracts dominant colors from video frame) ─────────────
+// ── AMBIENT RGB SYNC ─────────────────────────────────────────────────────────
+// Samples movie colors and paints soft glowing blobs behind the page
 const ambientCanvas = document.getElementById('ambientCanvas');
-const ambCtx = ambientCanvas.getContext('2d');
+const ambCtx = ambientCanvas ? ambientCanvas.getContext('2d') : null;
+// Use a tiny offscreen canvas to sample colors (avoids CORS crash)
 const _sampleCanvas = document.createElement('canvas');
-const _sampleCtx = _sampleCanvas.getContext('2d');
-_sampleCanvas.width = 16; _sampleCanvas.height = 9;
+_sampleCanvas.width = 8; _sampleCanvas.height = 5;
+const _sampleCtx = _sampleCanvas.getContext('2d', {willReadFrequently: true});
 
 let _ambientRaf = null;
-let _lastAmbientColors = [[124,111,255],[0,229,255]];
 
 function _updateAmbient(){
-  if(vid.paused || vid.ended || !vid.videoWidth) return;
+  if(!ambCtx || !ambientCanvas) return;
+  if(vid.paused || vid.ended || !vid.videoWidth || !vid.videoHeight) return;
   try{
-    _sampleCtx.drawImage(vid, 0, 0, 16, 9);
-    const px = _sampleCtx.getImageData(0, 0, 16, 9).data;
-    // Sample 4 corners + center for dominant colors
-    const samples = [
-      [px[0],px[1],px[2]],           // top-left
-      [px[(16*3)*4],px[(16*3)*4+1],px[(16*3)*4+2]], // top-right area
-      [px[(8*16+8)*4],px[(8*16+8)*4+1],px[(8*16+8)*4+2]], // center
-      [px[(8*16)*4],px[(8*16)*4+1],px[(8*16)*4+2]], // mid-left
-      [px[(8*16+15)*4],px[(8*16+15)*4+1],px[(8*16+15)*4+2]], // mid-right
-    ];
-    // Smooth transition
-    _lastAmbientColors = samples.slice(0,2);
-    const [c1,c2] = _lastAmbientColors;
+    // crossOrigin must be set before src for same-origin videos; for /watch/stream it's same-origin
+    _sampleCtx.drawImage(vid, 0, 0, 8, 5);
+    const px = _sampleCtx.getImageData(0, 0, 8, 5).data;
+    // Pick 3 color samples: top-left, center, bottom-right
+    const c1 = [px[0], px[1], px[2]];
+    const c2 = [px[(2*8+4)*4], px[(2*8+4)*4+1], px[(2*8+4)*4+2]];
+    const c3 = [px[(4*8+7)*4], px[(4*8+7)*4+1], px[(4*8+7)*4+2]];
+
     ambientCanvas.width = window.innerWidth;
     ambientCanvas.height = window.innerHeight;
-    const grad = ambCtx.createRadialGradient(
-      window.innerWidth*.2, window.innerHeight*.3, 0,
-      window.innerWidth*.2, window.innerHeight*.3, window.innerWidth*.7
+    ambCtx.clearRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+
+    const g1 = ambCtx.createRadialGradient(
+      ambientCanvas.width*.15, ambientCanvas.height*.25, 0,
+      ambientCanvas.width*.15, ambientCanvas.height*.25, ambientCanvas.width*.6
     );
-    grad.addColorStop(0, `rgba(${c1[0]},${c1[1]},${c1[2]},.7)`);
-    grad.addColorStop(.5, `rgba(${c2[0]},${c2[1]},${c2[2]},.3)`);
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ambCtx.clearRect(0,0,ambientCanvas.width,ambientCanvas.height);
-    ambCtx.fillStyle = grad;
-    ambCtx.fillRect(0,0,ambientCanvas.width,ambientCanvas.height);
-    // Second blob on opposite side
-    const grad2 = ambCtx.createRadialGradient(
-      window.innerWidth*.8, window.innerHeight*.7, 0,
-      window.innerWidth*.8, window.innerHeight*.7, window.innerWidth*.5
+    g1.addColorStop(0, `rgba(${c1[0]},${c1[1]},${c1[2]},.75)`);
+    g1.addColorStop(1, 'rgba(0,0,0,0)');
+    ambCtx.fillStyle = g1;
+    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+
+    const g2 = ambCtx.createRadialGradient(
+      ambientCanvas.width*.85, ambientCanvas.height*.75, 0,
+      ambientCanvas.width*.85, ambientCanvas.height*.75, ambientCanvas.width*.55
     );
-    const c3 = samples[2];
-    grad2.addColorStop(0, `rgba(${c3[0]},${c3[1]},${c3[2]},.5)`);
-    grad2.addColorStop(1, 'rgba(0,0,0,0)');
-    ambCtx.fillStyle = grad2;
-    ambCtx.fillRect(0,0,ambientCanvas.width,ambientCanvas.height);
-  }catch(e){}
+    g2.addColorStop(0, `rgba(${c2[0]},${c2[1]},${c2[2]},.6)`);
+    g2.addColorStop(1, 'rgba(0,0,0,0)');
+    ambCtx.fillStyle = g2;
+    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+
+    const g3 = ambCtx.createRadialGradient(
+      ambientCanvas.width*.5, ambientCanvas.height*.5, 0,
+      ambientCanvas.width*.5, ambientCanvas.height*.5, ambientCanvas.width*.4
+    );
+    g3.addColorStop(0, `rgba(${c3[0]},${c3[1]},${c3[2]},.35)`);
+    g3.addColorStop(1, 'rgba(0,0,0,0)');
+    ambCtx.fillStyle = g3;
+    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
+  } catch(e){
+    // SecurityError from cross-origin video — disable ambient silently
+    if(_ambientRaf){ clearInterval(_ambientRaf); _ambientRaf = null; }
+    if(ambientCanvas) ambientCanvas.style.opacity = '0';
+  }
 }
 
-// Update ambient every 500ms while playing
 vid.addEventListener('play', ()=>{
   if(_ambientRaf) clearInterval(_ambientRaf);
-  _ambientRaf = setInterval(_updateAmbient, 500);
-  ambientCanvas.style.opacity = '.5';
+  _ambientRaf = setInterval(_updateAmbient, 600);
+  if(ambientCanvas) ambientCanvas.style.opacity = '.45';
 });
-vid.addEventListener('pause', ()=>{ ambientCanvas.style.opacity = '.2'; });
-vid.addEventListener('ended', ()=>{ if(_ambientRaf){clearInterval(_ambientRaf);_ambientRaf=null;} ambientCanvas.style.opacity='0'; });
+vid.addEventListener('pause', ()=>{ if(ambientCanvas) ambientCanvas.style.opacity = '.15'; });
+vid.addEventListener('ended', ()=>{
+  if(_ambientRaf){ clearInterval(_ambientRaf); _ambientRaf = null; }
+  if(ambientCanvas) ambientCanvas.style.opacity = '0';
+});
 
 // ── RATING SYSTEM ─────────────────────────────────────────────────────────────
 let _myRating = 0;
@@ -880,7 +916,10 @@ const socket=io({transports:["websocket","polling"]});
 
 socket.on("connect",()=>{
   initVideo();
-  socket.emit("watch_join",{room_id:ROOM_ID,username:MY_NAME,user_id:MY_ID});
+  // Fetch Discord identity first, then join (so role level is correct)
+  _fetchDiscordIdentity().then(()=>{
+    socket.emit("watch_join",{room_id:ROOM_ID,username:MY_NAME,user_id:MY_ID,avatar:MY_AVATAR});
+  });
 });
 
 socket.on("watch_state",d=>{
@@ -888,7 +927,12 @@ socket.on("watch_state",d=>{
   if(Math.abs(vid.currentTime-(d.current_time||0))>2) vid.currentTime=d.current_time||0;
   if(d.is_playing) vid.play().catch(()=>{});
   else vid.pause();
-  myRoleLevel=d.my_role_level??0;
+  // Use server role level (already resolved from Discord) — take max in case identity fetch was faster
+  myRoleLevel = Math.max(myRoleLevel, d.my_role_level ?? 0);
+  // Update identity from server if provided
+  if(d.my_discord_id) MY_ID = d.my_discord_id;
+  if(d.my_avatar && !MY_AVATAR) MY_AVATAR = d.my_avatar;
+  IS_HOST = MY_ID === HOST_ID;
   document.getElementById("viewerCount").textContent=d.viewer_count||1;
   chatMsgs.innerHTML="";
   (d.chat_history||[]).forEach(m=>appendMsg(m));
@@ -896,6 +940,7 @@ socket.on("watch_state",d=>{
   showRoleBadge();
   updateCtrlLock();
   if(canMod()) document.getElementById("predCreate").style.display="block";
+  if(d.viewers) renderViewers(d.viewers);
 });
 
 socket.on("watch_sync",d=>{
