@@ -1109,25 +1109,22 @@ def broadcast_update(event_type: str, data: dict, room: str = None):
         logger.error(f"Error broadcasting update: {e}")
 
 def start_web_dashboard(bot, host='0.0.0.0', port=5000, ready_event=None):
-    """Start the web dashboard using werkzeug threaded server."""
+    """Start the web dashboard using socketio.run (required for SocketIO routes)."""
     global bot_instance
     bot_instance = bot
 
     logger.info(f"🌐 Starting Enhanced Web Dashboard on http://{host}:{port}")
 
     try:
-        from werkzeug.serving import make_server
-        server = make_server(host, port, app, threaded=True)
-        logger.info(f"✅ Web server bound to port {port}")
-
+        # Signal ready before blocking so bot.py can continue
         if ready_event:
             ready_event.set()
 
-        server.serve_forever()
+        socketio.run(app, host=host, port=port, allow_unsafe_werkzeug=True, log_output=False)
     except Exception as e:
         logger.error(f"❌ Web server failed: {e}")
         if ready_event:
-            ready_event.set()
+            ready_event.set()  # unblock bot.py even on failure
 
 
 def start_web_dashboard_with_socket(bot, sock):
