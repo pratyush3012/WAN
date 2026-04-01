@@ -39,19 +39,6 @@ logger = logging.getLogger('dashboard')
 # ── Cross-process signed auth tokens (works on Render + local) ───────────────
 from itsdangerous import URLSafeTimedSerializer as _USTS, BadSignature as _BadSig, SignatureExpired as _SigExp
 
-def _make_auth_token(user_id: str, guild_id: str, username: str, role: str) -> str:
-    """Create a signed token that embeds user info — no shared memory needed."""
-    s = _USTS(app.config['SECRET_KEY'], salt='discord-auth')
-    return s.dumps({'uid': user_id, 'gid': guild_id, 'un': username, 'role': role})
-
-def _verify_auth_token(token: str, max_age: int = 86400) -> dict | None:
-    """Verify and decode a signed token. Returns None if invalid/expired."""
-    s = _USTS(app.config['SECRET_KEY'], salt='discord-auth')
-    try:
-        return s.loads(token, max_age=max_age)
-    except (_BadSig, _SigExp):
-        return None
-
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('DASHBOARD_SECRET_KEY', 'wan-bot-dashboard-secret-key-change-me-in-env')
@@ -59,6 +46,20 @@ app.config['SESSION_COOKIE_SECURE'] = False  # Render handles HTTPS termination;
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+
+# ── Cross-process signed auth tokens (works on Render + local) ───────────────
+def _make_auth_token(user_id: str, guild_id: str, username: str, role: str) -> str:
+    """Create a signed token that embeds user info — no shared memory needed."""
+    s = _USTS(app.config['SECRET_KEY'], salt='discord-auth')
+    return s.dumps({'uid': user_id, 'gid': guild_id, 'un': username, 'role': role})
+
+def _verify_auth_token(token: str, max_age: int = 86400):
+    """Verify and decode a signed token. Returns None if invalid/expired."""
+    s = _USTS(app.config['SECRET_KEY'], salt='discord-auth')
+    try:
+        return s.loads(token, max_age=max_age)
+    except (_BadSig, _SigExp):
+        return None
 
 # Initialize extensions
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
