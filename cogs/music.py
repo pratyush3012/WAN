@@ -647,8 +647,8 @@ class Music(commands.Cog):
             return
 
         # ── AUTOPLAY: Get recommendations when queue is empty ────────────────────
-        # Only autoplay if we actually played something (gp.current was set)
-        if gp.autoplay and gp.current and gp.vc_playing is False:
+        # Only autoplay after a song SUCCESSFULLY finished (gp.current exists, vc_playing just turned False)
+        if gp.autoplay and gp.current:
             last = gp.current
             gp.current = None
             gp.vc_playing = False
@@ -669,14 +669,14 @@ class Music(commands.Cog):
             gp.vc_playing = False
             return
 
-        # FIX: Build FFmpeg source BEFORE setting gp.current
-        # Validate stream URL first
+        # Validate stream URL
         if not song.stream_url or not song.stream_url.startswith('http'):
-            logger.error(f"Invalid stream URL for '{song.title}': {song.stream_url!r}")
-            # Try to re-fetch with YouTube as fallback
+            logger.error(f"❌ No stream URL for '{song.title}' — refetching via YT")
             asyncio.run_coroutine_threadsafe(
                 self._refetch_and_play(channel, guild, gp, song), self.bot.loop)
             return
+
+        logger.info(f"▶️ Playing '{song.title}' | URL: {song.stream_url[:80]}...")
 
         try:
             source = discord.PCMVolumeTransformer(
@@ -684,23 +684,28 @@ class Music(commands.Cog):
                 volume=gp.volume
             )
         except Exception as e:
-            logger.error(f"FFmpeg error '{song.title}': {e}")
+            logger.error(f"❌ FFmpeg init error '{song.title}': {e}")
             asyncio.run_coroutine_threadsafe(
                 self._refetch_and_play(channel, guild, gp, song), self.bot.loop)
             return
 
-        # Only set current AFTER source is ready
         song.started_at = time.time()
         gp.current = song
         gp.vc_playing = True
 
         def _after(error):
             if error:
-                logger.error(f"Player error '{song.title}': {error}")
-            gp.vc_playing = False
-            self._play_next(channel, guild, gp)
+                logger.error(f"❌ FFmpeg playback error '{song.title}': {error}")
+                # Don't trigger autoplay on error — just stop
+                gp.vc_playing = False
+                gp.current = None
+            else:
+                logger.info(f"✅ Finished playing '{song.title}'")
+                gp.vc_playing = False
+                self._play_next(channel, guild, gp)
 
         vc.play(source, after=_after)
+        logger.info(f"✅ vc.play() called for '{song.title}'")
 
         # Send now-playing only if not in dashboard channel
         if channel and gp.dash_channel_id and channel.id != gp.dash_channel_id:
@@ -719,16 +724,17 @@ class Music(commands.Cog):
     async def _refetch_and_play(self, channel, guild, gp: GuildPlayer, original: Song):
         """Re-fetch a song using YouTube when SoundCloud stream URL is invalid."""
         loop = asyncio.get_running_loop()
-        logger.info(f"Re-fetching '{original.title}' via YouTube...")
+        logger.info(f"🔄 Re-fetching '{original.title}' via YouTube...")
         data = await loop.run_in_executor(None, lambda: _yt_search(original.title))
         if data and data.get('url'):
             song = Song(data, original.requester)
-            if song.stream_url:
+            logger.info(f"🔄 Re-fetched '{song.title}' | URL: {song.stream_url[:80]}...")
+            if song.stream_url and song.stream_url.startswith('http'):
                 self._start_song(channel, guild, gp, song)
                 return
-        # Both failed — skip to next
-        logger.error(f"Could not re-fetch '{original.title}' — skipping")
-        await self._skip_to_next(channel, guild, gp)
+        logger.error(f"❌ Could not re-fetch '{original.title}' — giving up")
+        gp.current = None
+        gp.vc_playing = False
 
     async def _loop_song(self, channel, guild, gp: GuildPlayer, last: Song):
         """Re-fetch and replay the same song (stream URLs expire)."""
