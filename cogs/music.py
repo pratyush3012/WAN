@@ -37,11 +37,32 @@ YT_OPTS = {
     "geo_bypass": True, "geo_bypass_country": "US",
     "socket_timeout": 15,
 }
-# FIX: Increased reconnect_delay_max from 5 → 30, added buffer_size
 FFMPEG_OPTS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 30 -bufsize 8192k",
-    "options": "-vn -b:a 128k",
+    "before_options": (
+        "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 30 "
+        "-bufsize 16384k -probesize 200M -analyzeduration 200M"
+    ),
+    "options": "-vn",
 }
+
+def _get_stream_url(data: dict) -> str:
+    """Extract the best direct audio stream URL from yt-dlp data."""
+    # Try direct url first
+    url = data.get("url", "")
+    if url and url.startswith("http"):
+        return url
+    # Try formats list — pick best audio-only
+    formats = data.get("formats", [])
+    audio_formats = [f for f in formats if f.get("url") and f.get("vcodec") == "none" and f.get("acodec") != "none"]
+    if audio_formats:
+        # Sort by quality
+        audio_formats.sort(key=lambda f: f.get("abr", 0) or 0, reverse=True)
+        return audio_formats[0]["url"]
+    # Fallback: any format with url
+    for f in formats:
+        if f.get("url", "").startswith("http"):
+            return f["url"]
+    return url
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
 def _fmt_time(secs: int) -> str:
@@ -216,7 +237,7 @@ def _get_autoplay_songs(title: str, uploader: str, sc_url: str, limit: int = 3) 
 # ── Song ────────────────────────────────────────────────────────────────────────
 class Song:
     def __init__(self, data: dict, requester):
-        self.stream_url = data.get("url", "")
+        self.stream_url = _get_stream_url(data)
         self.title      = (data.get("title") or "Unknown").strip()
         self.duration   = data.get("duration", 0)
         self.thumbnail  = data.get("thumbnail") or data.get("artwork_url")
@@ -626,7 +647,8 @@ class Music(commands.Cog):
             return
 
         # ── AUTOPLAY: Get recommendations when queue is empty ────────────────────
-        if gp.autoplay and gp.current:
+        # Only autoplay if we actually played something (gp.current was set)
+        if gp.autoplay and gp.current and gp.vc_playing is False:
             last = gp.current
             gp.current = None
             gp.vc_playing = False
