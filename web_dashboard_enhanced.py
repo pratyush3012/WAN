@@ -56,9 +56,15 @@ limiter = Limiter(
 # Global bot instance
 bot_instance = None
 
-# Persistent data directory — set DATA_DIR env var on Render to a disk mount path
-# Falls back to current directory for local dev
-DATA_DIR = os.getenv('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
+# Persistent data directory — use ./data locally, /data on Render with disk
+_default_data = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DATA_DIR = os.getenv('DATA_DIR', _default_data)
+# Create it if it doesn't exist (handles case where /data disk isn't mounted)
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except PermissionError:
+    DATA_DIR = _default_data
+    os.makedirs(DATA_DIR, exist_ok=True)
 
 def data_path(filename):
     """Return absolute path for a data file in the persistent data directory."""
@@ -4140,7 +4146,7 @@ def bulk_mod(server_id):
 # In-memory watch party rooms: {room_id: WatchRoom}
 _watch_rooms: dict = {}
 
-UPLOAD_FOLDER = os.path.join(os.getenv("DATA_DIR", "."), "watch_uploads")
+UPLOAD_FOLDER = os.path.join(os.getenv("DATA_DIR", "./data"), "watch_uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v"}
 MAX_UPLOAD_MB = 500
