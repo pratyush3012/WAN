@@ -286,7 +286,7 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.15}
   <!-- VIDEO SIDE -->
   <div class="video-side">
     <div class="video-wrap" id="videoWrap">
-      <video id="vid" preload="metadata" playsinline></video>
+      <video id="vid" preload="metadata" playsinline muted></video>
       <div class="mood-overlay" id="moodOverlay"></div>
       <div class="vg-top"></div>
       <div class="vg-bot"></div>
@@ -501,8 +501,31 @@ function switchTab(name,el){
 }
 
 // ── VIDEO ─────────────────────────────────────────────────────────────────────
+// ── VIDEO PLAY/PAUSE — safe wrapper to prevent race conditions ────────────────
+let _playPromise = null;
+
+async function safePlay(){
+  try{
+    _playPromise = vid.play();
+    await _playPromise;
+    _playPromise = null;
+  }catch(e){
+    _playPromise = null;
+    if(e.name !== 'AbortError') showToast("❌ " + e.message);
+  }
+}
+
+async function safePause(){
+  // If play() is in-flight, wait for it before pausing
+  if(_playPromise){
+    try{ await _playPromise; }catch(e){}
+  }
+  _playPromise = null;
+  if(!vid.paused) vid.pause();
+}
+
 function initVideo(){
-  if(VIDEO_URL && !vid.src){ vid.src=VIDEO_URL; vid.load(); }
+  if(VIDEO_URL && !vid.src){ vid.src = VIDEO_URL; vid.load(); }
 }
 
 // ── AMBIENT RGB SYNC ─────────────────────────────────────────────────────────
@@ -722,12 +745,13 @@ vid.addEventListener('loadedmetadata', ()=>{
   initAudioTracks();
 });
 function togglePlay(){
-  // Everyone can play/pause locally — only sync to others requires mod+
+  // Unmute on first interaction (browsers require muted for autoplay)
+  if(vid.muted){ vid.muted=false; document.getElementById("muteBtn").innerHTML='<i class="fas fa-volume-up"></i>'; }
   if(vid.paused){
-    vid.play().catch(e=>showToast("❌ Could not play: "+e.message));
+    safePlay();
     if(canControl()) socket.emit("watch_play",{room_id:ROOM_ID,current_time:vid.currentTime});
   } else {
-    vid.pause();
+    safePause();
     if(canControl()) socket.emit("watch_pause",{room_id:ROOM_ID,current_time:vid.currentTime});
   }
 }
@@ -741,7 +765,7 @@ function seekTo(e){
   vid.currentTime=t;
   if(canControl()) socket.emit("watch_seek",{room_id:ROOM_ID,current_time:t});
 }
-function setVol(v){ vid.volume=v; }
+function setVol(v){ vid.volume=v; if(v>0&&vid.muted){vid.muted=false;document.getElementById("muteBtn").innerHTML='<i class="fas fa-volume-up"></i>';} }
 function toggleMute(){
   vid.muted=!vid.muted;
   document.getElementById("muteBtn").innerHTML=vid.muted?'<i class="fas fa-volume-mute"></i>':'<i class="fas fa-volume-up"></i>';
@@ -933,15 +957,19 @@ socket.on("connect",()=>{
 
 socket.on("watch_state",d=>{
   initVideo();
+socket.on("watch_state",d=>{
+  initVideo();
   if(Math.abs(vid.currentTime-(d.current_time||0))>2) vid.currentTime=d.current_time||0;
-  if(d.is_playing) vid.play().catch(()=>{});
-  else vid.pause();
-  // Use server role level (already resolved from Discord) — take max in case identity fetch was faster
+  if(d.is_playing){
+    safePlay();
+  } else {
+    // Only pause if video has actually started playing — avoids AbortError
+    if(!vid.paused) safePause();
+  }
   myRoleLevel = Math.max(myRoleLevel, d.my_role_level ?? 0);
-  // Update identity from server if provided
   if(d.my_discord_id) MY_ID = d.my_discord_id;
   if(d.my_avatar && !MY_AVATAR) MY_AVATAR = d.my_avatar;
-  IS_HOST = MY_ID === HOST_ID;
+  IS_HOST = MY_ID === HOST_ID || MY_NAME === HOST_NAME;
   document.getElementById("viewerCount").textContent=d.viewer_count||1;
   chatMsgs.innerHTML="";
   (d.chat_history||[]).forEach(m=>appendMsg(m));
@@ -960,8 +988,8 @@ socket.on("watch_sync",d=>{
     vid.currentTime=d.current_time;
     setTimeout(()=>syncToast.style.display="none",1200);
   }
-  if(d.action==="play"||(d.is_playing&&vid.paused)) vid.play().catch(()=>{});
-  else if(d.action==="pause"||(!d.is_playing&&!vid.paused)) vid.pause();
+  if(d.action==="play"||(d.is_playing&&vid.paused)) safePlay();
+  else if(d.action==="pause"||(!d.is_playing&&!vid.paused)) safePause();
   if(d.action==="seek") vid.currentTime=d.current_time;
   setTimeout(()=>isSyncing=false,300);
 });
