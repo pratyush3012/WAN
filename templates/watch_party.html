@@ -528,76 +528,10 @@ function initVideo(){
   if(VIDEO_URL && !vid.src){ vid.src = VIDEO_URL; vid.load(); }
 }
 
-// ── AMBIENT RGB SYNC ─────────────────────────────────────────────────────────
-// Samples movie colors and paints soft glowing blobs behind the page
+// ── AMBIENT RGB — CSS-only, no canvas (avoids SecurityError) ──────────────────
 const ambientCanvas = document.getElementById('ambientCanvas');
-const ambCtx = ambientCanvas ? ambientCanvas.getContext('2d') : null;
-// Use a tiny offscreen canvas to sample colors (avoids CORS crash)
-const _sampleCanvas = document.createElement('canvas');
-_sampleCanvas.width = 8; _sampleCanvas.height = 5;
-const _sampleCtx = _sampleCanvas.getContext('2d', {willReadFrequently: true});
+// Ambient effect is purely CSS-based via body background animation
 
-let _ambientRaf = null;
-
-function _updateAmbient(){
-  if(!ambCtx || !ambientCanvas) return;
-  if(vid.paused || vid.ended || !vid.videoWidth || !vid.videoHeight) return;
-  try{
-    // crossOrigin must be set before src for same-origin videos; for /watch/stream it's same-origin
-    _sampleCtx.drawImage(vid, 0, 0, 8, 5);
-    const px = _sampleCtx.getImageData(0, 0, 8, 5).data;
-    // Pick 3 color samples: top-left, center, bottom-right
-    const c1 = [px[0], px[1], px[2]];
-    const c2 = [px[(2*8+4)*4], px[(2*8+4)*4+1], px[(2*8+4)*4+2]];
-    const c3 = [px[(4*8+7)*4], px[(4*8+7)*4+1], px[(4*8+7)*4+2]];
-
-    ambientCanvas.width = window.innerWidth;
-    ambientCanvas.height = window.innerHeight;
-    ambCtx.clearRect(0, 0, ambientCanvas.width, ambientCanvas.height);
-
-    const g1 = ambCtx.createRadialGradient(
-      ambientCanvas.width*.15, ambientCanvas.height*.25, 0,
-      ambientCanvas.width*.15, ambientCanvas.height*.25, ambientCanvas.width*.6
-    );
-    g1.addColorStop(0, `rgba(${c1[0]},${c1[1]},${c1[2]},.75)`);
-    g1.addColorStop(1, 'rgba(0,0,0,0)');
-    ambCtx.fillStyle = g1;
-    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
-
-    const g2 = ambCtx.createRadialGradient(
-      ambientCanvas.width*.85, ambientCanvas.height*.75, 0,
-      ambientCanvas.width*.85, ambientCanvas.height*.75, ambientCanvas.width*.55
-    );
-    g2.addColorStop(0, `rgba(${c2[0]},${c2[1]},${c2[2]},.6)`);
-    g2.addColorStop(1, 'rgba(0,0,0,0)');
-    ambCtx.fillStyle = g2;
-    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
-
-    const g3 = ambCtx.createRadialGradient(
-      ambientCanvas.width*.5, ambientCanvas.height*.5, 0,
-      ambientCanvas.width*.5, ambientCanvas.height*.5, ambientCanvas.width*.4
-    );
-    g3.addColorStop(0, `rgba(${c3[0]},${c3[1]},${c3[2]},.35)`);
-    g3.addColorStop(1, 'rgba(0,0,0,0)');
-    ambCtx.fillStyle = g3;
-    ambCtx.fillRect(0, 0, ambientCanvas.width, ambientCanvas.height);
-  } catch(e){
-    // SecurityError from cross-origin video — disable ambient silently
-    if(_ambientRaf){ clearInterval(_ambientRaf); _ambientRaf = null; }
-    if(ambientCanvas) ambientCanvas.style.opacity = '0';
-  }
-}
-
-vid.addEventListener('play', ()=>{
-  if(_ambientRaf) clearInterval(_ambientRaf);
-  _ambientRaf = setInterval(_updateAmbient, 600);
-  if(ambientCanvas) ambientCanvas.style.opacity = '.45';
-});
-vid.addEventListener('pause', ()=>{ if(ambientCanvas) ambientCanvas.style.opacity = '.15'; });
-vid.addEventListener('ended', ()=>{
-  if(_ambientRaf){ clearInterval(_ambientRaf); _ambientRaf = null; }
-  if(ambientCanvas) ambientCanvas.style.opacity = '0';
-});
 
 // ── RATING SYSTEM ─────────────────────────────────────────────────────────────
 let _myRating = 0;
@@ -955,8 +889,6 @@ socket.on("connect",()=>{
   });
 });
 
-socket.on("watch_state",d=>{
-  initVideo();
 socket.on("watch_state",d=>{
   initVideo();
   if(Math.abs(vid.currentTime-(d.current_time||0))>2) vid.currentTime=d.current_time||0;
