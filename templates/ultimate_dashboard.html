@@ -3250,18 +3250,43 @@ async function mqRenderQueue(){
   try{
     const r=await apiFetch(`/api/server/${currentServer}/music/queue`);
     const d=await r.json();
-    const list=document.getElementById('mq-queue');
-    if(!d.queue||!d.queue.length){list.innerHTML='<div style="text-align:center;padding:20px;color:#717171;font-size:12px">Queue is empty</div>';return;}
-    list.innerHTML=d.queue.map(s=>`
-      <div class="mq-q-item">
-        <img src="${s.thumbnail||''}" style="width:36px;height:36px;border-radius:4px;object-fit:cover;flex-shrink:0;background:#212121" onerror="this.style.display='none'">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;font-weight:500;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
-          <div style="font-size:10px;color:#717171">${esc(s.uploader||'')} • ${s.duration}</div>
-        </div>
-        <button onclick="mqRemove(${s.index})" style="background:none;border:none;color:#717171;cursor:pointer;font-size:11px;padding:3px 5px;border-radius:3px;flex-shrink:0">✕</button>
-      </div>`).join('');
+    mqRenderQueueFromData(d.queue||[]);
   }catch(e){}
+}
+
+let mqDragIdx=null;
+
+function mqRenderQueueFromData(queue){
+  const list=document.getElementById('mq-queue');
+  if(!queue||!queue.length){
+    list.innerHTML='<div style="text-align:center;padding:20px;color:#717171;font-size:12px">Queue is empty</div>';
+    return;
+  }
+  list.innerHTML=queue.map((s,i)=>`
+    <div class="mq-q-item" draggable="true"
+      ondragstart="mqDragIdx=${i}"
+      ondragover="event.preventDefault()"
+      ondrop="mqDrop(${i})"
+      style="cursor:grab"
+      data-idx="${i}">
+      <span style="color:#555;font-size:10px;width:14px;flex-shrink:0;text-align:center">⠿</span>
+      <img src="${s.thumbnail||''}" style="width:36px;height:36px;border-radius:4px;object-fit:cover;flex-shrink:0;background:#212121" onerror="this.style.display='none'">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:500;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.title)}</div>
+        <div style="font-size:10px;color:#717171">${esc(s.uploader||'')} • ${s.duration}</div>
+      </div>
+      <button onclick="mqRemove(${s.index||i+1})" style="background:none;border:none;color:#555;cursor:pointer;font-size:11px;padding:3px 5px;border-radius:3px;flex-shrink:0" onmouseover="this.style.color='#ff4757'" onmouseout="this.style.color='#555'">✕</button>
+    </div>`).join('');
+}
+
+async function mqDrop(toIdx){
+  if(mqDragIdx===null||mqDragIdx===toIdx)return;
+  await apiFetch(`/api/server/${currentServer}/music/reorder`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({from:mqDragIdx,to:toIdx})
+  });
+  mqDragIdx=null;
+  setTimeout(loadMusicStatus,200);
 }
 
 async function mqRemove(idx){
@@ -3325,6 +3350,14 @@ function updateMusicUI(d){
     document.getElementById('mq-title').textContent=cur.title;
     document.getElementById('mq-artist').textContent=(cur.uploader||'')+(cur.requester?' • req: '+cur.requester:'');
     document.getElementById('mq-time-tot').textContent=cur.duration||'—';
+
+    // Update progress bar from server elapsed time
+    if(cur.duration_seconds&&cur.elapsed!=null){
+      const pct=Math.min((cur.elapsed/cur.duration_seconds)*100,100);
+      document.getElementById('mq-prog').style.width=pct+'%';
+      document.getElementById('mq-time-cur').textContent=mqFmt(cur.elapsed);
+      document.getElementById('mq-time-tot').textContent=mqFmt(cur.duration_seconds);
+    }
   } else {
     mqLastTitle=null;
     document.getElementById('mq-idle').style.display='block';
@@ -3333,8 +3366,9 @@ function updateMusicUI(d){
     document.getElementById('mq-hero-bg').style.backgroundImage='';
   }
 
-  // Render queue in sidebar
-  mqRenderQueue();
+  // Render queue from status data (no extra API call needed)
+  if(d.queue_full!==undefined) mqRenderQueueFromData(d.queue_full);
+  else mqRenderQueue();
 }
 
 async function playMusic(){

@@ -1466,29 +1466,72 @@ def music_status(server_id):
         is_playing = bool(vc and (vc.is_playing() or vc.is_paused()))
         current = None
         if gp.current:
+            elapsed = gp.current.elapsed
+            duration = gp.current.duration or 0
             current = {
                 'title': gp.current.title,
                 'url': gp.current.webpage,
                 'thumbnail': gp.current.thumbnail,
                 'duration': gp.current.duration_str,
+                'duration_seconds': duration,
+                'elapsed': elapsed,
                 'uploader': gp.current.uploader,
                 'requester': gp.current.requester.display_name if gp.current.requester else 'Unknown',
             }
-        queue_titles = [s.title for s in list(gp.queue)[:20]]
+        queue_full = [
+            {
+                'index': i + 1,
+                'title': s.title,
+                'uploader': s.uploader,
+                'duration': s.duration_str,
+                'duration_seconds': s.duration or 0,
+                'thumbnail': s.thumbnail or '',
+                'requester': s.requester.display_name if s.requester else 'Unknown',
+            }
+            for i, s in enumerate(list(gp.queue))
+        ]
         return jsonify({
             'playing': is_playing,
             'paused': bool(vc and vc.is_paused()),
             'current': current,
             'track': gp.current.title if gp.current else None,
-            'queue': queue_titles,
+            'queue': [s['title'] for s in queue_full],
+            'queue_full': queue_full,
             'queue_size': len(gp.queue),
             'volume': int(gp.volume * 100),
             'loop': gp.loop,
+            'autoplay': gp.autoplay,
             'voice_channel': vc.channel.name if vc else None,
         })
     except Exception as e:
         logger.error(f"Music status error: {e}")
         return jsonify({'playing': False, 'current': None, 'queue': [], 'queue_size': 0, 'volume': 50})
+
+
+@app.route('/api/server/<server_id>/music/reorder', methods=['POST'])
+@require_auth
+def music_reorder(server_id):
+    """Reorder queue by moving a song from one index to another."""
+    try:
+        if not bot_instance or not bot_instance.is_ready():
+            return jsonify({'error': 'Bot not ready'}), 503
+        music_cog = bot_instance.get_cog('Music')
+        guild = bot_instance.get_guild(int(server_id))
+        if not guild or not music_cog:
+            return jsonify({'error': 'Not found'}), 404
+        data = request.json or {}
+        from_idx = int(data.get('from', 0))  # 0-based
+        to_idx = int(data.get('to', 0))      # 0-based
+        gp = music_cog._get_player(guild.id)
+        q = list(gp.queue)
+        if 0 <= from_idx < len(q) and 0 <= to_idx < len(q):
+            song = q.pop(from_idx)
+            q.insert(to_idx, song)
+            from collections import deque
+            gp.queue = deque(q)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/server/<server_id>/music/play', methods=['POST'])
