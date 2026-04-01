@@ -149,19 +149,13 @@ class GuildUploadManager:
                     inline=False
                 )
             embed.add_field(
-                name="🗳️ Vote for Watch Time",
-                value="React below to vote when to watch together!",
-                inline=False
-            )
-            embed.add_field(
                 name="📊 File Info",
                 value=f"Size: {upload_info['file_size'] / (1024**2):.1f}MB",
                 inline=True
             )
             embed.set_footer(text="WAN Bot Watch Party")
-            
-            # Send announcement with @everyone mention
-            # Build a view with a Watch Now button if we have a URL
+
+            # Build a view with a Watch Now button
             view = None
             if watch_link:
                 view = discord.ui.View()
@@ -172,58 +166,15 @@ class GuildUploadManager:
                 ))
 
             msg = await channel.send("@everyone", embed=embed, view=view)
-            
-            # Add time voting reactions
-            time_options = {
-                "🕐": "6 PM",
-                "🕑": "7 PM",
-                "🕒": "8 PM",
-                "🕓": "9 PM",
-                "🕔": "10 PM",
-                "🕕": "11 PM",
-                "🕖": "12 AM",
-                "🕗": "1 AM",
-            }
-            
-            for emoji in time_options.keys():
-                try:
-                    await msg.add_reaction(emoji)
-                except Exception as e:
-                    logger.warning(f"Failed to add reaction {emoji}: {e}")
-            
-            # Store vote data
-            WatchPartyNotifications._ensure_votes_file()
-            from watch_party_notifications import VOTES_FILE
-            
-            with open(VOTES_FILE, 'r') as f:
-                votes = json.load(f)
-            
-            votes[str(msg.id)] = {
-                "movie_id": movie_id,
-                "movie_title": upload_info["title"],
-                "guild_id": guild_id,
-                "channel_id": channel.id,
-                "uploader": upload_info["username"],
-                "uploader_id": upload_info["user_id"],
-                "watch_link": watch_link,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "votes": {emoji: [] for emoji in time_options.keys()},
-                "time_options": time_options,
-                "message_id": msg.id
-            }
-            
-            with open(VOTES_FILE, 'w') as f:
-                json.dump(votes, f, indent=2)
-            
+
             # Update upload status
             upload_info["status"] = "completed"
             upload_info["completed_at"] = datetime.now(timezone.utc).isoformat()
             upload_info["announcement_message_id"] = msg.id
-            
+
             logger.info(f"✅ Upload completed: {upload_id}")
             logger.info(f"✅ Announcement sent to guild {guild_id} with watch link: {watch_link}")
-            logger.info(f"✅ Poll created with {len(time_options)} time options")
-            
+
             return True
         
         except Exception as e:

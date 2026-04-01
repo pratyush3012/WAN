@@ -24,7 +24,13 @@ body::before{content:'';position:fixed;inset:0;background:
   pointer-events:none;z-index:0}
 
 /* ── TOPBAR ── */
-.topbar{position:relative;z-index:20;height:50px;background:rgba(10,13,26,.96);backdrop-filter:blur(24px);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 18px;gap:12px;flex-shrink:0}
+.topbar{position:relative;z-index:20;height:50px;
+  background:rgba(255,255,255,.04);
+  backdrop-filter:blur(32px) saturate(1.8);
+  -webkit-backdrop-filter:blur(32px) saturate(1.8);
+  border-bottom:1px solid rgba(255,255,255,.07);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+  display:flex;align-items:center;padding:0 18px;gap:12px;flex-shrink:0}
 .t-logo{font-size:20px;filter:drop-shadow(0 0 10px rgba(124,111,255,.7))}
 .t-title{font-weight:800;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:linear-gradient(90deg,#fff 30%,var(--a2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .pill{display:flex;align-items:center;gap:5px;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700}
@@ -40,11 +46,15 @@ body::before{content:'';position:fixed;inset:0;background:
 .tbtn-danger{background:linear-gradient(135deg,#c0392b,var(--red));color:#fff;box-shadow:0 2px 12px rgba(255,71,87,.3)}
 .tbtn-danger:hover{transform:translateY(-1px)}
 
+/* ── AMBIENT RGB CANVAS (behind everything) ── */
+#ambientCanvas{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;filter:blur(70px) saturate(1.5);transition:opacity 1s}
+body::after{content:'';position:fixed;inset:0;background:rgba(5,7,15,.5);pointer-events:none;z-index:0}
+
 /* ── MAIN ── */
 .main{display:flex;flex:1;overflow:hidden;position:relative;z-index:1}
 
 /* ── VIDEO SIDE ── */
-.video-side{flex:1;display:flex;flex-direction:column;background:#000;position:relative;min-width:0}
+.video-side{flex:1;display:flex;flex-direction:column;background:transparent;position:relative;min-width:0}
 .video-wrap{position:relative;flex:1;overflow:hidden;background:#000}
 
 /* CRITICAL: hide native browser controls */
@@ -87,7 +97,8 @@ body::before{content:'';position:fixed;inset:0;background:
 .bm-marker:hover .bm-tooltip{display:block}
 
 /* ── CONTROLS ── */
-.controls{position:absolute;bottom:0;left:0;right:0;padding:0 14px 12px;opacity:0;transition:.35s;pointer-events:none;z-index:7}
+.controls{position:absolute;bottom:0;left:0;right:0;padding:0 14px 12px;opacity:0;transition:.35s;pointer-events:none;z-index:7;
+  background:linear-gradient(to top,rgba(0,0,0,.88) 0%,transparent 100%)}
 .video-wrap:hover .controls,.video-wrap.paused .controls{opacity:1;pointer-events:auto}
 .prog-wrap{position:relative;padding:10px 0;cursor:pointer}
 .prog-track{height:3px;background:rgba(255,255,255,.12);border-radius:3px;transition:.2s;position:relative}
@@ -111,7 +122,13 @@ body::before{content:'';position:fixed;inset:0;background:
 
 <style>
 /* ── SIDEBAR ── */
-.chat-side{width:340px;display:flex;flex-direction:column;background:var(--s1);border-left:1px solid var(--border);flex-shrink:0}
+.chat-side{width:340px;display:flex;flex-direction:column;
+  background:rgba(8,10,20,.65);
+  backdrop-filter:blur(28px) saturate(1.6);
+  -webkit-backdrop-filter:blur(28px) saturate(1.6);
+  border-left:1px solid rgba(255,255,255,.07);
+  box-shadow:-4px 0 40px rgba(0,0,0,.5);
+  flex-shrink:0;position:relative;z-index:10}
 .ctabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
 .ctab{flex:1;padding:9px 4px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:.2s;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;min-width:50px}
 .ctab.active{color:var(--a2);border-bottom-color:var(--a2)}
@@ -233,9 +250,23 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.15}
 
 /* Mobile */
 @media(max-width:700px){.chat-side{display:none}.video-side{flex:1}}
+
+/* ── RATING PANEL ── */
+.rating-panel{padding:12px;border-top:1px solid rgba(255,255,255,.05);flex-shrink:0;background:rgba(255,255,255,.02)}
+.rating-stars{display:flex;gap:5px;justify-content:center;margin:6px 0}
+.star-btn{background:none;border:none;font-size:20px;cursor:pointer;transition:.2s;filter:grayscale(1);opacity:.35;padding:2px}
+.star-btn.lit{filter:none;opacity:1}
+.star-btn:hover,.star-btn:hover~.star-btn{filter:none;opacity:1}
+.rating-label{text-align:center;font-size:10px;color:var(--muted);margin-top:2px}
+.rating-avg{display:flex;align-items:center;justify-content:center;gap:5px;font-size:11px;color:var(--gold);font-weight:700;margin-top:5px}
+
+/* ── AUDIO TRACK — always show button ── */
+#audioTrackWrap{display:flex!important;position:relative}
 </style>
 </head>
 <body>
+<!-- Ambient RGB canvas — syncs colors with movie -->
+<canvas id="ambientCanvas"></canvas>
 
 <!-- TOPBAR -->
 <div class="topbar">
@@ -280,13 +311,13 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.15}
           <span class="time-txt" id="timeTxt">0:00 / 0:00</span>
           <span class="spacer"></span>
           <button class="cbtn speed-btn" id="speedBtn" onclick="cycleSpeed()">1×</button>
-          <!-- Audio track selector — only shown when multiple audio tracks exist -->
-          <div id="audioTrackWrap" style="display:none;position:relative">
-            <button class="cbtn" id="audioTrackBtn" onclick="toggleAudioMenu()" title="Audio Language" style="gap:4px;font-size:11px;font-weight:700;padding:4px 8px;min-width:auto">
+          <!-- Audio track selector — always visible, shows native tracks or manual selector -->
+          <div id="audioTrackWrap" style="position:relative">
+            <button class="cbtn" id="audioTrackBtn" onclick="toggleAudioMenu()" title="Audio Language" style="gap:4px;font-size:11px;font-weight:700;padding:4px 8px;min-width:auto;background:rgba(0,229,255,.1);border:1px solid rgba(0,229,255,.25);border-radius:6px">
               <i class="fas fa-language"></i> <span id="audioTrackLabel">Audio</span>
             </button>
-            <div id="audioMenu" style="display:none;position:absolute;bottom:44px;right:0;background:rgba(10,13,26,.97);border:1px solid var(--border);border-radius:10px;padding:6px;min-width:160px;z-index:50;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,.6)">
-              <div style="font-size:10px;color:var(--muted);padding:4px 8px 6px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);margin-bottom:4px">🎵 Audio Track</div>
+            <div id="audioMenu" style="display:none;position:absolute;bottom:44px;right:0;background:rgba(8,10,20,.95);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:6px;min-width:160px;z-index:50;backdrop-filter:blur(20px);box-shadow:0 8px 32px rgba(0,0,0,.7)">
+              <div style="font-size:10px;color:var(--muted);padding:4px 8px 6px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:4px">🎵 Audio Track</div>
               <div id="audioMenuItems"></div>
             </div>
           </div>
@@ -357,6 +388,20 @@ body.cinema:hover .chat-side,body.cinema:hover .topbar{opacity:.15}
         <input id="bmLabel" placeholder="Label (e.g. Best scene 🔥)" maxlength="40">
         <button onclick="addBookmark()">📍 Mark</button>
       </div>
+    </div>
+
+    <!-- RATING PANEL (always visible at bottom of sidebar) -->
+    <div class="rating-panel" id="ratingPanel">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;text-align:center">⭐ Rate This Movie</div>
+      <div class="rating-stars" id="ratingStars">
+        <button class="star-btn" data-val="1" onclick="submitRating(1)">⭐</button>
+        <button class="star-btn" data-val="2" onclick="submitRating(2)">⭐</button>
+        <button class="star-btn" data-val="3" onclick="submitRating(3)">⭐</button>
+        <button class="star-btn" data-val="4" onclick="submitRating(4)">⭐</button>
+        <button class="star-btn" data-val="5" onclick="submitRating(5)">⭐</button>
+      </div>
+      <div class="rating-label" id="ratingLabel">Tap to rate</div>
+      <div class="rating-avg" id="ratingAvg" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -430,8 +475,165 @@ function initVideo(){
   if(VIDEO_URL && !vid.src){ vid.src=VIDEO_URL; vid.load(); }
 }
 
-// ── AUDIO TRACK SWITCHING (per-user, stored in localStorage) ─────────────────
-const AUDIO_PREF_KEY = `wan_audio_track_${ROOM_ID}`;
+// ── AMBIENT RGB SYNC (extracts dominant colors from video frame) ─────────────
+const ambientCanvas = document.getElementById('ambientCanvas');
+const ambCtx = ambientCanvas.getContext('2d');
+const _sampleCanvas = document.createElement('canvas');
+const _sampleCtx = _sampleCanvas.getContext('2d');
+_sampleCanvas.width = 16; _sampleCanvas.height = 9;
+
+let _ambientRaf = null;
+let _lastAmbientColors = [[124,111,255],[0,229,255]];
+
+function _updateAmbient(){
+  if(vid.paused || vid.ended || !vid.videoWidth) return;
+  try{
+    _sampleCtx.drawImage(vid, 0, 0, 16, 9);
+    const px = _sampleCtx.getImageData(0, 0, 16, 9).data;
+    // Sample 4 corners + center for dominant colors
+    const samples = [
+      [px[0],px[1],px[2]],           // top-left
+      [px[(16*3)*4],px[(16*3)*4+1],px[(16*3)*4+2]], // top-right area
+      [px[(8*16+8)*4],px[(8*16+8)*4+1],px[(8*16+8)*4+2]], // center
+      [px[(8*16)*4],px[(8*16)*4+1],px[(8*16)*4+2]], // mid-left
+      [px[(8*16+15)*4],px[(8*16+15)*4+1],px[(8*16+15)*4+2]], // mid-right
+    ];
+    // Smooth transition
+    _lastAmbientColors = samples.slice(0,2);
+    const [c1,c2] = _lastAmbientColors;
+    ambientCanvas.width = window.innerWidth;
+    ambientCanvas.height = window.innerHeight;
+    const grad = ambCtx.createRadialGradient(
+      window.innerWidth*.2, window.innerHeight*.3, 0,
+      window.innerWidth*.2, window.innerHeight*.3, window.innerWidth*.7
+    );
+    grad.addColorStop(0, `rgba(${c1[0]},${c1[1]},${c1[2]},.7)`);
+    grad.addColorStop(.5, `rgba(${c2[0]},${c2[1]},${c2[2]},.3)`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ambCtx.clearRect(0,0,ambientCanvas.width,ambientCanvas.height);
+    ambCtx.fillStyle = grad;
+    ambCtx.fillRect(0,0,ambientCanvas.width,ambientCanvas.height);
+    // Second blob on opposite side
+    const grad2 = ambCtx.createRadialGradient(
+      window.innerWidth*.8, window.innerHeight*.7, 0,
+      window.innerWidth*.8, window.innerHeight*.7, window.innerWidth*.5
+    );
+    const c3 = samples[2];
+    grad2.addColorStop(0, `rgba(${c3[0]},${c3[1]},${c3[2]},.5)`);
+    grad2.addColorStop(1, 'rgba(0,0,0,0)');
+    ambCtx.fillStyle = grad2;
+    ambCtx.fillRect(0,0,ambientCanvas.width,ambientCanvas.height);
+  }catch(e){}
+}
+
+// Update ambient every 500ms while playing
+vid.addEventListener('play', ()=>{
+  if(_ambientRaf) clearInterval(_ambientRaf);
+  _ambientRaf = setInterval(_updateAmbient, 500);
+  ambientCanvas.style.opacity = '.5';
+});
+vid.addEventListener('pause', ()=>{ ambientCanvas.style.opacity = '.2'; });
+vid.addEventListener('ended', ()=>{ if(_ambientRaf){clearInterval(_ambientRaf);_ambientRaf=null;} ambientCanvas.style.opacity='0'; });
+
+// ── RATING SYSTEM ─────────────────────────────────────────────────────────────
+let _myRating = 0;
+const RATING_KEY = `wan_rating_${ROOM_ID}`;
+const RATING_LABELS = ['','😴 Boring','😐 Okay','👍 Good','🔥 Great!','⭐ Amazing!'];
+
+function _initRating(){
+  const saved = parseInt(localStorage.getItem(RATING_KEY)||'0');
+  if(saved) _setRatingUI(saved, true);
+}
+
+function _setRatingUI(val, saved=false){
+  document.querySelectorAll('.star-btn').forEach((b,i)=>{
+    b.classList.toggle('lit', i < val);
+  });
+  const lbl = document.getElementById('ratingLabel');
+  if(lbl) lbl.textContent = saved ? `Your rating: ${RATING_LABELS[val]}` : (RATING_LABELS[val]||'Tap to rate');
+}
+
+function submitRating(val){
+  _myRating = val;
+  localStorage.setItem(RATING_KEY, val);
+  _setRatingUI(val, true);
+  socket.emit('watch_rating', {room_id: ROOM_ID, rating: val, user: MY_NAME});
+  showToast(RATING_LABELS[val] + ' Rating saved!');
+}
+
+// Hover preview
+document.querySelectorAll('.star-btn').forEach((b,i)=>{
+  b.addEventListener('mouseenter', ()=>_setRatingUI(i+1));
+  b.addEventListener('mouseleave', ()=>_setRatingUI(_myRating||0, _myRating>0));
+});
+
+// Receive ratings from others
+socket.on('watch_rating_update', d=>{
+  const avg = document.getElementById('ratingAvg');
+  if(avg && d.avg){
+    avg.style.display='flex';
+    avg.innerHTML=`⭐ ${d.avg.toFixed(1)} avg (${d.count} ratings)`;
+  }
+});
+
+_initRating();
+
+// ── AUDIO TRACK — init with fallback manual selector ─────────────────────────
+function initAudioTracks(){
+  const tracks = vid.audioTracks;
+  const items = document.getElementById('audioMenuItems');
+  items.innerHTML = '';
+
+  if(tracks && tracks.length > 1){
+    // Native multi-track (MKV/MP4 with multiple audio streams)
+    const saved = localStorage.getItem(AUDIO_PREF_KEY);
+    for(let i=0; i<tracks.length; i++){
+      const track = tracks[i];
+      const name = getLangName(track);
+      const isActive = saved ? track.language === saved || track.label === saved : i === 0;
+      if(isActive){ track.enabled=true; document.getElementById('audioTrackLabel').textContent=name; }
+      else track.enabled=false;
+      const btn=document.createElement('button');
+      btn.style.cssText='width:100%;text-align:left;background:none;border:none;color:var(--text);padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;transition:.15s';
+      btn.innerHTML=`<span style="width:8px;height:8px;border-radius:50%;background:${isActive?'var(--a2)':'rgba(255,255,255,.2)'};flex-shrink:0" id="dot_${i}"></span>${name}`;
+      btn.onmouseover=()=>btn.style.background='rgba(255,255,255,.06)';
+      btn.onmouseout=()=>btn.style.background='none';
+      btn.onclick=()=>selectAudioTrack(i,name,track.language||track.label);
+      items.appendChild(btn);
+    }
+  } else {
+    // Fallback: manual language selector (for single-track files)
+    const langs = [
+      {label:'🇮🇳 Hindi',key:'hin'},
+      {label:'🇬🇧 English',key:'eng'},
+      {label:'🎵 Original',key:'orig'},
+      {label:'🇮🇳 Tamil',key:'tam'},
+      {label:'🇮🇳 Telugu',key:'tel'},
+      {label:'🇯🇵 Japanese',key:'jpn'},
+    ];
+    const savedLang = localStorage.getItem(AUDIO_PREF_KEY+'_manual') || 'orig';
+    langs.forEach(l=>{
+      const isActive = l.key === savedLang;
+      const btn=document.createElement('button');
+      btn.style.cssText='width:100%;text-align:left;background:none;border:none;color:var(--text);padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;transition:.15s';
+      btn.innerHTML=`<span style="width:8px;height:8px;border-radius:50%;background:${isActive?'var(--a2)':'rgba(255,255,255,.2)'};flex-shrink:0" id="dot_m_${l.key}"></span>${l.label}${isActive?' ✓':''}`;
+      btn.onmouseover=()=>btn.style.background='rgba(255,255,255,.06)';
+      btn.onmouseout=()=>btn.style.background='none';
+      btn.onclick=()=>{
+        localStorage.setItem(AUDIO_PREF_KEY+'_manual', l.key);
+        document.getElementById('audioTrackLabel').textContent=l.label.split(' ')[1];
+        document.getElementById('audioMenu').style.display='none';
+        showToast(`🎵 Audio preference: ${l.label}`);
+        // Re-render to show checkmark
+        initAudioTracks();
+      };
+      items.appendChild(btn);
+    });
+    // Set label from saved
+    const saved = langs.find(l=>l.key===savedLang);
+    if(saved) document.getElementById('audioTrackLabel').textContent=saved.label.split(' ')[1];
+  }
+}
 
 // Language name map for common audio track labels
 const LANG_NAMES = {
@@ -449,53 +651,14 @@ function getLangName(track){
   return LANG_NAMES[lang] || lang.toUpperCase() || `Track ${track.id}`;
 }
 
-function initAudioTracks(){
-  const tracks = vid.audioTracks;
-  if(!tracks || tracks.length <= 1){
-    document.getElementById('audioTrackWrap').style.display='none';
-    return;
-  }
-
-  document.getElementById('audioTrackWrap').style.display='flex';
-
-  // Restore saved preference
-  const saved = localStorage.getItem(AUDIO_PREF_KEY);
-
-  const items = document.getElementById('audioMenuItems');
-  items.innerHTML = '';
-
-  for(let i=0; i<tracks.length; i++){
-    const track = tracks[i];
-    const name = getLangName(track);
-    const isActive = saved ? track.language === saved || track.label === saved : i === 0;
-
-    if(isActive){
-      track.enabled = true;
-      document.getElementById('audioTrackLabel').textContent = name;
-    } else {
-      track.enabled = false;
-    }
-
-    const btn = document.createElement('button');
-    btn.style.cssText = 'width:100%;text-align:left;background:none;border:none;color:var(--text);padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;display:flex;align-items:center;gap:8px;transition:.15s';
-    btn.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${isActive?'var(--a2)':'rgba(255,255,255,.2)'};flex-shrink:0" id="dot_${i}"></span>${name}`;
-    btn.onmouseover = ()=>btn.style.background='rgba(255,255,255,.06)';
-    btn.onmouseout = ()=>btn.style.background='none';
-    btn.onclick = ()=>selectAudioTrack(i, name, track.language||track.label);
-    items.appendChild(btn);
-  }
-}
-
 function selectAudioTrack(idx, name, langKey){
   const tracks = vid.audioTracks;
   if(!tracks) return;
-
   for(let i=0; i<tracks.length; i++){
     tracks[i].enabled = (i === idx);
     const dot = document.getElementById(`dot_${i}`);
     if(dot) dot.style.background = i===idx ? 'var(--a2)' : 'rgba(255,255,255,.2)';
   }
-
   document.getElementById('audioTrackLabel').textContent = name;
   localStorage.setItem(AUDIO_PREF_KEY, langKey);
   document.getElementById('audioMenu').style.display='none';

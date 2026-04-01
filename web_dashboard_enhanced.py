@@ -4564,29 +4564,32 @@ def watch_upload_video(server_id):
     
     logger.info(f"Watch upload: {room_id} ({file_info.get('size', 'unknown')}) by {session.get('username')}")
 
-    # ── Fire Discord @everyone announcement + schedule poll ──────────────────
-    try:
-        from watch_party_upload_fixed import GuildUploadManager
-        _upload_mgr = GuildUploadManager(bot_instance)
-        uploader_name = session.get("username", "Unknown")
-        file_size = file_info.get("size_bytes", 0)
+    # ── Fire Discord @everyone announcement (only if not called from scheduleMovie) ──
+    # Pass skip_announce=true in form data to suppress when schedule will announce separately
+    skip_announce = request.form.get("skip_announce", "false").lower() == "true"
+    if not skip_announce:
+        try:
+            from watch_party_upload_fixed import GuildUploadManager
+            _upload_mgr = GuildUploadManager(bot_instance)
+            uploader_name = session.get("username", "Unknown")
+            file_size = file_info.get("size_bytes", 0)
 
-        async def _announce():
-            uid = await _upload_mgr.start_upload(
-                guild_id=server_id,
-                user_id=session.get("user_id", "unknown"),
-                username=uploader_name,
-                title=title,
-                file_path=file_path,
-                file_size=file_size,
-            )
-            if uid:
-                await _upload_mgr.complete_upload(uid, room_id)
+            async def _announce():
+                uid = await _upload_mgr.start_upload(
+                    guild_id=server_id,
+                    user_id=session.get("user_id", "unknown"),
+                    username=uploader_name,
+                    title=title,
+                    file_path=file_path,
+                    file_size=file_size,
+                )
+                if uid:
+                    await _upload_mgr.complete_upload(uid, room_id)
 
-        import asyncio
-        asyncio.run_coroutine_threadsafe(_announce(), bot_instance.loop)
-    except Exception as _e:
-        logger.warning(f"Could not fire upload announcement: {_e}")
+            import asyncio
+            asyncio.run_coroutine_threadsafe(_announce(), bot_instance.loop)
+        except Exception as _e:
+            logger.warning(f"Could not fire upload announcement: {_e}")
 
     return jsonify({"room": room.to_dict(), "room_id": room_id})
 
@@ -5122,6 +5125,28 @@ def on_prediction_resolve(data):
         "correct_count": len(correct),
         "correct_users": correct,
     }, room=f"watch_{room_id}")
+
+
+@socketio.on("watch_rating")
+def on_watch_rating(data):
+    """User submits a star rating for the movie."""
+    room_id = data.get("room_id")
+    room = _watch_rooms.get(room_id)
+    if not room:
+        return
+    if not hasattr(room, "ratings"):
+        room.ratings = {}
+    user_id = session.get("user_id", data.get("user", "anon"))
+    rating = int(data.get("rating", 0))
+    if 1 <= rating <= 5:
+        room.ratings[user_id] = rating
+    # Broadcast updated average
+    if room.ratings:
+        avg = sum(room.ratings.values()) / len(room.ratings)
+        emit("watch_rating_update", {
+            "avg": round(avg, 1),
+            "count": len(room.ratings)
+        }, room=f"watch_{room_id}")
 
 
 @socketio.on("disconnect")

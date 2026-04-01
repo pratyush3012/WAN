@@ -3822,7 +3822,11 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function initCinemaDate(){
   const today = new Date();
   const d = document.getElementById('wpDate');
-  if(d) d.value = today.toISOString().split('T')[0];
+  // Use local date (not UTC) to avoid timezone off-by-one
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const dd = String(today.getDate()).padStart(2,'0');
+  if(d) d.value = `${yyyy}-${mm}-${dd}`;
 }
 
 function loadCinemaSchedule(){
@@ -3847,13 +3851,13 @@ function saveCinemaSchedule(){
 }
 
 function checkAutoStartShows(){
-  // Auto-open watch room when a scheduled show starts
   const now = new Date();
   cinemaSchedule.forEach(s => {
     if(!s.room_id) return;
-    const showTime = new Date(s.date + 'T' + s.time);
+    const [h,m] = s.time.split(':').map(Number);
+    const showTime = new Date(s.date);
+    showTime.setHours(h, m, 0, 0);
     const diff = now - showTime;
-    // If show started within the last 5 minutes and hasn't been auto-opened
     if(diff >= 0 && diff < 5 * 60 * 1000 && !s._autoOpened){
       s._autoOpened = true;
       notify(`🎬 "${s.title}" is starting now! Click to join.`, 'success', 8000);
@@ -3891,7 +3895,11 @@ function renderCinemaGrid(){
     for(let d=0; d<7; d++){
       const day = new Date(today);
       day.setDate(today.getDate() + d);
-      const dateStr = day.toISOString().split('T')[0];
+      // Use local date string to avoid UTC timezone shift
+      const yyyy = day.getFullYear();
+      const mm = String(day.getMonth()+1).padStart(2,'0');
+      const dd = String(day.getDate()).padStart(2,'0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
       const isPast = day < today || (d===0 && isSlotPast(SLOTS[s]));
       const show = getShowForSlot(dateStr, SLOTS[s], day.getDay());
 
@@ -3970,11 +3978,14 @@ function renderUpcoming(){
 
   // Get next occurrence for repeating shows
   function getNextOccurrence(s){
-    const base = new Date(s.date + 'T' + s.time);
+    // Parse as LOCAL time (append no timezone = local)
+    const [h,m] = s.time.split(':').map(Number);
+    const base = new Date(s.date);
+    base.setHours(h, m, 0, 0);
     if(base > now) return base;
     if(s.repeat === 'none') return null;
     const next = new Date(now);
-    next.setHours(...s.time.split(':').map(Number), 0, 0);
+    next.setHours(h, m, 0, 0);
     if(next <= now) next.setDate(next.getDate() + 1);
     if(s.repeat === 'weekly'){
       const origDay = base.getDay();
@@ -4054,6 +4065,7 @@ async function scheduleMovie(){
         const fd = new FormData();
         fd.append('file',file); fd.append('title',title);
         if(role) fd.append('required_role_id',role);
+        fd.append('skip_announce','true'); // schedule will announce separately
         const xhr = new XMLHttpRequest();
         xhr.upload.onprogress = e=>{
           if(e.lengthComputable){
