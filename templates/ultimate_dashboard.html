@@ -99,6 +99,19 @@ select.form-control option{background:var(--surface2);}
 .btn-warning{background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:700;}
 .btn-info{background:linear-gradient(135deg,#06b6d4,#3b82f6);color:#fff;box-shadow:0 2px 14px rgba(6,182,212,.3);}
 .btn-sm{padding:7px 13px;font-size:12px;border-radius:8px;}
+.cinema-day-hdr{font-size:11px;font-weight:700;color:var(--text-muted);padding:6px 4px;text-align:center;border-radius:6px}
+.cinema-day-hdr.today{color:var(--accent2);background:rgba(0,229,255,.08)}
+.cinema-slot{padding:4px;border-radius:6px;min-height:52px;border:1px solid var(--border);background:rgba(255,255,255,.02);cursor:pointer;transition:.2s;position:relative}
+.cinema-slot:hover{background:rgba(124,111,255,.08);border-color:rgba(124,111,255,.3)}
+.cinema-slot.booked{background:rgba(124,111,255,.15);border-color:rgba(124,111,255,.4);cursor:default}
+.cinema-slot.booked:hover{background:rgba(124,111,255,.2)}
+.cinema-slot.past{opacity:.4;cursor:not-allowed}
+.cinema-slot.now-playing{background:rgba(0,229,255,.12);border-color:var(--a2);animation:cinePulse 2s infinite}
+@keyframes cinePulse{0%,100%{box-shadow:0 0 0 0 rgba(0,229,255,.3)}50%{box-shadow:0 0 0 6px rgba(0,229,255,0)}}
+.cinema-time-label{font-size:10px;color:var(--text-muted);padding:4px 6px;text-align:right;display:flex;align-items:center;justify-content:flex-end}
+.cinema-movie-card{font-size:10px;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 4px}
+.cinema-movie-sub{font-size:9px;color:var(--a2);padding:0 4px}
+.cinema-repeat-badge{position:absolute;top:3px;right:3px;font-size:8px;background:rgba(124,111,255,.3);color:var(--accent);border-radius:3px;padding:1px 4px}
 .mq-chip{padding:6px 14px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid rgba(255,255,255,.1);background:#212121;color:#fff;font-weight:500;transition:.2s}
 .mq-chip:hover{background:#303030}
 .mq-chip.active{background:#fff;color:#000;border-color:#fff}
@@ -1069,55 +1082,132 @@ select.form-control option{background:var(--surface2);}
 
   <!-- WATCH PARTY -->
   <div id="sec-watchparty" class="section">
-    <div class="card">
-      <div class="card-header">
-        <h3 class="card-title"><i class="fas fa-film"></i> Watch Party</h3>
-        <span style="font-size:12px;color:var(--text-muted);">Watch movies together in sync</span>
+
+    <!-- CINEMA SCHEDULE HEADER -->
+    <div class="card" style="background:linear-gradient(135deg,rgba(124,111,255,.12),rgba(0,229,255,.06));border:1px solid rgba(124,111,255,.25)">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+        <div style="font-size:36px">🎬</div>
+        <div>
+          <div style="font-size:18px;font-weight:800;background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">WAN Cinema</div>
+          <div style="font-size:12px;color:var(--text-muted)">Schedule movies like a real theater — 3-hour slots, repeating shows</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="loadCinemaSchedule()"><i class="fas fa-sync"></i> Refresh</button>
+        </div>
       </div>
-      <!-- Create room -->
-      <div style="display:flex;flex-direction:column;gap:14px;">
+
+      <!-- WEEK VIEW SCHEDULE -->
+      <div id="cinemaWeekView" style="overflow-x:auto">
+        <div style="display:grid;grid-template-columns:80px repeat(7,1fr);gap:2px;min-width:700px">
+          <!-- Day headers -->
+          <div style="font-size:11px;color:var(--text-muted);padding:6px;text-align:center"></div>
+          <div id="dayHdr0" class="cinema-day-hdr"></div>
+          <div id="dayHdr1" class="cinema-day-hdr"></div>
+          <div id="dayHdr2" class="cinema-day-hdr"></div>
+          <div id="dayHdr3" class="cinema-day-hdr"></div>
+          <div id="dayHdr4" class="cinema-day-hdr"></div>
+          <div id="dayHdr5" class="cinema-day-hdr"></div>
+          <div id="dayHdr6" class="cinema-day-hdr"></div>
+          <!-- Time slots (8 slots × 3 hours = 24 hours) -->
+          <div id="cinemaGrid" style="display:contents"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULE A MOVIE (admin/mod/owner only) -->
+    <div class="card" id="scheduleMovieCard">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-calendar-plus"></i> Schedule a Movie</h3>
+        <span style="font-size:11px;color:var(--text-muted)">Admins, Mods & Owners only</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
         <div class="form-group">
-          <label class="form-label">🎬 Movie / Video Title</label>
-          <input type="text" id="wpTitle" class="form-control" placeholder="e.g. Avengers Endgame" maxlength="100">
+          <label class="form-label">🎬 Movie Title</label>
+          <input type="text" id="wpTitle" class="form-control" placeholder="e.g. Shiddat (2021)" maxlength="100">
         </div>
         <div class="form-group">
-          <label class="form-label">🔗 Video URL <span style="color:var(--text-muted);font-size:11px;">(direct .mp4 / .webm link)</span></label>
-          <input type="url" id="wpUrl" class="form-control" placeholder="https://example.com/movie.mp4">
-        </div>
-        <div style="text-align:center;color:var(--text-muted);font-size:12px;margin:-6px 0;">— OR —</div>
-        <div class="form-group">
-          <label class="form-label">📁 Upload Video File <span style="color:var(--text-muted);font-size:11px;">(max 500MB — mp4, webm, mkv)</span></label>
-          <input type="file" id="wpFile" class="form-control" accept=".mp4,.webm,.mkv,.mov,.avi,.m4v"
-                 onchange="document.getElementById('wpUploadName').textContent=this.files[0]?.name||''">
-          <div id="wpUploadName" style="font-size:11px;color:var(--text-muted);margin-top:4px;"></div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">🔒 Restrict to Role <span style="color:var(--text-muted);font-size:11px;">(optional)</span></label>
+          <label class="form-label">🔒 Restrict to Role</label>
           <select id="wpRole" class="form-control">
             <option value="">Everyone can join</option>
           </select>
         </div>
-        <div style="display:flex;gap:10px;">
-          <button class="btn btn-primary" onclick="createWatchParty()" style="flex:1"><i class="fas fa-play"></i> Start Watch Party</button>
+        <div class="form-group">
+          <label class="form-label">🔗 Video URL <span style="color:var(--text-muted);font-size:11px;">(YouTube, MP4, etc.)</span></label>
+          <input type="url" id="wpUrl" class="form-control" placeholder="https://... or YouTube link">
         </div>
-        <div id="wpProgress" style="display:none;">
-          <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
-            <div id="wpProgressBar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;"></div>
-          </div>
-          <div id="wpProgressText" style="font-size:12px;color:var(--text-muted);margin-top:4px;text-align:center;">Uploading...</div>
+        <div class="form-group">
+          <label class="form-label">📁 Upload File <span style="color:var(--text-muted);font-size:11px;">(mp4, mkv, webm)</span></label>
+          <input type="file" id="wpFile" class="form-control" accept=".mp4,.webm,.mkv,.mov,.avi,.m4v"
+                 onchange="document.getElementById('wpUploadName').textContent=this.files[0]?.name||''">
+          <div id="wpUploadName" style="font-size:11px;color:var(--text-muted);margin-top:3px"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">📅 Start Date</label>
+          <input type="date" id="wpDate" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">⏰ Time Slot (3-hour blocks)</label>
+          <select id="wpTimeSlot" class="form-control">
+            <option value="00:00">🌙 12:00 AM – 3:00 AM</option>
+            <option value="03:00">🌙 3:00 AM – 6:00 AM</option>
+            <option value="06:00">🌅 6:00 AM – 9:00 AM</option>
+            <option value="09:00">☀️ 9:00 AM – 12:00 PM</option>
+            <option value="12:00">☀️ 12:00 PM – 3:00 PM</option>
+            <option value="15:00">🌤️ 3:00 PM – 6:00 PM</option>
+            <option value="18:00">🌆 6:00 PM – 9:00 PM</option>
+            <option value="21:00">🌙 9:00 PM – 12:00 AM</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">🔁 Repeat</label>
+          <select id="wpRepeat" class="form-control">
+            <option value="none">No repeat (one time)</option>
+            <option value="daily">Every day</option>
+            <option value="weekly">Every week (same day)</option>
+            <option value="weekdays">Weekdays only</option>
+            <option value="weekends">Weekends only</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">📢 Announce in Channel</label>
+          <select id="wpAnnounceChannel" class="form-control ch-select">
+            <option value="">Select channel...</option>
+          </select>
         </div>
       </div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <button class="btn btn-primary" onclick="scheduleMovie()" style="flex:1"><i class="fas fa-calendar-check"></i> Schedule Movie</button>
+        <button class="btn btn-ghost" onclick="createWatchParty()"><i class="fas fa-play"></i> Start Now</button>
+      </div>
+      <div id="wpProgress" style="display:none;margin-top:12px">
+        <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+          <div id="wpProgressBar" style="height:100%;background:var(--accent);width:0%;transition:width .3s"></div>
+        </div>
+        <div id="wpProgressText" style="font-size:12px;color:var(--text-muted);margin-top:4px;text-align:center">Uploading...</div>
+      </div>
     </div>
-    <!-- Active rooms -->
+
+    <!-- ACTIVE ROOMS -->
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">🎭 Active Watch Rooms</h3>
         <button class="btn btn-ghost btn-sm" onclick="loadWatchRooms()"><i class="fas fa-sync"></i></button>
       </div>
-      <div id="wpRoomsList" style="padding:8px 0;">
-        <p style="color:var(--text-muted);font-size:13px;padding:8px;">No active watch parties. Start one above!</p>
+      <div id="wpRoomsList" style="padding:8px 0">
+        <p style="color:var(--text-muted);font-size:13px;padding:8px">No active watch parties.</p>
       </div>
     </div>
+
+    <!-- UPCOMING SCHEDULE -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">📅 Upcoming Shows</h3>
+      </div>
+      <div id="wpUpcomingList" style="padding:8px 0">
+        <p style="color:var(--text-muted);font-size:13px;padding:8px">No upcoming shows scheduled.</p>
+      </div>
+    </div>
+
   </div>
 
   <!-- ANNOUNCE -->
@@ -1984,7 +2074,7 @@ function show(name,el){
   if(name==='leaderboard'&&currentServer)loadLeaderboard('score');
   if(name==='audit'&&currentServer)loadAuditLog();
   if(name==='music'&&currentServer){loadMusicStatus();mqLoadSuggestions();}
-  if(name==='watchparty'&&currentServer)loadWatchRooms();
+  if(name==='watchparty'&&currentServer){loadWatchRooms();loadCinemaSchedule();initCinemaDate();}
   if(name==='announce'&&currentServer)loadTextChannels();
   if(name==='welcome'&&currentServer)populateWelcomeChannels();
   if(name==='verification'&&currentServer)populateVerifySelects();
@@ -3408,6 +3498,250 @@ async function musicRemove(index){
 }
 
 // WATCH PARTY
+// ── CINEMA SCHEDULING ─────────────────────────────────────────────────────────
+let cinemaSchedule = []; // [{id, title, date, time, repeat, role, room_id}]
+
+const SLOTS = ['00:00','03:00','06:00','09:00','12:00','15:00','18:00','21:00'];
+const SLOT_LABELS = ['12AM–3AM','3AM–6AM','6AM–9AM','9AM–12PM','12PM–3PM','3PM–6PM','6PM–9PM','9PM–12AM'];
+const SLOT_ICONS  = ['🌙','🌙','🌅','☀️','☀️','🌤️','🌆','🌙'];
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function initCinemaDate(){
+  const today = new Date();
+  const d = document.getElementById('wpDate');
+  if(d) d.value = today.toISOString().split('T')[0];
+}
+
+function loadCinemaSchedule(){
+  if(!currentServer) return;
+  // Load from localStorage (persists per server)
+  const key = `cinema_schedule_${currentServer}`;
+  try{ cinemaSchedule = JSON.parse(localStorage.getItem(key)||'[]'); }
+  catch(e){ cinemaSchedule = []; }
+  renderCinemaGrid();
+  renderUpcoming();
+}
+
+function saveCinemaSchedule(){
+  const key = `cinema_schedule_${currentServer}`;
+  localStorage.setItem(key, JSON.stringify(cinemaSchedule));
+}
+
+function renderCinemaGrid(){
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  // Build 7-day headers
+  for(let d=0; d<7; d++){
+    const day = new Date(today);
+    day.setDate(today.getDate() + d);
+    const el = document.getElementById(`dayHdr${d}`);
+    if(!el) continue;
+    const isToday = d===0;
+    el.className = 'cinema-day-hdr' + (isToday?' today':'');
+    el.innerHTML = `<div style="font-size:13px;font-weight:700">${DAYS[day.getDay()]}</div><div style="font-size:10px">${day.getDate()}/${day.getMonth()+1}</div>`;
+  }
+
+  // Build grid rows
+  const grid = document.getElementById('cinemaGrid');
+  if(!grid) return;
+  let html = '';
+
+  for(let s=0; s<SLOTS.length; s++){
+    // Time label
+    html += `<div class="cinema-time-label">${SLOT_ICONS[s]}<br><span style="font-size:9px">${SLOT_LABELS[s]}</span></div>`;
+
+    for(let d=0; d<7; d++){
+      const day = new Date(today);
+      day.setDate(today.getDate() + d);
+      const dateStr = day.toISOString().split('T')[0];
+      const isPast = day < today || (d===0 && isSlotPast(SLOTS[s]));
+      const show = getShowForSlot(dateStr, SLOTS[s], day.getDay());
+
+      if(show){
+        const isNow = d===0 && isSlotNow(SLOTS[s]);
+        html += `<div class="cinema-slot booked${isNow?' now-playing':''}" title="${show.title}">
+          <div class="cinema-movie-card">${escHtml(show.title)}</div>
+          <div class="cinema-movie-sub">${SLOT_LABELS[s]}</div>
+          ${show.repeat!=='none'?`<span class="cinema-repeat-badge">🔁</span>`:''}
+          <div style="display:flex;gap:4px;margin-top:4px">
+            ${show.room_id?`<a href="/watch/${show.room_id}" target="_blank" style="font-size:9px;background:rgba(0,229,255,.2);color:var(--a2);border-radius:3px;padding:1px 5px;text-decoration:none">▶ Join</a>`:''}
+            <span onclick="removeCinemaShow('${show.id}')" style="font-size:9px;background:rgba(255,71,87,.15);color:var(--red);border-radius:3px;padding:1px 5px;cursor:pointer">✕</span>
+          </div>
+        </div>`;
+      } else if(isPast){
+        html += `<div class="cinema-slot past"></div>`;
+      } else {
+        html += `<div class="cinema-slot" onclick="quickSchedule('${dateStr}','${SLOTS[s]}')" title="Click to schedule">
+          <div style="font-size:10px;color:rgba(255,255,255,.15);text-align:center;padding-top:12px">+</div>
+        </div>`;
+      }
+    }
+  }
+  grid.innerHTML = html;
+}
+
+function isSlotPast(slotTime){
+  const now = new Date();
+  const [h] = slotTime.split(':').map(Number);
+  return now.getHours() >= h + 3;
+}
+
+function isSlotNow(slotTime){
+  const now = new Date();
+  const [h] = slotTime.split(':').map(Number);
+  return now.getHours() >= h && now.getHours() < h + 3;
+}
+
+function getShowForSlot(dateStr, slotTime, dayOfWeek){
+  return cinemaSchedule.find(s => {
+    if(s.time !== slotTime) return false;
+    if(s.date === dateStr) return true;
+    if(s.repeat === 'daily') return true;
+    if(s.repeat === 'weekly'){
+      const orig = new Date(s.date);
+      return orig.getDay() === dayOfWeek;
+    }
+    if(s.repeat === 'weekdays') return dayOfWeek >= 1 && dayOfWeek <= 5;
+    if(s.repeat === 'weekends') return dayOfWeek === 0 || dayOfWeek === 6;
+    return false;
+  });
+}
+
+function quickSchedule(date, time){
+  document.getElementById('wpDate').value = date;
+  document.getElementById('wpTimeSlot').value = time;
+  document.getElementById('wpTitle').focus();
+  notify('📅 Slot selected — fill in the movie details above', 'info');
+}
+
+function removeCinemaShow(id){
+  cinemaSchedule = cinemaSchedule.filter(s => s.id !== id);
+  saveCinemaSchedule();
+  renderCinemaGrid();
+  renderUpcoming();
+  notify('Show removed', 'success');
+}
+
+function renderUpcoming(){
+  const el = document.getElementById('wpUpcomingList');
+  if(!el) return;
+  const now = new Date();
+  const upcoming = cinemaSchedule
+    .filter(s => new Date(s.date + 'T' + s.time) > now || s.repeat !== 'none')
+    .sort((a,b) => new Date(a.date+'T'+a.time) - new Date(b.date+'T'+b.time))
+    .slice(0, 10);
+
+  if(!upcoming.length){
+    el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;padding:8px">No upcoming shows scheduled.</p>';
+    return;
+  }
+
+  el.innerHTML = upcoming.map(s => {
+    const dt = new Date(s.date + 'T' + s.time);
+    const slotIdx = SLOTS.indexOf(s.time);
+    const label = slotIdx >= 0 ? SLOT_LABELS[slotIdx] : s.time;
+    const repeatLabel = {none:'',daily:'🔁 Daily',weekly:'🔁 Weekly',weekdays:'🔁 Weekdays',weekends:'🔁 Weekends'}[s.repeat]||'';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:24px">🎬</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(s.title)}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${dt.toLocaleDateString()} • ${label} ${repeatLabel}</div>
+      </div>
+      ${s.room_id?`<a href="/watch/${s.room_id}" target="_blank" class="btn btn-primary btn-sm"><i class="fas fa-play"></i> Join</a>`:''}
+      <button onclick="removeCinemaShow('${s.id}')" class="btn btn-ghost btn-sm" style="color:var(--danger)"><i class="fas fa-trash"></i></button>
+    </div>`;
+  }).join('');
+}
+
+async function scheduleMovie(){
+  if(!currentServer){notify('Select a server first','warning');return;}
+  const title = document.getElementById('wpTitle').value.trim();
+  const date  = document.getElementById('wpDate').value;
+  const time  = document.getElementById('wpTimeSlot').value;
+  const repeat= document.getElementById('wpRepeat').value;
+  const role  = document.getElementById('wpRole').value;
+  const url   = document.getElementById('wpUrl').value.trim();
+  const file  = document.getElementById('wpFile').files[0];
+  const announceChannel = document.getElementById('wpAnnounceChannel')?.value;
+
+  if(!title){notify('Enter a movie title','warning');return;}
+  if(!date){notify('Select a date','warning');return;}
+
+  let roomId = null;
+
+  // Create the watch room if URL or file provided
+  if(url || file){
+    try{
+      if(file){
+        document.getElementById('wpProgress').style.display='block';
+        const fd = new FormData();
+        fd.append('file',file); fd.append('title',title);
+        if(role) fd.append('required_role_id',role);
+        const xhr = new XMLHttpRequest();
+        xhr.upload.onprogress = e=>{
+          if(e.lengthComputable){
+            const pct = Math.round(e.loaded/e.total*100);
+            document.getElementById('wpProgressBar').style.width=pct+'%';
+            document.getElementById('wpProgressText').textContent=`Uploading... ${pct}%`;
+          }
+        };
+        const result = await new Promise((res,rej)=>{
+          xhr.onload=()=>res(JSON.parse(xhr.responseText));
+          xhr.onerror=()=>rej(new Error('Upload failed'));
+          xhr.open('POST',`/api/server/${currentServer}/watch/upload`);
+          xhr.send(fd);
+        });
+        document.getElementById('wpProgress').style.display='none';
+        if(result.error){notify(result.error,'danger');return;}
+        roomId = result.room_id;
+      } else {
+        const res = await apiFetch(`/api/server/${currentServer}/watch/create`,{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({title,video_url:url,required_role_id:role||null})
+        });
+        const d = await res.json();
+        if(d.error){notify(d.error,'danger');return;}
+        roomId = d.room_id;
+      }
+    }catch(e){notify('Error creating room: '+e.message,'danger');return;}
+  }
+
+  // Add to schedule
+  const show = {
+    id: Date.now().toString(36),
+    title, date, time, repeat, role,
+    room_id: roomId,
+    created_at: new Date().toISOString()
+  };
+  cinemaSchedule.push(show);
+  saveCinemaSchedule();
+  renderCinemaGrid();
+  renderUpcoming();
+
+  // Announce in Discord if channel selected
+  if(announceChannel && roomId){
+    try{
+      await apiFetch(`/api/server/${currentServer}/announce`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          channel_id: announceChannel,
+          title: `🎬 ${title} — Scheduled!`,
+          message: `**${title}** is scheduled for **${new Date(date+'T'+time).toLocaleDateString()}** at **${SLOT_LABELS[SLOTS.indexOf(time)]}**${repeat!=='none'?' ('+{daily:'repeats daily',weekly:'repeats weekly',weekdays:'weekdays only',weekends:'weekends only'}[repeat]+')':''}.\n\nJoin here: ${window.location.origin}/watch/${roomId}`,
+          color: '#7c6fff',
+          ping_everyone: true
+        })
+      });
+    }catch(e){}
+  }
+
+  notify(`✅ "${title}" scheduled for ${date} at ${SLOT_LABELS[SLOTS.indexOf(time)]}`, 'success');
+  document.getElementById('wpTitle').value='';
+  document.getElementById('wpUrl').value='';
+  document.getElementById('wpFile').value='';
+  document.getElementById('wpUploadName').textContent='';
+}
+
 async function createWatchParty(){
   if(!currentServer){notify('Select a server first','warning');return;}
   const title=document.getElementById('wpTitle').value.trim()||'Watch Party';
