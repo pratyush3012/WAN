@@ -747,7 +747,14 @@ select.form-control option{background:var(--surface2);}
         <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px;">Automatically congratulate members when they get a new role (promotion).</p>
         <div class="form-group"><label class="form-label">Announcement Channel</label><select id="wPromoChannel" class="form-control"><option value="">Select channel...</option></select></div>
         <div class="form-group"><label class="form-label">Message</label><textarea id="wPromoMsg" class="form-control" rows="3">🎉 Congratulations {user}! You've been promoted to **{role}**! Well deserved! 🎊</textarea></div>
-        <div class="form-group"><label class="form-label">Watch these roles (comma-separated role names)</label><input id="wPromoRoles" class="form-control" placeholder="Moderator, Admin, VIP, ..."></div>
+        <div class="form-group"><label class="form-label">Watch these roles</label>
+          <div id="wPromoRolesWrap" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;min-height:44px;cursor:text" onclick="document.getElementById('wPromoRolesInput').focus()">
+            <div id="wPromoRoleTags" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+            <input id="wPromoRolesInput" style="border:none;background:transparent;color:var(--text);outline:none;font-size:13px;min-width:120px;flex:1" placeholder="Type or select roles...">
+          </div>
+          <div id="wPromoRoleDropdown" style="display:none;position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;z-index:100;width:300px;box-shadow:0 4px 20px rgba(0,0,0,.4)"></div>
+          <input type="hidden" id="wPromoRoles">
+        </div>
         <button class="btn btn-primary" onclick="saveWelcome('promo')"><i class="fas fa-save"></i> Save Promotion Config</button>
       </div>
     </div>
@@ -2415,11 +2422,75 @@ function welcomeTab(name,el){
   el.classList.add('active');
 }
 
+// ── Promo role tag picker ──────────────────────────────────────────────────
+let promoSelectedRoles = new Set();
+
+function setupPromoRolePicker(){
+  promoSelectedRoles.clear();
+  document.getElementById('wPromoRoleTags').innerHTML='';
+  document.getElementById('wPromoRoles').value='';
+
+  const inp=document.getElementById('wPromoRolesInput');
+  const dd=document.getElementById('wPromoRoleDropdown');
+  if(!inp||!dd) return;
+
+  inp.addEventListener('input',()=>{
+    const q=inp.value.toLowerCase();
+    const matches=allRoles.filter(r=>r.name!=='@everyone'&&r.name.toLowerCase().includes(q)&&!promoSelectedRoles.has(r.name));
+    if(!matches.length||!q){dd.style.display='none';return;}
+    dd.style.display='block';
+    dd.innerHTML=matches.slice(0,10).map(r=>`
+      <div onclick="addPromoRoleTag('${escHtml(r.name)}')" style="padding:8px 12px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;transition:.15s" onmouseover="this.style.background='rgba(255,255,255,.06)'" onmouseout="this.style.background='none'">
+        <span style="width:10px;height:10px;border-radius:50%;background:#${r.color?r.color.toString(16).padStart(6,'0'):'5865f2'};flex-shrink:0"></span>
+        ${escHtml(r.name)}
+      </div>`).join('');
+  });
+
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&inp.value.trim()){
+      e.preventDefault();
+      addPromoRoleTag(inp.value.trim());
+    }
+    if(e.key==='Backspace'&&!inp.value){
+      const tags=[...promoSelectedRoles];
+      if(tags.length) removePromoRoleTag(tags[tags.length-1]);
+    }
+  });
+
+  document.addEventListener('click',e=>{
+    if(!e.target.closest('#wPromoRolesWrap')&&!e.target.closest('#wPromoRoleDropdown'))
+      dd.style.display='none';
+  },{once:false});
+}
+
+function addPromoRoleTag(name){
+  if(!name||promoSelectedRoles.has(name)) return;
+  promoSelectedRoles.add(name);
+  const tag=document.createElement('span');
+  tag.style.cssText='display:inline-flex;align-items:center;gap:4px;background:rgba(88,101,242,.25);border:1px solid rgba(88,101,242,.4);border-radius:4px;padding:2px 8px;font-size:12px;color:#fff';
+  tag.innerHTML=`${escHtml(name)}<span onclick="removePromoRoleTag('${escHtml(name)}')" style="cursor:pointer;opacity:.7;margin-left:2px">✕</span>`;
+  document.getElementById('wPromoRoleTags').appendChild(tag);
+  document.getElementById('wPromoRoles').value=[...promoSelectedRoles].join(', ');
+  document.getElementById('wPromoRolesInput').value='';
+  document.getElementById('wPromoRoleDropdown').style.display='none';
+}
+
+function removePromoRoleTag(name){
+  promoSelectedRoles.delete(name);
+  setupPromoRolePicker();
+  // Re-add remaining
+  [...promoSelectedRoles].forEach(addPromoRoleTag);
+}
+
 function populateWelcomeChannels(){
   const chOpts='<option value="">Select channel...</option>'+allTextChannels.map(c=>`<option value="${c.id}"># ${escHtml(c.name)}</option>`).join('');
   const roleOpts='<option value="">None</option>'+allRoles.filter(r=>r.name!=='@everyone').map(r=>`<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
   ['wJoinChannel','wLeaveChannel','wPromoChannel'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=chOpts;});
   const ar=document.getElementById('wAutoRole');if(ar)ar.innerHTML=roleOpts;
+
+  // Setup role tag picker for promo roles
+  setupPromoRolePicker();
+
   // Load saved config from API
   apiFetch('/api/server/'+currentServer+'/welcome').then(r=>r.json()).then(cfg=>{
     if(cfg.error)return;
@@ -2429,7 +2500,11 @@ function populateWelcomeChannels(){
     set('wLeaveChannel',cfg.goodbye_channel);set('wLeaveTitle',cfg.goodbye_title);
     set('wLeaveMsg',cfg.goodbye_message);set('wLeaveColor',cfg.goodbye_color);
     set('wPromoChannel',cfg.promo_channel);set('wPromoMsg',cfg.promo_message);
-    set('wPromoRoles',cfg.promo_roles);set('wAutoRole',cfg.autorole);
+    // Restore saved promo roles as tags
+    if(cfg.promo_roles){
+      cfg.promo_roles.split(',').map(r=>r.trim()).filter(Boolean).forEach(addPromoRoleTag);
+    }
+    set('wAutoRole',cfg.autorole);
   }).catch(()=>{});
 }
 
