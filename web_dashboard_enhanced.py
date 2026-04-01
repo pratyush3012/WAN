@@ -1152,17 +1152,17 @@ def start_web_dashboard(bot, host='0.0.0.0', port=5000, ready_event=None):
     bot_instance = bot
 
     logger.info(f"🌐 Starting Enhanced Web Dashboard on http://{host}:{port}")
+    print(f"[FLASK] Starting on {host}:{port}", flush=True)
 
     try:
-        # Signal ready before blocking so bot.py can continue
-        if ready_event:
-            ready_event.set()
-
-        socketio.run(app, host=host, port=port, allow_unsafe_werkzeug=True, log_output=False)
+        socketio.run(app, host=host, port=port, allow_unsafe_werkzeug=True,
+                     log_output=False)
     except Exception as e:
         logger.error(f"❌ Web server failed: {e}")
+        print(f"[FLASK] FAILED: {e}", flush=True)
+    finally:
         if ready_event:
-            ready_event.set()  # unblock bot.py even on failure
+            ready_event.set()
 
 
 def start_web_dashboard_with_socket(bot, sock):

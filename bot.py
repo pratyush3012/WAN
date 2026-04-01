@@ -403,7 +403,13 @@ async def main():
         ready = threading.Event()
 
         def _start_flask():
-            start_web_dashboard(bot, host=host, port=port, ready_event=ready)
+            # Signal ready after a short delay so Flask has time to bind
+            import time as _t
+            def _signal():
+                _t.sleep(3)
+                ready.set()
+            threading.Thread(target=_signal, daemon=True).start()
+            start_web_dashboard(bot, host=host, port=port, ready_event=None)
 
         t = threading.Thread(target=_start_flask, daemon=True)
         t.start()
