@@ -152,6 +152,19 @@ async def run_async(coro):
         return await asyncio.run_coroutine_threadsafe(coro, bot_instance.loop).result(timeout=10)
     raise DashboardError("Bot not ready")
 
+# Suppress noisy broken-pipe / connection-reset errors from werkzeug
+import logging as _logging
+_wz_logger = _logging.getLogger('werkzeug')
+_orig_wz_error = _wz_logger.error
+def _filtered_wz_error(msg, *args, **kwargs):
+    s = str(msg)
+    if any(x in s for x in ('BrokenPipe', 'ConnectionReset', 'Error on request',
+                             'RemoteDisconnected', 'ConnectionAborted')):
+        _wz_logger.debug(msg, *args, **kwargs)  # demote to debug
+        return
+    _orig_wz_error(msg, *args, **kwargs)
+_wz_logger.error = _filtered_wz_error
+
 # Error handlers
 @app.errorhandler(DashboardError)
 def handle_dashboard_error(error):
