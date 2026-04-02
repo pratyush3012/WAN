@@ -47,35 +47,40 @@ class WebDashboardCog(commands.Cog):
     @app_commands.command(name="web", description="🌐 Open the WAN Bot dashboard")
     @app_commands.guild_only()
     async def web_dashboard(self, interaction: discord.Interaction):
-        member = interaction.member
-        if member is None:
-            await interaction.response.send_message(
-                "Use this command in a server.", ephemeral=True
-            )
-            return
-        role = self.get_user_role(member)
+        # interaction.user always works; interaction.member may be None
+        user = interaction.user
+        guild = interaction.guild
+
+        # Determine role from permissions
+        try:
+            member = guild.get_member(user.id) if guild else None
+            role = self.get_user_role(member) if member else 'member'
+        except Exception:
+            role = 'member'
+
         try:
             token = _make_token(
-                user_id=str(member.id),
-                guild_id=str(interaction.guild.id),
-                username=member.display_name,
+                user_id=str(user.id),
+                guild_id=str(guild.id) if guild else '0',
+                username=user.display_name,
                 role=role,
             )
             link = f"{DASHBOARD_URL}/auth?token={token}"
-        except Exception:
+        except Exception as e:
+            logger.error(f"/web token error: {e}")
             link = f"{DASHBOARD_URL}/login"
 
         role_icons = {'admin':'⚙️','manager':'🔧','moderator':'🛡️','helper':'🤝','member':'👤'}
         embed = discord.Embed(
             title="🌐 WAN Bot Dashboard",
-            description=f"Your dashboard is ready, {interaction.user.mention}!",
+            description=f"Your dashboard is ready, {user.mention}!",
             color=discord.Color.from_rgb(102, 126, 234)
         )
         embed.add_field(name="Role", value=f"{role_icons.get(role,'👤')} {role.title()}", inline=True)
         embed.add_field(name="Expires", value="24 hours", inline=True)
         embed.add_field(name="🔗 Open Dashboard", value=f"[Click here]({link})", inline=False)
         embed.set_footer(text="This link is personal — don't share it",
-                         icon_url=interaction.user.display_avatar.url)
+                         icon_url=user.display_avatar.url)
         embed.timestamp = datetime.now(timezone.utc)
         await send_response(interaction, embed=embed, ephemeral=True)
 
