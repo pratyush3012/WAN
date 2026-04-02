@@ -252,30 +252,47 @@ function switchTab(name, el) {
 
 function fixVideoUrl(url) {
   if (!url) return url;
-  // Google Drive: convert share URL to embed URL
+  // Google Drive
   var gdMatch = url.match(/drive\.google\.com\/file\/d\/([^\/\?]+)/);
   if (gdMatch) return 'gdrive:' + gdMatch[1];
-  // Dropbox: ensure direct download
+  // YouTube
+  var ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/);
+  if (ytMatch) return 'youtube:' + ytMatch[1];
+  // Dropbox
   if (url.includes('dropbox.com')) return url.replace('dl=0','dl=1').replace('www.dropbox.com','dl.dropboxusercontent.com');
   return url;
 }
 
-var IS_GDRIVE = false;
+var IS_IFRAME = false;
 
 function initVideo() {
   if (!VIDEO_URL || vid.src) return;
   var fixed = fixVideoUrl(VIDEO_URL);
+  _loadFixed(fixed);
+}
+
+function _loadFixed(fixed) {
+  var frame = document.getElementById('gdriveFrame');
   if (fixed.startsWith('gdrive:')) {
-    IS_GDRIVE = true;
+    IS_IFRAME = true;
     var fileId = fixed.replace('gdrive:','');
-    document.getElementById('gdriveFrame').src = 'https://drive.google.com/file/d/' + fileId + '/preview';
-    document.getElementById('gdriveFrame').style.display = 'block';
+    frame.src = 'https://drive.google.com/file/d/' + fileId + '/preview';
+    frame.style.display = 'block';
     vid.style.display = 'none';
     document.getElementById('centerPlay').style.display = 'none';
     document.getElementById('controls').style.display = 'none';
-    showToast('▶️ Google Drive video loaded — use the player controls inside the video');
+    showToast('▶️ Google Drive — use the player controls inside the video');
+  } else if (fixed.startsWith('youtube:')) {
+    IS_IFRAME = true;
+    var videoId = fixed.replace('youtube:','');
+    frame.src = 'https://www.youtube.com/embed/' + videoId + '?autoplay=1&rel=0&modestbranding=1';
+    frame.style.display = 'block';
+    vid.style.display = 'none';
+    document.getElementById('centerPlay').style.display = 'none';
+    document.getElementById('controls').style.display = 'none';
+    showToast('▶️ YouTube video loaded — use the player controls inside the video');
   } else {
-    IS_GDRIVE = false;
+    IS_IFRAME = false;
     vid.src = fixed;
     vid.load();
   }
@@ -300,7 +317,7 @@ function safePause() {
 }
 
 function togglePlay() {
-  if (IS_GDRIVE) { showToast('Use the controls inside the video player'); return; }
+  if (IS_IFRAME) { showToast('Use the controls inside the video player'); return; }
   if (vid.paused) {
     safePlay();
     if (canControl()) socket.emit("watch_play", {room_id: ROOM_ID, current_time: vid.currentTime});
@@ -498,20 +515,7 @@ socket.on("watch_state", function(d) {
   // Update video source if server provides a different URL
   if (d.video_url && d.video_url !== VIDEO_URL) {
     VIDEO_URL = d.video_url;
-    var fixed = fixVideoUrl(VIDEO_URL);
-    if (fixed.startsWith('gdrive:')) {
-      IS_GDRIVE = true;
-      var fileId = fixed.replace('gdrive:','');
-      document.getElementById('gdriveFrame').src = 'https://drive.google.com/file/d/' + fileId + '/preview';
-      document.getElementById('gdriveFrame').style.display = 'block';
-      vid.style.display = 'none';
-      document.getElementById('centerPlay').style.display = 'none';
-      document.getElementById('controls').style.display = 'none';
-    } else {
-      IS_GDRIVE = false;
-      vid.src = fixed;
-      vid.load();
-    }
+    _loadFixed(fixVideoUrl(VIDEO_URL));
   } else {
     initVideo();
   }
