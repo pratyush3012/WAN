@@ -4589,6 +4589,13 @@ def watch_create_room(server_id):
     if not video_url:
         return jsonify({"error": "video_url is required"}), 400
 
+    # Auto-detect server_id from session if not provided or '0'
+    if server_id in ('0', 'undefined', 'null', ''):
+        server_id = session.get("guild_id", "0")
+        # If still 0, use first guild the bot is in
+        if server_id in ('0', '') and bot_instance and bot_instance.guilds:
+            server_id = str(bot_instance.guilds[0].id)
+
     room_id = secrets.token_urlsafe(8)
 
     # For external URLs (not local streams), use our proxy so CORS is never an issue

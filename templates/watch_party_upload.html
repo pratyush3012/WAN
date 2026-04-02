@@ -462,7 +462,7 @@ async function uploadFile(title) {
       document.getElementById('progressSection').classList.remove('show');
     });
     
-    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || localStorage.getItem('selectedServer') || '0';
     xhr.open('POST', `/api/watch/upload/${serverId}`);
     xhr.send(formData);
   } catch (error) {
@@ -474,7 +474,7 @@ async function uploadFile(title) {
 
 async function uploadURL(title, url) {
   try {
-    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || localStorage.getItem('selectedServer') || '0';
     const finalTitle = title || url.split('/').pop().split('?')[0] || 'Watch Party';
 
     const response = await fetch(`/api/watch/create/${serverId}`, {
@@ -531,7 +531,7 @@ document.addEventListener('DOMContentLoaded', loadMovies);
 
 async function loadMovies() {
   try {
-    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || localStorage.getItem('selectedServer') || '0';
     const response = await fetch(`/api/watch/movies/${serverId}`);
     
     if (response.ok) {
@@ -584,7 +584,7 @@ function escapeHtml(text) {
 
 async function watchMovie(movieId) {
   try {
-    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || localStorage.getItem('selectedServer') || '0';
     const response = await fetch(`/api/watch/start/${serverId}/${movieId}`, {
       method: 'POST'
     });
@@ -607,7 +607,7 @@ async function deleteMovie(movieId, title) {
   }
   
   try {
-    const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
+    const serverId = new URLSearchParams(window.location.search).get('server_id') || localStorage.getItem('selectedServer') || '0';
     const response = await fetch(`/api/watch/delete/${serverId}/${movieId}`, {
       method: 'DELETE'
     });
