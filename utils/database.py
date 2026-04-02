@@ -14,6 +14,17 @@ logger = logging.getLogger('discord_bot.database')
 
 Base = declarative_base()
 
+
+def _default_sqlite_url() -> str:
+    """Persist SQLite on DATA_DIR (e.g. /data/bot.db on Render) instead of cwd."""
+    root = os.getenv('DATA_DIR', './data').rstrip('/')
+    try:
+        os.makedirs(root, exist_ok=True)
+    except OSError:
+        pass
+    path = os.path.abspath(os.path.join(root, 'bot.db')).replace('\\', '/')
+    return f'sqlite+aiosqlite:///{path}'
+
 class GuildConfig(Base):
     __tablename__ = 'guild_config'
     
@@ -94,20 +105,19 @@ class Database:
         if self._initialized:
             return
         
-        db_url = os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///bot.db')
+        db_url = os.getenv('DATABASE_URL', _default_sqlite_url())
         # Render PostgreSQL URLs use postgres:// but SQLAlchemy needs postgresql+asyncpg://
         if db_url.startswith('postgres://'):
             db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
         elif db_url.startswith('postgresql://') and '+asyncpg' not in db_url:
             db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
 
-        # If asyncpg not installed, fall back to SQLite regardless of DATABASE_URL
         if 'asyncpg' in db_url:
             try:
                 import asyncpg  # noqa: F401
             except ImportError:
-                logger.warning("asyncpg not installed — falling back to SQLite")
-                db_url = 'sqlite+aiosqlite:///bot.db'
+                logger.warning("asyncpg not installed — falling back to SQLite on DATA_DIR")
+                db_url = _default_sqlite_url()
         
         # Connection pooling configuration
         pool_config = {
@@ -132,7 +142,7 @@ class Database:
                 "PostgreSQL async engine init failed (%s) — falling back to SQLite",
                 e,
             )
-            db_url = 'sqlite+aiosqlite:///bot.db'
+            db_url = _default_sqlite_url()
             self.engine = create_async_engine(
                 db_url,
                 echo=False,

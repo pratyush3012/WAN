@@ -14,6 +14,8 @@ services:
         sync: false
       - key: OWNER_ID
         sync: false
+      - key: RENDER
+        value: "true"
       - key: ENABLE_DASHBOARD
         value: "true"
       - key: DASHBOARD_HOST
@@ -21,17 +23,17 @@ services:
       - key: DASHBOARD_SECRET_KEY
         sync: false
       - key: DASHBOARD_URL
-        sync: false
+        value: "https://wan-ujtv.onrender.com"
       - key: GUILD_ID
         value: "1462688504436752489"
       - key: GEMINI_API_KEY
-        value: "AIzaSyCk5yN4vaCdd99e1m0uIpgJDcKe33X-Mcs"
+        sync: false
       - key: PYTHON_VERSION
         value: "3.11.0"
       - key: DATA_DIR
         value: "/data"
       - key: DATABASE_URL
-        value: "sqlite+aiosqlite:///data/bot.db"
+        value: "sqlite+aiosqlite:////data/bot.db"
       - key: SPOTIFY_CLIENT_ID
         sync: false
       - key: SPOTIFY_CLIENT_SECRET

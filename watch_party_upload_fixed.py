@@ -134,6 +134,11 @@ class GuildUploadManager:
             
             # Send @everyone announcement
             dashboard_url = os.getenv("DASHBOARD_URL", "").rstrip("/")
+            if not dashboard_url:
+                logger.warning(
+                    "DASHBOARD_URL is unset — announcement will have no Watch link. "
+                    "Set DASHBOARD_URL=https://wan-ujtv.onrender.com on Render."
+                )
             watch_link = f"{dashboard_url}/watch/{movie_id}" if dashboard_url else None
 
             embed = discord.Embed(

@@ -42,7 +42,7 @@ from itsdangerous import URLSafeTimedSerializer as _USTS, BadSignature as _BadSi
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('DASHBOARD_SECRET_KEY', 'wan-bot-dashboard-secret-key-change-me-in-env')
-app.config['SESSION_COOKIE_SECURE'] = False  # Render handles HTTPS termination; cookies work on HTTP internally
+app.config['SESSION_COOKIE_SECURE'] = bool(os.getenv('RENDER'))
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
@@ -68,7 +68,8 @@ def _verify_auth_token(token: str, max_age: int = 86400):
         return None
 
 # Initialize extensions
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+_cors_origin = os.getenv('DASHBOARD_URL', 'http://localhost:5000').rstrip('/')
+socketio = SocketIO(app, cors_allowed_origins=[_cors_origin], async_mode='threading')
 cache = Cache(app, config={'CACHE_TYPE': 'simple', 'CACHE_DEFAULT_TIMEOUT': 300})
 limiter = Limiter(
     app=app,
@@ -239,40 +240,38 @@ def auth():
             return redirect(next_url)
         return redirect(url_for('index'))
 
-    # Fallback: legacy in-memory token (local bot only)
-    if bot_instance:
-        webdashboard_cog = bot_instance.get_cog('WebDashboardCog')
-        if webdashboard_cog:
-            loop = bot_instance.loop
-            if loop and loop.is_running():
-                import concurrent.futures
-                future = asyncio.run_coroutine_threadsafe(webdashboard_cog.verify_token(token), loop)
-                try:
-                    legacy_data = future.result(timeout=5)
-                except Exception:
-                    legacy_data = None
-            else:
+    # Fallback: legacy in-memory token (same process as bot only — skip if no cog)
+    webdashboard_cog = bot_instance.get_cog('WebDashboardCog') if bot_instance else None
+    if bot_instance and webdashboard_cog:
+        loop = bot_instance.loop
+        if loop and loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(webdashboard_cog.verify_token(token), loop)
+            try:
+                legacy_data = future.result(timeout=0.5)
+            except Exception:
                 legacy_data = None
+        else:
+            legacy_data = None
 
-            if legacy_data:
-                real_username = f"User {legacy_data['user_id']}"
-                try:
-                    guild = bot_instance.get_guild(int(legacy_data['guild_id']))
-                    if guild:
-                        member = guild.get_member(int(legacy_data['user_id']))
-                        if member:
-                            real_username = member.display_name
-                except Exception:
-                    pass
-                session.permanent = True
-                session['user_id']   = str(legacy_data['user_id'])
-                session['guild_id']  = str(legacy_data['guild_id'])
-                session['role']      = legacy_data['role']
-                session['username']  = real_username
-                session['login_time'] = datetime.now(timezone.utc).isoformat()
-                if next_url and next_url.startswith('/'):
-                    return redirect(next_url)
-                return redirect(url_for('index'))
+        if legacy_data:
+            real_username = f"User {legacy_data['user_id']}"
+            try:
+                guild = bot_instance.get_guild(int(legacy_data['guild_id']))
+                if guild:
+                    member = guild.get_member(int(legacy_data['user_id']))
+                    if member:
+                        real_username = member.display_name
+            except Exception:
+                pass
+            session.permanent = True
+            session['user_id']   = str(legacy_data['user_id'])
+            session['guild_id']  = str(legacy_data['guild_id'])
+            session['role']      = legacy_data['role']
+            session['username']  = real_username
+            session['login_time'] = datetime.now(timezone.utc).isoformat()
+            if next_url and next_url.startswith('/'):
+                return redirect(next_url)
+            return redirect(url_for('index'))
 
     return redirect(url_for('login'))
 
@@ -4777,13 +4776,13 @@ def watch_close_room(room_id):
             os.remove(room.file_path)
         except Exception:
             pass
-    del _watch_rooms[room_id]
     try:
         from watch_party_db import WatchPartyDB
         WatchPartyDB.delete_room_data(room_id)
     except Exception as _e:
         logger.warning(f"Could not delete persisted room {room_id}: {_e}")
     socketio.emit("room_closed", {"room_id": room_id}, room=f"watch_{room_id}")
+    _watch_rooms.pop(room_id, None)
     return jsonify({"success": True})
 
 

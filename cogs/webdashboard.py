@@ -7,8 +7,18 @@ from discord.ext import commands
 from discord import app_commands
 from datetime import datetime, timezone
 import os
+import logging
+
+from utils.discord_interaction import send_response
+
+logger = logging.getLogger(__name__)
 
 DASHBOARD_URL = os.getenv('DASHBOARD_URL', 'http://localhost:5000').rstrip('/')
+if not os.getenv('DASHBOARD_URL'):
+    logger.warning(
+        "DASHBOARD_URL is not set — /web links default to localhost. "
+        "Set DASHBOARD_URL=https://wan-ujtv.onrender.com on Render."
+    )
 SECRET_KEY    = os.getenv('DASHBOARD_SECRET_KEY', 'wan-bot-dashboard-secret-key-change-me-in-env')
 
 
@@ -67,7 +77,7 @@ class WebDashboardCog(commands.Cog):
         embed.set_footer(text="This link is personal — don't share it",
                          icon_url=interaction.user.display_avatar.url)
         embed.timestamp = datetime.now(timezone.utc)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await send_response(interaction, embed=embed, ephemeral=True)
 
     async def verify_token(self, token: str):
         return None  # legacy — no longer used

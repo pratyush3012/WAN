@@ -19,6 +19,7 @@ import os
 import time
 from collections import deque
 from utils.settings import get_setting, set_setting
+from utils.discord_interaction import send_response
 
 logger = logging.getLogger("discord_bot.music")
 
@@ -29,6 +30,7 @@ SC_OPTS = {
         "bestaudio[ext=m4a]/bestaudio[ext=mp3]/"
         "bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio/best"
     ),
+    "hls_prefer_native": False,
     "noplaylist": True,
     "quiet": True, "no_warnings": True,
     "source_address": "0.0.0.0", "skip_download": True,
@@ -64,25 +66,56 @@ def _stream_format_score(f: dict) -> int:
     return s
 
 
+def _url_is_hls_or_opus(u: str) -> bool:
+    if not u:
+        return True
+    lu = u.lower()
+    return "m3u8" in lu or ".opus" in lu or lu.endswith(".opus")
+
+
+def _pick_non_hls_opus_from_formats(formats: list) -> str:
+    """Prefer any format URL that is not HLS playlist or opus."""
+    candidates = [f for f in formats if f.get("url", "").startswith("http")]
+    candidates.sort(key=_stream_format_score, reverse=True)
+    for f in candidates:
+        u = f.get("url") or ""
+        if not _url_is_hls_or_opus(u):
+            return u
+    return candidates[0]["url"] if candidates else ""
+
+
 def _get_stream_url(data: dict) -> str:
     """Extract the best direct audio stream URL from yt-dlp data."""
-    url = data.get("url", "")
-    if url and url.startswith("http"):
-        lu = url.lower()
-        if "m3u8" not in lu and ".opus" not in lu and not lu.endswith(".opus"):
-            return url
     formats = data.get("formats", [])
+    url = data.get("url", "")
+    if url and url.startswith("http") and not _url_is_hls_or_opus(url):
+        return url
+    if url and url.startswith("http") and formats:
+        better = _pick_non_hls_opus_from_formats(formats)
+        if better:
+            return better
+        return url
     audio_formats = [
         f for f in formats
         if f.get("url") and f.get("vcodec") == "none" and f.get("acodec") != "none"
     ]
     if audio_formats:
         audio_formats.sort(key=_stream_format_score, reverse=True)
-        return audio_formats[0]["url"]
+        pick = audio_formats[0]["url"]
+        if _url_is_hls_or_opus(pick):
+            alt = _pick_non_hls_opus_from_formats(formats)
+            if alt:
+                return alt
+        return pick
     scored = [f for f in formats if f.get("url", "").startswith("http")]
     if scored:
         scored.sort(key=_stream_format_score, reverse=True)
-        return scored[0]["url"]
+        pick = scored[0]["url"]
+        if _url_is_hls_or_opus(pick):
+            alt = _pick_non_hls_opus_from_formats(formats)
+            if alt:
+                return alt
+        return pick
     return url
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -442,10 +475,10 @@ class MusicControls(discord.ui.View):
         vc = self._vc(); gp = self._gp()
         if vc and vc.is_playing():
             vc.pause(); gp.vc_playing = False
-            await interaction.response.send_message("⏸ Paused.", ephemeral=True, delete_after=3)
+            await send_response(interaction,"⏸ Paused.", ephemeral=True, delete_after=3)
         elif vc and vc.is_paused():
             vc.resume(); gp.vc_playing = True
-            await interaction.response.send_message("▶️ Resumed.", ephemeral=True, delete_after=3)
+            await send_response(interaction,"▶️ Resumed.", ephemeral=True, delete_after=3)
         else:
             await interaction.response.defer()
 
@@ -465,7 +498,7 @@ class MusicControls(discord.ui.View):
             gp.vc_playing = False  # Update state immediately
             try:
                 vc.stop()
-                await interaction.response.send_message("⏭ Skipped.", ephemeral=True, delete_after=3)
+                await send_response(interaction,"⏭ Skipped.", ephemeral=True, delete_after=3)
             finally:
                 await asyncio.sleep(0.5)
                 gp._skip_requested = False
@@ -475,34 +508,33 @@ class MusicControls(discord.ui.View):
     @discord.ui.button(emoji="⏹", style=discord.ButtonStyle.danger, row=0,
                        custom_id="music_stop")
     async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
         gp = self._gp(); vc = self._vc()
         gp.queue.clear(); gp.loop = False; gp.vc_playing = False
         if vc:
             vc.stop()
             if not gp.mode_247:
                 await vc.disconnect()
-        await interaction.followup.send("⏹ Stopped.", ephemeral=True, delete_after=3)
+        await send_response(interaction, "⏹ Stopped.", ephemeral=True, delete_after=3)
 
     @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, row=1,
                        custom_id="music_shuffle")
     async def shuffle_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         gp = self._gp()
         q = list(gp.queue); random.shuffle(q); gp.queue = deque(q)
-        await interaction.response.send_message("🔀 Shuffled!", ephemeral=True, delete_after=3)
+        await send_response(interaction,"🔀 Shuffled!", ephemeral=True, delete_after=3)
 
     @discord.ui.button(emoji="🔁", style=discord.ButtonStyle.secondary, row=1,
                        custom_id="music_loop")
     async def loop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         gp = self._gp(); gp.loop = not gp.loop
-        await interaction.response.send_message(
+        await send_response(interaction,
             f"🔁 Loop {'**ON**' if gp.loop else 'off'}", ephemeral=True, delete_after=4)
 
     @discord.ui.button(label="✨ Auto", style=discord.ButtonStyle.success, row=1,
                        custom_id="music_autoplay")
     async def autoplay_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         gp = self._gp(); gp.autoplay = not gp.autoplay
-        await interaction.response.send_message(
+        await send_response(interaction,
             f"✨ Autoplay {'on' if gp.autoplay else 'off'}", ephemeral=True, delete_after=4)
 
     @discord.ui.button(label="🌙 24/7", style=discord.ButtonStyle.secondary, row=1,
@@ -513,7 +545,7 @@ class MusicControls(discord.ui.View):
             vc = self._vc()
             if vc:
                 gp.vc_channel_id = vc.channel.id
-        await interaction.response.send_message(
+        await send_response(interaction,
             f"🌙 24/7 {'on' if gp.mode_247 else 'off'}", ephemeral=True, delete_after=4)
 
     @discord.ui.button(label="🔉 Vol-", style=discord.ButtonStyle.secondary, row=2,
@@ -523,7 +555,7 @@ class MusicControls(discord.ui.View):
         vc = self._vc()
         if vc and vc.source:
             vc.source.volume = gp.volume
-        await interaction.response.send_message(
+        await send_response(interaction,
             f"🔉 Volume: **{int(gp.volume * 100)}%**", ephemeral=True, delete_after=3)
 
     @discord.ui.button(label="🔊 Vol+", style=discord.ButtonStyle.secondary, row=2,
@@ -533,7 +565,7 @@ class MusicControls(discord.ui.View):
         vc = self._vc()
         if vc and vc.source:
             vc.source.volume = gp.volume
-        await interaction.response.send_message(
+        await send_response(interaction,
             f"🔊 Volume: **{int(gp.volume * 100)}%**", ephemeral=True, delete_after=3)
 
 
@@ -1081,7 +1113,7 @@ class Music(commands.Cog):
                 title="🌙 24/7 Mode OFF",
                 description="Bot will leave when queue ends.",
                 color=0x6b7280)
-        await interaction.response.send_message(embed=embed)
+        await send_response(interaction, embed=embed)
 
     @app_commands.command(name="play", description="🎵 Play a song — name, YouTube or Spotify URL")
     @app_commands.describe(query="Song name, YouTube URL, or Spotify URL")
@@ -1133,16 +1165,15 @@ class Music(commands.Cog):
             gp.vc_playing = False
             try:
                 vc.stop()
-                await interaction.response.send_message("⏭ Skipped.")
+                await send_response(interaction,"⏭ Skipped.")
             finally:
                 await asyncio.sleep(0.5)
                 gp._skip_requested = False
         else:
-            await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
+            await send_response(interaction,"❌ Nothing is playing.", ephemeral=True)
 
     @app_commands.command(name="stop", description="⏹ Stop music and clear queue")
     async def slash_stop(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
         gp = self._get_player(interaction.guild.id)
         gp.queue.clear(); gp.loop = False; gp.vc_playing = False
         vc = interaction.guild.voice_client
@@ -1150,7 +1181,7 @@ class Music(commands.Cog):
             vc.stop()
             if not gp.mode_247:
                 await vc.disconnect()
-        await interaction.followup.send("⏹ Stopped.", ephemeral=True)
+        await send_response(interaction, "⏹ Stopped.", ephemeral=True)
 
     @app_commands.command(name="pause", description="⏸ Pause the current song")
     async def slash_pause(self, interaction: discord.Interaction):
@@ -1158,9 +1189,9 @@ class Music(commands.Cog):
         gp = self._get_player(interaction.guild.id)
         if vc and vc.is_playing():
             vc.pause(); gp.vc_playing = False
-            await interaction.response.send_message("⏸ Paused.")
+            await send_response(interaction,"⏸ Paused.")
         else:
-            await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
+            await send_response(interaction,"❌ Nothing is playing.", ephemeral=True)
 
     @app_commands.command(name="resume", description="▶️ Resume the paused song")
     async def slash_resume(self, interaction: discord.Interaction):
@@ -1168,27 +1199,27 @@ class Music(commands.Cog):
         gp = self._get_player(interaction.guild.id)
         if vc and vc.is_paused():
             vc.resume(); gp.vc_playing = True
-            await interaction.response.send_message("▶️ Resumed.")
+            await send_response(interaction,"▶️ Resumed.")
         else:
-            await interaction.response.send_message("❌ Nothing is paused.", ephemeral=True)
+            await send_response(interaction,"❌ Nothing is paused.", ephemeral=True)
 
     @app_commands.command(name="volume", description="🔊 Set volume (1–100)")
     @app_commands.describe(level="Volume level 1–100")
     async def slash_volume(self, interaction: discord.Interaction, level: int):
         if not 1 <= level <= 100:
-            return await interaction.response.send_message("❌ Volume must be 1–100.", ephemeral=True)
+            return await send_response(interaction,"❌ Volume must be 1–100.", ephemeral=True)
         gp = self._get_player(interaction.guild.id)
         gp.volume = level / 100
         vc = interaction.guild.voice_client
         if vc and vc.source:
             vc.source.volume = gp.volume
-        await interaction.response.send_message(f"🔊 Volume: **{level}%**")
+        await send_response(interaction,f"🔊 Volume: **{level}%**")
 
     @app_commands.command(name="queue", description="📋 Show the music queue")
     async def slash_queue(self, interaction: discord.Interaction):
         gp = self._get_player(interaction.guild.id)
         if not gp.current and not gp.queue:
-            return await interaction.response.send_message("📭 Queue is empty.", ephemeral=True)
+            return await send_response(interaction,"📭 Queue is empty.", ephemeral=True)
         e = discord.Embed(title="🎵 Music Queue", color=0x1DB954)
         if gp.current:
             e.add_field(name="▶️ Now Playing",
@@ -1201,29 +1232,29 @@ class Music(commands.Cog):
                 lines.append(f"... and {len(gp.queue) - 10} more")
             e.add_field(name=f"Up Next ({len(gp.queue)})", value="\n".join(lines), inline=False)
         e.set_footer(text=f"Loop: {'on' if gp.loop else 'off'} • Vol: {int(gp.volume*100)}% • Autoplay: {'on' if gp.autoplay else 'off'} • 24/7: {'on' if gp.mode_247 else 'off'}")
-        await interaction.response.send_message(embed=e)
+        await send_response(interaction, embed=e)
 
     @app_commands.command(name="np", description="🎵 Show what's currently playing")
     async def slash_np(self, interaction: discord.Interaction):
         gp = self._get_player(interaction.guild.id)
         if not gp.current:
-            return await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
-        await interaction.response.send_message(
+            return await send_response(interaction,"❌ Nothing is playing.", ephemeral=True)
+        await send_response(interaction,
             embed=gp.current.player_embed(gp), view=MusicControls(self, interaction.guild.id))
 
     @app_commands.command(name="shuffle", description="🔀 Shuffle the queue")
     async def slash_shuffle(self, interaction: discord.Interaction):
         gp = self._get_player(interaction.guild.id)
         if not gp.queue:
-            return await interaction.response.send_message("❌ Queue is empty.", ephemeral=True)
+            return await send_response(interaction,"❌ Queue is empty.", ephemeral=True)
         q = list(gp.queue); random.shuffle(q); gp.queue = deque(q)
-        await interaction.response.send_message("🔀 Queue shuffled!")
+        await send_response(interaction,"🔀 Queue shuffled!")
 
     @app_commands.command(name="loop", description="🔁 Toggle loop for current song")
     async def slash_loop(self, interaction: discord.Interaction):
         gp = self._get_player(interaction.guild.id)
         gp.loop = not gp.loop
-        await interaction.response.send_message(
+        await send_response(interaction,
             f"🔁 Loop {'**ON** — current song will repeat' if gp.loop else 'off'}")
 
     @app_commands.command(name="autoplay", description="✨ Toggle autoplay recommendations")
@@ -1234,7 +1265,7 @@ class Music(commands.Cog):
             title=f"✨ Autoplay {'on' if gp.autoplay else 'off'}",
             description="Plays similar songs when queue ends. Hindi songs → Hindi recommendations." if gp.autoplay else "Disabled.",
             color=0x1DB954 if gp.autoplay else 0x6b7280)
-        await interaction.response.send_message(embed=embed)
+        await send_response(interaction, embed=embed)
 
     # ── Prefix aliases ──────────────────────────────────────────────────────────
     @commands.command(name="play", aliases=["p"])

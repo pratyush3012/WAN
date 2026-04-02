@@ -470,9 +470,8 @@ socket.on("connect", function() {
 
 socket.on("watch_state", function(d) {
   initVideo();
-  if (Math.abs(vid.currentTime - (d.current_time || 0)) > 2) {
-    vid.currentTime = d.current_time || 0;
-  }
+  var t = d.current_time || 0;
+  vid.currentTime = t;
   if (d.is_playing) {
     safePlay();
   } else {

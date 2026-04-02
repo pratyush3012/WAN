@@ -24,8 +24,11 @@ import os
 import urllib.request
 from datetime import datetime, timezone, timedelta
 from utils.settings import get_setting, set_setting
+from utils.discord_interaction import send_response
 
 logger = logging.getLogger("discord_bot.leveling")
+
+LEVELING_JSON = os.path.join(os.getenv("DATA_DIR", "./data"), "leveling.json")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
@@ -144,16 +147,40 @@ class Leveling(commands.Cog):
 
     # ── DB persistence ─────────────────────────────────────────────────────────
 
+    def _load_leveling_json(self) -> dict:
+        try:
+            os.makedirs(os.path.dirname(LEVELING_JSON) or ".", exist_ok=True)
+            if os.path.isfile(LEVELING_JSON):
+                with open(LEVELING_JSON, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.warning(f"Could not load {LEVELING_JSON}: {e}")
+        return {}
+
     async def _ensure_loaded(self):
         if self._loaded:
             return
-        stored = await get_setting(0, "leveling_data", {})
-        self._cache = stored if isinstance(stored, dict) else {}
+        loop = asyncio.get_running_loop()
+        file_data = await loop.run_in_executor(None, self._load_leveling_json)
+        if file_data:
+            self._cache = file_data
+        else:
+            stored = await get_setting(0, "leveling_data", {})
+            self._cache = stored if isinstance(stored, dict) else {}
         event = await get_setting(0, "xp_event", {})
         if event and event.get("end", 0) > time.time():
             self._multiplier = event.get("multiplier", 1.0)
             self._multiplier_end = event.get("end", 0)
         self._loaded = True
+
+    def _save_leveling_json(self):
+        try:
+            os.makedirs(os.path.dirname(LEVELING_JSON) or ".", exist_ok=True)
+            with open(LEVELING_JSON, "w", encoding="utf-8") as f:
+                json.dump(self._cache, f, indent=2)
+        except Exception as e:
+            logger.error(f"Leveling file persist error: {e}")
 
     @tasks.loop(seconds=30)
     async def _persist_task(self):
@@ -161,6 +188,8 @@ class Leveling(commands.Cog):
         if not self._dirty:
             return
         try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._save_leveling_json)
             await set_setting(0, "leveling_data", self._cache)
             self._dirty.clear()
         except Exception as e:
@@ -173,6 +202,8 @@ class Leveling(commands.Cog):
     async def _persist(self):
         """Force-save immediately (used after admin commands)."""
         try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._save_leveling_json)
             await set_setting(0, "leveling_data", self._cache)
             self._dirty.clear()
         except Exception as e:
@@ -555,15 +586,15 @@ class Leveling(commands.Cog):
         embed.add_field(name="Streak Bonus",
                         value=f"+{min(streak, 10) * XP_STREAK_BONUS} XP/day", inline=True)
         embed.set_footer(text="Use /daily every day to keep your streak alive!")
-        await interaction.response.send_message(embed=embed)
+        await send_response(interaction, embed=embed)
 
     @app_commands.command(name="xp-event", description="⚡ Start an XP multiplier event (admin)")
     @app_commands.describe(multiplier="XP multiplier (e.g. 2 = double XP)", hours="Duration in hours")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def xp_event(self, interaction: discord.Interaction, multiplier: float, hours: int = 1):
         if not 1.0 <= multiplier <= 5.0:
-            return await interaction.response.send_message(
-                "❌ Multiplier must be 1.0–5.0", ephemeral=True)
+            return await send_response(
+                interaction, "❌ Multiplier must be 1.0–5.0", ephemeral=True)
         self._multiplier = multiplier
         self._multiplier_end = time.time() + (hours * 3600)
         await set_setting(0, "xp_event", {
@@ -574,7 +605,7 @@ class Leveling(commands.Cog):
             description=f"**{multiplier}x XP** for the next **{hours} hour{'s' if hours != 1 else ''}**!\nGo go go — chat, react, join voice! 🚀",
             color=0x7c3aed
         )
-        await interaction.response.send_message(embed=embed)
+        await send_response(interaction, embed=embed)
 
     @app_commands.command(name="set-level-role", description="🎭 Assign a role when members reach a level")
     @app_commands.describe(level="Level to trigger the role", role="Role to assign")
@@ -583,8 +614,8 @@ class Leveling(commands.Cog):
         await self._ensure_loaded()
         self._guild(interaction.guild.id)["config"]["level_roles"][str(level)] = role.id
         await self._persist()
-        await interaction.response.send_message(
-            f"✅ Members get **{role.name}** at level **{level}**.", ephemeral=True)
+        await send_response(
+            interaction, f"✅ Members get **{role.name}** at level **{level}**.", ephemeral=True)
 
     @app_commands.command(name="xp-channel", description="📢 Set channel for level-up announcements")
     @app_commands.describe(channel="Channel to send level-up messages in")
@@ -593,8 +624,8 @@ class Leveling(commands.Cog):
         await self._ensure_loaded()
         self._guild(interaction.guild.id)["config"]["announce_channel"] = channel.id
         await self._persist()
-        await interaction.response.send_message(
-            f"✅ Level-up announcements → {channel.mention}", ephemeral=True)
+        await send_response(
+            interaction, f"✅ Level-up announcements → {channel.mention}", ephemeral=True)
 
     @app_commands.command(name="xp-noxp", description="🚫 Toggle no-XP for a channel")
     @app_commands.describe(channel="Channel to toggle XP off/on")
@@ -610,7 +641,7 @@ class Leveling(commands.Cog):
             noxp.append(cid)
             msg = f"✅ {channel.mention} added to no-XP list."
         await self._persist()
-        await interaction.response.send_message(msg, ephemeral=True)
+        await send_response(interaction, msg, ephemeral=True)
 
     @app_commands.command(name="xp-give", description="🎁 Manually give XP to a member")
     @app_commands.describe(member="Member to give XP to", amount="Amount of XP to give")
@@ -618,8 +649,8 @@ class Leveling(commands.Cog):
     async def xp_give(self, interaction: discord.Interaction, member: discord.Member, amount: int):
         await self._ensure_loaded()
         await self._grant_xp(interaction.guild, member, amount, "manual")
-        await interaction.response.send_message(
-            f"✅ Gave **{amount} XP** to {member.mention}.", ephemeral=True)
+        await send_response(
+            interaction, f"✅ Gave **{amount} XP** to {member.mention}.", ephemeral=True)
 
     @app_commands.command(name="xp-reset", description="🗑️ Reset a member's XP")
     @app_commands.describe(member="Member to reset")
@@ -628,8 +659,8 @@ class Leveling(commands.Cog):
         await self._ensure_loaded()
         self._guild(interaction.guild.id)["users"].pop(str(member.id), None)
         await self._persist()
-        await interaction.response.send_message(
-            f"✅ Reset XP for {member.mention}.", ephemeral=True)
+        await send_response(
+            interaction, f"✅ Reset XP for {member.mention}.", ephemeral=True)
 
 
 async def setup(bot):

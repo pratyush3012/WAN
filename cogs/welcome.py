@@ -11,6 +11,7 @@ from discord.ext import commands
 import json, os, logging, random, asyncio
 import urllib.request
 from utils.settings import get_setting, set_setting
+from utils.discord_interaction import send_response
 
 logger = logging.getLogger("discord_bot.welcome")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -455,55 +456,61 @@ class Welcome(commands.Cog):
     @app_commands.describe(channel="Channel for welcome messages", message="Custom message (leave blank for AI)", color="Hex color e.g. 57f287")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_set(self, interaction: discord.Interaction, channel: discord.TextChannel, message: str = "", color: str = "57f287"):
-        cfg = await self._get_cfg(ctx.guild.id)
+        cfg = await self._get_cfg(interaction.guild.id)
         cfg.update({"welcome_channel": str(channel.id), "welcome_message": message, "welcome_color": color})
         await self._save_cfg(interaction.guild.id, cfg)
         note = "AI-generated messages enabled." if not message else "Custom message saved."
-        await interaction.response.send_message(
+        await send_response(
+            interaction,
             f"\u2705 Welcome \u2192 {channel.mention}\n{note}\nVariables: `{{user}}` `{{username}}` `{{server}}` `{{count}}`",
-            ephemeral=True)
+            ephemeral=True,
+        )
 
     @app_commands.command(name="goodbye-set", description="👋 Set the goodbye channel and message")
     @app_commands.describe(channel="Channel for goodbye messages", message="Custom message (leave blank for AI)")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def goodbye_set(self, interaction: discord.Interaction, channel: discord.TextChannel, message: str = ""):
-        cfg = await self._get_cfg(ctx.guild.id)
+        cfg = await self._get_cfg(interaction.guild.id)
         cfg.update({"goodbye_channel": str(channel.id), "goodbye_message": message})
         await self._save_cfg(interaction.guild.id, cfg)
-        await interaction.response.send_message(f"\u2705 Goodbye \u2192 {channel.mention}", ephemeral=True)
+        await send_response(interaction, f"\u2705 Goodbye \u2192 {channel.mention}", ephemeral=True)
 
     @app_commands.command(name="welcome-dm", description="📩 Set a DM message for new members")
     @app_commands.describe(message="DM message to send on join")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def welcome_dm(self, interaction: discord.Interaction, message: str):
-        cfg = await self._get_cfg(ctx.guild.id)
+        cfg = await self._get_cfg(interaction.guild.id)
         cfg["dm_enabled"] = True
         cfg["dm_message"] = message
         await self._save_cfg(interaction.guild.id, cfg)
-        await interaction.response.send_message(f"\u2705 Join DM enabled.\nMessage: {message[:100]}", ephemeral=True)
+        await send_response(interaction, f"\u2705 Join DM enabled.\nMessage: {message[:100]}", ephemeral=True)
 
     @app_commands.command(name="promo-set", description="🎉 Set promotion announcements channel")
     @app_commands.describe(channel="Channel for promo messages", roles="Comma-separated role names to watch")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def promo_set(self, interaction: discord.Interaction, channel: discord.TextChannel, roles: str):
-        cfg = await self._get_cfg(ctx.guild.id)
+        cfg = await self._get_cfg(interaction.guild.id)
         cfg.update({"promo_channel": str(channel.id), "promo_roles": roles})
         await self._save_cfg(interaction.guild.id, cfg)
-        await interaction.response.send_message(f"\u2705 Promo announcements \u2192 {channel.mention}\nWatched roles: `{roles}`", ephemeral=True)
+        await send_response(
+            interaction,
+            f"\u2705 Promo announcements \u2192 {channel.mention}\nWatched roles: `{roles}`",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="autorole", description="🎭 Set auto-role for new members")
     @app_commands.describe(role="Role to give new members (leave blank to disable)")
     @app_commands.checks.has_permissions(manage_roles=True)
     async def autorole(self, interaction: discord.Interaction, role: discord.Role = None):
-        cfg = await self._get_cfg(ctx.guild.id)
+        cfg = await self._get_cfg(interaction.guild.id)
         if role:
             cfg["autorole"] = str(role.id)
             await self._save_cfg(interaction.guild.id, cfg)
-            await interaction.response.send_message(f"\u2705 New members will get **{role.name}** on join.", ephemeral=True)
+            await send_response(interaction, f"\u2705 New members will get **{role.name}** on join.", ephemeral=True)
         else:
             cfg.pop("autorole", None)
             await self._save_cfg(interaction.guild.id, cfg)
-            await interaction.response.send_message("\u2705 Auto-role disabled.", ephemeral=True)
+            await send_response(interaction, "\u2705 Auto-role disabled.", ephemeral=True)
 
     @app_commands.command(name="welcome-test", description="🧪 Send a test welcome message")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -534,7 +541,7 @@ class Welcome(commands.Cog):
         embed.add_field(name="Join DM", value="\u2705 Enabled" if cfg.get("dm_enabled") else "\u274c Disabled", inline=True)
         embed.add_field(name="Auto-Role", value=f"<@&{cfg['autorole']}>" if cfg.get("autorole") else "None", inline=True)
         embed.add_field(name="AI Messages", value="\u2705 Gemini" if GEMINI_API_KEY else "\u274c No API key (using fallback)", inline=True)
-        await interaction.response.send_message(embed=embed)
+        await send_response(interaction, embed=embed)
 
 
 async def setup(bot):

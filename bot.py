@@ -36,12 +36,14 @@ logger = logging.getLogger('discord_bot')
 
 class GamingBot(commands.Bot):
     def __init__(self):
+        # MESSAGE_CONTENT + SERVER_MEMBERS are privileged — enable both in the Developer Portal
+        # https://discord.com/developers/applications → Bot → Privileged Gateway Intents
         intents = discord.Intents.all()
         super().__init__(
             command_prefix='!',
             intents=intents,
             help_command=None,
-            chunk_guilds_at_startup=True
+            chunk_guilds_at_startup=False
         )
         self.db = None
         self.start_time = datetime.now(timezone.utc)  # Track bot start time for uptime
