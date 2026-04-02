@@ -42,7 +42,7 @@ from itsdangerous import URLSafeTimedSerializer as _USTS, BadSignature as _BadSi
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('DASHBOARD_SECRET_KEY', 'wan-bot-dashboard-secret-key-change-me-in-env')
-app.config['SESSION_COOKIE_SECURE'] = bool(os.getenv('RENDER'))
+app.config['SESSION_COOKIE_SECURE'] = False  # Render handles HTTPS at proxy; internal is HTTP
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
