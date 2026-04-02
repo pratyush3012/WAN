@@ -80,13 +80,11 @@ class GamingBot(commands.Bot):
                 "Set GUILD_ID in .env if you use SLASH_SYNC_MODE=guild or both."
             )
 
-        # Cogs — welcome, leveling, music, watch party, web dashboard
+        # Cogs — welcome, leveling, music, web dashboard
         all_cogs = [
             'cogs.welcome',
             'cogs.leveling',
             'cogs.music',
-            'cogs.watch_party_complete',
-            'cogs.watch_party_enhanced',
             'cogs.webdashboard',
         ]
 
