@@ -469,9 +469,16 @@ socket.on("connect", function() {
 });
 
 socket.on("watch_state", function(d) {
-  initVideo();
+  // Update video source if server provides a different URL
+  if (d.video_url && d.video_url !== VIDEO_URL) {
+    VIDEO_URL = d.video_url;
+    vid.src = VIDEO_URL;
+    vid.load();
+  } else {
+    initVideo();
+  }
   var t = d.current_time || 0;
-  vid.currentTime = t;
+  if (Math.abs(vid.currentTime - t) > 2) vid.currentTime = t;
   if (d.is_playing) {
     safePlay();
   } else {

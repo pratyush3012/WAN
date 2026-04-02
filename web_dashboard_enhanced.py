@@ -4707,8 +4707,12 @@ def watch_upload_video(server_id):
 def watch_stream_file(room_id):
     """Stream an uploaded video file with range support. No login — anyone with the link can stream."""
     room = _resolve_watch_room(room_id)
-    if not room or not room.file_path or not os.path.exists(room.file_path):
-        return jsonify({"error": "File not found"}), 404
+    if not room:
+        return "Room not found", 404
+    if not room.file_path or not os.path.exists(room.file_path):
+        # Room exists but file missing — log it
+        logger.warning(f"Stream requested for room {room_id} but file missing: {room.file_path}")
+        return "Video file not found on server", 404
 
     ext = os.path.splitext(room.file_path)[1].lower()
     mime_map = {".mp4": "video/mp4", ".webm": "video/webm", ".mkv": "video/x-matroska",
@@ -4744,9 +4748,14 @@ def watch_stream_file(room_id):
         resp.headers["Content-Range"] = f"bytes {byte_start}-{byte_end}/{file_size}"
         resp.headers["Accept-Ranges"] = "bytes"
         resp.headers["Content-Length"] = str(length)
+        resp.headers["Access-Control-Allow-Origin"] = "*"
         return resp
 
-    return send_file(room.file_path, mimetype=mime)
+    from flask import Response
+    resp = send_file(room.file_path, mimetype=mime)
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 
 @app.route("/api/watch/<room_id>")
