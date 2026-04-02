@@ -1,0 +1,15 @@
+{
+  "1462688504436752489": {
+    "enabled": true,
+    "log_channel": null,
+    "ignored_roles": [],
+    "ignored_channels": [],
+    "strikes": {
+      "1469295545838211227": 1
+    },
+    "last_strike": {
+      "1469295545838211227": "2026-04-01T18:29:31.182029+00:00"
+    },
+    "strike_decay_days": 30
+  }
+}

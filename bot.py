@@ -13,9 +13,8 @@ from utils.database import Database
 # Load environment variables
 load_dotenv()
 
-# Print all env for debugging
 print(f"[STARTUP] DISCORD_TOKEN set: {bool(os.getenv('DISCORD_TOKEN'))}", flush=True)
-print(f"[STARTUP] OWNER_ID: {os.getenv('OWNER_ID', 'NOT SET')}", flush=True)
+print(f"[STARTUP] OWNER_ID set: {bool(os.getenv('OWNER_ID'))}", flush=True)
 
 # Validate required environment variables — warn but don't exit
 REQUIRED_ENV_VARS = ['DISCORD_TOKEN', 'OWNER_ID']
@@ -69,8 +68,15 @@ class GamingBot(commands.Bot):
             logger.critical(f"❌ Failed to initialize database: {e}")
             raise
 
-        GUILD_ID = int(os.getenv('GUILD_ID', '1462688504436752489'))
-        self._home_guild = discord.Object(id=GUILD_ID)
+        guild_id_env = os.getenv('GUILD_ID', '').strip()
+        if guild_id_env:
+            self._home_guild = discord.Object(id=int(guild_id_env))
+        else:
+            self._home_guild = None
+            logger.info(
+                "GUILD_ID not set — guild-only slash sync disabled. "
+                "Set GUILD_ID in .env if you use SLASH_SYNC_MODE=guild or both."
+            )
 
         # Cogs — welcome, leveling, music, watch party, web dashboard
         all_cogs = [
@@ -299,12 +305,25 @@ class GamingBot(commands.Bot):
         logger.info(f'👥 Serving {sum(g.member_count for g in self.guilds)} members')
         
         try:
-            synced = await self.tree.sync()
-            logger.info(f'✅ Synced {len(synced)} slash commands globally')
-            # Also sync guild-specific commands
-            if hasattr(self, '_home_guild'):
-                guild_synced = await self.tree.sync(guild=self._home_guild)
-                logger.info(f'✅ Synced {len(guild_synced)} slash commands to home guild')
+            # SLASH_SYNC_MODE: global (default) | guild | both
+            mode = os.getenv('SLASH_SYNC_MODE', 'global').strip().lower()
+            if mode == 'guild' and getattr(self, '_home_guild', None) is not None:
+                synced = await self.tree.sync(guild=self._home_guild)
+                logger.info(f'✅ Synced {len(synced)} slash commands to guild {self._home_guild.id} only')
+            elif mode == 'both' and getattr(self, '_home_guild', None) is not None:
+                g = await self.tree.sync()
+                logger.info(f'✅ Global sync: {len(g)} slash commands')
+                h = await self.tree.sync(guild=self._home_guild)
+                logger.info(f'✅ Guild sync: {len(h)} slash commands (home guild)')
+            elif mode in ('guild', 'both') and getattr(self, '_home_guild', None) is None:
+                logger.warning(
+                    f'SLASH_SYNC_MODE={mode!r} requires GUILD_ID — falling back to global sync'
+                )
+                synced = await self.tree.sync()
+                logger.info(f'✅ Synced {len(synced)} slash commands globally')
+            else:
+                synced = await self.tree.sync()
+                logger.info(f'✅ Synced {len(synced)} slash commands globally')
         except Exception as e:
             logger.error(f'❌ Failed to sync commands: {e}')
         
@@ -363,6 +382,8 @@ class GamingBot(commands.Bot):
             message = f"🔒 You don't have permission to use this command.\nRequired: {', '.join(error.missing_permissions)}"
         elif isinstance(error, app_commands.BotMissingPermissions):
             message = f"❌ I don't have the required permissions.\nMissing: {', '.join(error.missing_permissions)}"
+        elif isinstance(error, app_commands.NoPrivateMessage):
+            message = "📭 This command only works inside a server."
         elif isinstance(error, app_commands.CheckFailure):
             message = "🚫 You don't have permission to use this command."
         else:
@@ -432,8 +453,7 @@ async def main():
                     logger.critical("❌ DISCORD_TOKEN not found in environment variables")
                     await asyncio.sleep(30)
                     continue
-                # Log token info for debugging (first 10 chars only)
-                logger.info(f"🔑 Token loaded: {token[:10]}... (len={len(token)})")
+                logger.info(f"🔑 DISCORD_TOKEN loaded (length={len(token)})")
                 logger.info(f"🚀 Starting bot (attempt {retry_count + 1})...")
                 await bot.start(token)
         except KeyboardInterrupt:

@@ -5,7 +5,7 @@ Generates signed auth tokens that work on Render (cross-process).
 import discord
 from discord.ext import commands
 from discord import app_commands
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 DASHBOARD_URL = os.getenv('DASHBOARD_URL', 'http://localhost:5000').rstrip('/')
@@ -35,13 +35,20 @@ class WebDashboardCog(commands.Cog):
         return 'member'
 
     @app_commands.command(name="web", description="🌐 Open the WAN Bot dashboard")
+    @app_commands.guild_only()
     async def web_dashboard(self, interaction: discord.Interaction):
-        role = self.get_user_role(interaction.user)
+        member = interaction.member
+        if member is None:
+            await interaction.response.send_message(
+                "Use this command in a server.", ephemeral=True
+            )
+            return
+        role = self.get_user_role(member)
         try:
             token = _make_token(
-                user_id=str(interaction.user.id),
+                user_id=str(member.id),
                 guild_id=str(interaction.guild.id),
-                username=interaction.user.display_name,
+                username=member.display_name,
                 role=role,
             )
             link = f"{DASHBOARD_URL}/auth?token={token}"
@@ -59,7 +66,7 @@ class WebDashboardCog(commands.Cog):
         embed.add_field(name="🔗 Open Dashboard", value=f"[Click here]({link})", inline=False)
         embed.set_footer(text="This link is personal — don't share it",
                          icon_url=interaction.user.display_avatar.url)
-        embed.timestamp = datetime.utcnow()
+        embed.timestamp = datetime.now(timezone.utc)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def verify_token(self, token: str):

@@ -18,6 +18,7 @@ class WatchPartyComplete(commands.Cog):
     
     def __init__(self, bot):
         self.bot = bot
+        self._schedule_due_logged: set = set()
         self.check_scheduled_movies.start()
     
     def cog_unload(self):
@@ -245,14 +246,30 @@ class WatchPartyComplete(commands.Cog):
     
     @tasks.loop(minutes=1)
     async def check_scheduled_movies(self):
-        """Check and auto-start scheduled movies"""
+        """Notify once when a scheduled watch party start time is reached (rooms stay in DB)."""
         try:
-            from watch_party_enhanced import EnhancedWatchPartyDB
-            
-            # This would check scheduled movies and auto-start them
-            # Implementation depends on your scheduling system
-            pass
-        
+            for guild in self.bot.guilds:
+                for room in EnhancedWatchPartyDB.get_scheduled_movies(str(guild.id)):
+                    rid = room.get("id")
+                    start_s = room.get("scheduled_start")
+                    if not rid or not start_s:
+                        continue
+                    try:
+                        start_dt = datetime.fromisoformat(start_s.replace("Z", "+00:00"))
+                    except ValueError:
+                        continue
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) < start_dt:
+                        continue
+                    key = f"{guild.id}:{rid}"
+                    if key in self._schedule_due_logged:
+                        continue
+                    self._schedule_due_logged.add(key)
+                    title = room.get("title", "Unknown")
+                    logger.info(
+                        f"⏰ Scheduled watch party due: guild={guild.id} room={rid} title={title!r}"
+                    )
         except Exception as e:
             logger.error(f"❌ Error checking scheduled movies: {e}")
     

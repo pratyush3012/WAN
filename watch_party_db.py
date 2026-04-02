@@ -12,9 +12,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Database file location
-DB_DIR = Path("./data/watch_party")
-DB_DIR.mkdir(parents=True, exist_ok=True)
+# Database file location — align with DATA_DIR on Render (/data) or ./data locally
+_data_root = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+DB_DIR = Path(_data_root) / "watch_party"
+try:
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+except (PermissionError, OSError):
+    DB_DIR = Path("./data/watch_party")
+    DB_DIR.mkdir(parents=True, exist_ok=True)
 
 SETTINGS_FILE = DB_DIR / "settings.json"
 ROOMS_FILE = DB_DIR / "rooms.json"

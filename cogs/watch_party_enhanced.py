@@ -15,6 +15,16 @@ from watch_party_enhanced import EnhancedWatchPartyDB
 from watch_party_movies_db import MovieDatabase
 
 
+def _pick_announce_channel(guild: discord.Guild):
+    """First matching named channel, else first text channel, else None (avoids IndexError)."""
+    ch = discord.utils.get(guild.text_channels, name="watch-party") or discord.utils.get(
+        guild.text_channels, name="announcements"
+    )
+    if ch:
+        return ch
+    return guild.text_channels[0] if guild.text_channels else None
+
+
 class WatchPartyEnhanced(commands.Cog):
     """Enhanced watch party with Discord integration"""
     
@@ -36,11 +46,7 @@ class WatchPartyEnhanced(commands.Cog):
             if not guild:
                 return
             
-            # Find announcement channel
-            channel = discord.utils.get(guild.text_channels, name="watch-party") or \
-                     discord.utils.get(guild.text_channels, name="announcements") or \
-                     guild.text_channels[0]
-            
+            channel = _pick_announce_channel(guild)
             if not channel:
                 return
             
@@ -75,10 +81,7 @@ class WatchPartyEnhanced(commands.Cog):
             if not guild:
                 return
             
-            channel = discord.utils.get(guild.text_channels, name="watch-party") or \
-                     discord.utils.get(guild.text_channels, name="announcements") or \
-                     guild.text_channels[0]
-            
+            channel = _pick_announce_channel(guild)
             if not channel:
                 return
             
@@ -221,23 +224,7 @@ class WatchPartyEnhanced(commands.Cog):
         )
         embed.add_field(
             name="Commands",
-            value="/upload-movie - Upload a movie\n/schedule-movie - Schedule a movie\n/watch-party - View active parties",
-            inline=False
-        )
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name="movie-upload")
-    async def movie_upload(self, ctx):
-        """Start movie upload process"""
-        embed = discord.Embed(
-            title="🎬 Upload Movie",
-            description="Click the link below to upload a movie",
-            color=discord.Color.from_rgb(0, 212, 255)
-        )
-        embed.add_field(
-            name="Upload",
-            value="[Click here to upload](https://your-domain.com/upload)",
+            value="`/movie-upload` — upload flow (hybrid)\n`/watch-party` — create a party\n`!active-parties` — list active rooms",
             inline=False
         )
         

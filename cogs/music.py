@@ -24,7 +24,12 @@ logger = logging.getLogger("discord_bot.music")
 
 # ── yt-dlp configs ─────────────────────────────────────────────────────────────
 SC_OPTS = {
-    "format": "bestaudio/best", "noplaylist": True,
+    # Prefer AAC/MP3 progressive streams; avoid SoundCloud HLS/opus (ffmpeg / segment issues)
+    "format": (
+        "bestaudio[ext=m4a]/bestaudio[ext=mp3]/"
+        "bestaudio[protocol!=m3u8_native][protocol!=m3u8]/bestaudio/best"
+    ),
+    "noplaylist": True,
     "quiet": True, "no_warnings": True,
     "source_address": "0.0.0.0", "skip_download": True,
     "socket_timeout": 15,
@@ -42,23 +47,42 @@ FFMPEG_OPTS = {
     "options": "-vn",
 }
 
+def _stream_format_score(f: dict) -> int:
+    """Higher = better: prefer AAC/MP3 progressive; penalize HLS/m3u8 and opus."""
+    u = (f.get("url") or "").lower()
+    ext = (f.get("ext") or "").lower()
+    acodec = (f.get("acodec") or "").lower()
+    proto = (f.get("protocol") or "").lower()
+    s = 0
+    if "m3u8" in u or "m3u8" in proto:
+        s -= 200
+    if ".opus" in u or u.endswith(".opus") or ext == "opus" or "opus" in acodec:
+        s -= 150
+    if ext in ("m4a", "aac", "mp3") or acodec in ("mp3", "aac", "mp4a"):
+        s += 80
+    s += min(int(f.get("abr") or 0), 320) // 8
+    return s
+
+
 def _get_stream_url(data: dict) -> str:
     """Extract the best direct audio stream URL from yt-dlp data."""
-    # Try direct url first
     url = data.get("url", "")
     if url and url.startswith("http"):
-        return url
-    # Try formats list — pick best audio-only
+        lu = url.lower()
+        if "m3u8" not in lu and ".opus" not in lu and not lu.endswith(".opus"):
+            return url
     formats = data.get("formats", [])
-    audio_formats = [f for f in formats if f.get("url") and f.get("vcodec") == "none" and f.get("acodec") != "none"]
+    audio_formats = [
+        f for f in formats
+        if f.get("url") and f.get("vcodec") == "none" and f.get("acodec") != "none"
+    ]
     if audio_formats:
-        # Sort by quality
-        audio_formats.sort(key=lambda f: f.get("abr", 0) or 0, reverse=True)
+        audio_formats.sort(key=_stream_format_score, reverse=True)
         return audio_formats[0]["url"]
-    # Fallback: any format with url
-    for f in formats:
-        if f.get("url", "").startswith("http"):
-            return f["url"]
+    scored = [f for f in formats if f.get("url", "").startswith("http")]
+    if scored:
+        scored.sort(key=_stream_format_score, reverse=True)
+        return scored[0]["url"]
     return url
 
 # ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -439,24 +463,26 @@ class MusicControls(discord.ui.View):
         if vc and (vc.is_playing() or vc.is_paused()):
             gp._skip_requested = True
             gp.vc_playing = False  # Update state immediately
-            vc.stop()
-            await interaction.response.send_message("⏭ Skipped.", ephemeral=True, delete_after=3)
-            # Reset skip flag after a short delay
-            await asyncio.sleep(0.5)
-            gp._skip_requested = False
+            try:
+                vc.stop()
+                await interaction.response.send_message("⏭ Skipped.", ephemeral=True, delete_after=3)
+            finally:
+                await asyncio.sleep(0.5)
+                gp._skip_requested = False
         else:
             await interaction.response.defer()
 
     @discord.ui.button(emoji="⏹", style=discord.ButtonStyle.danger, row=0,
                        custom_id="music_stop")
     async def stop_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
         gp = self._gp(); vc = self._vc()
         gp.queue.clear(); gp.loop = False; gp.vc_playing = False
         if vc:
             vc.stop()
             if not gp.mode_247:
                 await vc.disconnect()
-        await interaction.response.send_message("⏹ Stopped.", ephemeral=True, delete_after=3)
+        await interaction.followup.send("⏹ Stopped.", ephemeral=True, delete_after=3)
 
     @discord.ui.button(emoji="🔀", style=discord.ButtonStyle.secondary, row=1,
                        custom_id="music_shuffle")
@@ -818,7 +844,10 @@ class Music(commands.Cog):
                 gp.vc_playing = False
                 gp.current = None
                 # 403 / HLS errors = expired URL — refetch instead of stopping
-                if any(x in err_str for x in ('403', 'forbidden', 'invalid data', 'not in allowed', 'server returned')):
+                if any(x in err_str for x in (
+                    '403', 'forbidden', 'invalid data', 'not in allowed',
+                    'server returned', 'hls', 'm3u8',
+                )):
                     logger.info(f"🔄 Stream URL expired for '{song.title}' — refetching...")
                     asyncio.run_coroutine_threadsafe(
                         self._refetch_and_play(channel, guild, gp, song), self.bot.loop)
@@ -1101,17 +1130,19 @@ class Music(commands.Cog):
         
         if vc and (vc.is_playing() or vc.is_paused()):
             gp._skip_requested = True
-            gp.vc_playing = False  # Update state immediately
-            vc.stop()
-            await interaction.response.send_message("⏭ Skipped.")
-            # Reset skip flag after a short delay
-            await asyncio.sleep(0.5)
-            gp._skip_requested = False
+            gp.vc_playing = False
+            try:
+                vc.stop()
+                await interaction.response.send_message("⏭ Skipped.")
+            finally:
+                await asyncio.sleep(0.5)
+                gp._skip_requested = False
         else:
             await interaction.response.send_message("❌ Nothing is playing.", ephemeral=True)
 
     @app_commands.command(name="stop", description="⏹ Stop music and clear queue")
     async def slash_stop(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         gp = self._get_player(interaction.guild.id)
         gp.queue.clear(); gp.loop = False; gp.vc_playing = False
         vc = interaction.guild.voice_client
@@ -1119,13 +1150,7 @@ class Music(commands.Cog):
             vc.stop()
             if not gp.mode_247:
                 await vc.disconnect()
-        try:
-            if interaction.response.is_done():
-                await interaction.followup.send("⏹ Stopped.")
-            else:
-                await interaction.response.send_message("⏹ Stopped.")
-        except Exception:
-            pass
+        await interaction.followup.send("⏹ Stopped.", ephemeral=True)
 
     @app_commands.command(name="pause", description="⏸ Pause the current song")
     async def slash_pause(self, interaction: discord.Interaction):
@@ -1244,12 +1269,13 @@ class Music(commands.Cog):
         
         if vc and (vc.is_playing() or vc.is_paused()):
             gp._skip_requested = True
-            gp.vc_playing = False  # Update state immediately
-            vc.stop()
-            await ctx.send("⏭ Skipped.")
-            # Reset skip flag after a short delay
-            await asyncio.sleep(0.5)
-            gp._skip_requested = False
+            gp.vc_playing = False
+            try:
+                vc.stop()
+                await ctx.send("⏭ Skipped.")
+            finally:
+                await asyncio.sleep(0.5)
+                gp._skip_requested = False
         else:
             await ctx.send("❌ Nothing is playing.")
 

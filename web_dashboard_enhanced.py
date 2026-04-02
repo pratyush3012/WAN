@@ -47,6 +47,12 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
+_DEFAULT_DASHBOARD_SECRET = 'wan-bot-dashboard-secret-key-change-me-in-env'
+if app.config['SECRET_KEY'] == _DEFAULT_DASHBOARD_SECRET:
+    logger.warning(
+        "DASHBOARD_SECRET_KEY is unset — using insecure default. Set a strong secret in production."
+    )
+
 # ── Cross-process signed auth tokens (works on Render + local) ───────────────
 def _make_auth_token(user_id: str, guild_id: str, username: str, role: str) -> str:
     """Create a signed token that embeds user info — no shared memory needed."""
@@ -4385,6 +4391,7 @@ class WatchRoom:
             "required_role_id": self.required_role_id,
             "volume": self.volume,
             "is_looping": self.is_looping,
+            "file_path": getattr(self, "file_path", None),
         }
 
 
@@ -4438,6 +4445,69 @@ def _check_watch_access(room: WatchRoom) -> bool:
     if not member:
         return False
     return any(str(r.id) == room.required_role_id for r in member.roles)
+
+
+def _resolve_watch_room(room_id: str):
+    """
+    Return WatchRoom from memory, or restore from WatchPartyDB / MovieDatabase into _watch_rooms.
+    Used after process restarts so /watch and /watch/stream keep working with persisted JSON + files on disk.
+    """
+    if room_id in _watch_rooms:
+        return _watch_rooms[room_id]
+    try:
+        from watch_party_db import WatchPartyDB
+        saved = WatchPartyDB.get_room_data(room_id)
+        if saved:
+            room = WatchRoom(
+                room_id=room_id,
+                guild_id=str(saved.get("guild_id", "")),
+                title=saved.get("title", "Movie"),
+                video_url=saved.get("video_url", f"/watch/stream/{room_id}"),
+                host_id=str(saved.get("host_id", "unknown")),
+                host_name=saved.get("host_name", "Host"),
+                required_role_id=saved.get("required_role_id"),
+            )
+            fp = saved.get("file_path")
+            if fp and os.path.isfile(fp):
+                room.file_path = fp
+            else:
+                upload = WatchPartyDB.get_upload_info(room_id)
+                if upload and upload.get("filename"):
+                    import glob as _glob
+                    matches = _glob.glob(os.path.join(UPLOAD_FOLDER, f"{room_id}.*"))
+                    if matches:
+                        room.file_path = matches[0]
+            _watch_rooms[room_id] = room
+            logger.info(f"Restored watch room {room_id} from WatchPartyDB")
+            return room
+    except Exception as _e:
+        logger.warning(f"WatchPartyDB restore failed for {room_id}: {_e}")
+    try:
+        from watch_party_movies_db import MovieDatabase
+        movie = MovieDatabase.get_movie(room_id)
+        if movie:
+            room = WatchRoom(
+                room_id=room_id,
+                guild_id=str(movie.get("guild_id", "")),
+                title=movie.get("title", "Movie"),
+                video_url=f"/watch/stream/{room_id}",
+                host_id=str(movie.get("uploader_id", "unknown")),
+                host_name=movie.get("uploader_name", "Host"),
+                required_role_id=movie.get("required_role_id"),
+            )
+            fp = movie.get("file_path", "")
+            room.file_path = fp if fp and os.path.isfile(fp) else None
+            if not room.file_path:
+                import glob as _glob
+                matches = _glob.glob(os.path.join(UPLOAD_FOLDER, f"{room_id}.*"))
+                if matches:
+                    room.file_path = matches[0]
+            _watch_rooms[room_id] = room
+            logger.info(f"Restored watch room {room_id} from MovieDatabase")
+            return room
+    except Exception as _e:
+        logger.warning(f"MovieDatabase restore failed for {room_id}: {_e}")
+    return None
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────
@@ -4528,6 +4598,11 @@ def watch_create_room(server_id):
         required_role_id=role_id,
     )
     _watch_rooms[room_id] = room
+    try:
+        from watch_party_db import WatchPartyDB
+        WatchPartyDB.save_room_data(room_id, room.to_dict())
+    except Exception as _e:
+        logger.warning(f"Could not persist watch room {room_id}: {_e}")
     logger.info(f"Watch room created: {room_id} by {session.get('username')} in guild {server_id}")
     return jsonify({"room": room.to_dict(), "room_id": room_id})
 
@@ -4631,12 +4706,10 @@ def watch_upload_video(server_id):
 
 @app.route("/watch/stream/<room_id>")
 def watch_stream_file(room_id):
-    """Stream an uploaded video file with range support."""
-    room = _watch_rooms.get(room_id)
+    """Stream an uploaded video file with range support. No login — anyone with the link can stream."""
+    room = _resolve_watch_room(room_id)
     if not room or not room.file_path or not os.path.exists(room.file_path):
         return jsonify({"error": "File not found"}), 404
-    if not _check_watch_access(room):
-        return jsonify({"error": "Access denied"}), 403
 
     ext = os.path.splitext(room.file_path)[1].lower()
     mime_map = {".mp4": "video/mp4", ".webm": "video/webm", ".mkv": "video/x-matroska",
@@ -4681,7 +4754,7 @@ def watch_stream_file(room_id):
 @require_auth
 def watch_get_room(room_id):
     """Get room state."""
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return jsonify({"error": "Room not found"}), 404
     if not _check_watch_access(room):
@@ -4693,7 +4766,7 @@ def watch_get_room(room_id):
 @require_auth
 def watch_close_room(room_id):
     """Close a watch room (host only)."""
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return jsonify({"error": "Room not found"}), 404
     if room.host_id != session.get("user_id"):
@@ -4705,6 +4778,11 @@ def watch_close_room(room_id):
         except Exception:
             pass
     del _watch_rooms[room_id]
+    try:
+        from watch_party_db import WatchPartyDB
+        WatchPartyDB.delete_room_data(room_id)
+    except Exception as _e:
+        logger.warning(f"Could not delete persisted room {room_id}: {_e}")
     socketio.emit("room_closed", {"room_id": room_id}, room=f"watch_{room_id}")
     return jsonify({"success": True})
 
@@ -4747,7 +4825,7 @@ def watch_start_movie(server_id, movie_id):
     movie = MovieDatabase.get_movie(movie_id)
     if not movie:
         # Try in-memory rooms (uploaded this session)
-        room = _watch_rooms.get(movie_id)
+        room = _resolve_watch_room(movie_id)
         if room:
             return jsonify({"room_id": room.room_id, "room": room.to_dict()})
         return jsonify({"error": "Movie not found"}), 404
@@ -4764,6 +4842,11 @@ def watch_start_movie(server_id, movie_id):
     room.file_path = movie.get("file_path", "")
     _watch_rooms[room_id] = room
     MovieDatabase.update_movie_views(movie_id)
+    try:
+        from watch_party_db import WatchPartyDB
+        WatchPartyDB.save_room_data(room_id, room.to_dict())
+    except Exception as _e:
+        logger.warning(f"Could not persist watch room from movie {room_id}: {_e}")
     return jsonify({"room_id": room_id, "room": room.to_dict()})
 
 
@@ -4781,6 +4864,11 @@ def watch_delete_movie(server_id, movie_id):
             pass
     # Remove from DB
     MovieDatabase.delete_movie(movie_id)
+    try:
+        from watch_party_db import WatchPartyDB
+        WatchPartyDB.delete_room_data(movie_id)
+    except Exception:
+        pass
     return jsonify({"success": True})
 
 
@@ -4788,7 +4876,7 @@ def watch_delete_movie(server_id, movie_id):
 @app.route("/api/watch/me/<room_id>")
 def watch_get_me(room_id):
     """Return current viewer's Discord identity for a watch room."""
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     user_id = session.get("user_id", "")
     username = session.get("username", "Viewer")
     avatar = session.get("avatar_url", "")
@@ -4999,53 +5087,8 @@ def watch_upload_page():
 
 @app.route("/watch/<room_id>")
 def watch_party_page(room_id):
-    """Serve the watch party page — no login required, room access check handles roles."""
-    room = _watch_rooms.get(room_id)
-    # Restore from DB if not in memory (restart recovery)
-    if not room:
-        try:
-            from watch_party_db import WatchPartyDB
-            saved = WatchPartyDB.get_room_data(room_id)
-            if saved:
-                room = WatchRoom(
-                    room_id=room_id,
-                    guild_id=str(saved.get("guild_id", "")),
-                    title=saved.get("title", "Movie"),
-                    video_url=saved.get("video_url", f"/watch/stream/{room_id}"),
-                    host_id=saved.get("host_id", "unknown"),
-                    host_name=saved.get("host_name", "Host"),
-                    required_role_id=saved.get("required_role_id"),
-                )
-                # Restore file path if it was an upload
-                upload = WatchPartyDB.get_upload_info(room_id)
-                if upload and upload.get("filename"):
-                    from watch_party_config import UPLOAD_FOLDER
-                    import glob as _glob
-                    matches = _glob.glob(os.path.join(UPLOAD_FOLDER, f"{room_id}.*"))
-                    if matches:
-                        room.file_path = matches[0]
-                _watch_rooms[room_id] = room
-        except Exception as _e:
-            logger.warning(f"Could not restore room {room_id} from WatchPartyDB: {_e}")
-    # Also try MovieDatabase as fallback
-    if not room:
-        try:
-            from watch_party_movies_db import MovieDatabase
-            movie = MovieDatabase.get_movie(room_id)
-            if movie:
-                room = WatchRoom(
-                    room_id=room_id,
-                    guild_id=str(movie.get("guild_id", "")),
-                    title=movie.get("title", "Movie"),
-                    video_url=f"/watch/stream/{room_id}",
-                    host_id=movie.get("uploader_id", "unknown"),
-                    host_name=movie.get("uploader_name", "Host"),
-                )
-                room.file_path = movie.get("file_path", "")
-                _watch_rooms[room_id] = room
-                MovieDatabase.update_movie_views(room_id)
-        except Exception as _e:
-            logger.warning(f"Could not restore room {room_id} from MovieDatabase: {_e}")
+    """Serve the watch party page — public rooms need no login; role-gated rooms require auth."""
+    room = _resolve_watch_room(room_id)
     if not room:
         # Show a simple not-found page
         return f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Watch Party Not Found</title>
@@ -5054,10 +5097,9 @@ def watch_party_page(room_id):
         <body><div style="font-size:48px">🎬</div><h2>Watch Party Not Found</h2>
         <p>This watch party has ended or the link is no longer valid.</p>
         <a href="/">← Back to Dashboard</a></body></html>""", 404
-    # Role-restricted rooms still require login
     if room.required_role_id and 'user_id' not in session:
         return redirect(url_for('login', next=request.url))
-    if not _check_watch_access(room):
+    if room.required_role_id and not _check_watch_access(room):
         return render_template("login.html", error="You need the required server role to join this watch party.")
     return render_template("watch_party.html",
                            room=room.to_dict(),
@@ -5074,7 +5116,7 @@ def on_watch_join(data):
     user_id  = session.get("user_id", data.get("user_id", secrets.token_hex(4)))
     avatar   = session.get("avatar_url", data.get("avatar", ""))
 
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         emit("error", {"message": "Room not found"})
         return
@@ -5147,7 +5189,7 @@ def on_watch_join(data):
 @socketio.on("watch_leave")
 def on_watch_leave(data):
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if room and request.sid in room.viewers:
         name = room.viewers.pop(request.sid, {}).get("name", "Someone")
         leave_room(f"watch_{room_id}")
@@ -5160,7 +5202,7 @@ def on_watch_leave(data):
 def on_watch_play(data):
     """Host/mod plays the video — sync all viewers."""
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     viewer = room.viewers.get(request.sid, {})
@@ -5185,7 +5227,7 @@ def on_watch_play(data):
 @socketio.on("watch_pause")
 def on_watch_pause(data):
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     viewer = room.viewers.get(request.sid, {})
@@ -5209,7 +5251,7 @@ def on_watch_pause(data):
 @socketio.on("watch_seek")
 def on_watch_seek(data):
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     viewer = room.viewers.get(request.sid, {})
@@ -5232,7 +5274,7 @@ def on_watch_seek(data):
 @socketio.on("watch_chat")
 def on_watch_chat(data):
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     
@@ -5260,7 +5302,7 @@ def on_watch_chat(data):
 def on_watch_request_sync(data):
     """Viewer requests current state (e.g. after reconnect)."""
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     emit("watch_sync", {
@@ -5274,7 +5316,7 @@ def on_watch_request_sync(data):
 def on_watch_mood_react(data):
     """Mood reaction that affects the screen for everyone."""
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     emoji = data.get("emoji", "")
@@ -5287,7 +5329,7 @@ def on_watch_mood_react(data):
 def on_watch_bookmark(data):
     """Drop a timestamp bookmark visible to everyone."""
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     if not hasattr(room, "bookmarks"):
@@ -5306,7 +5348,7 @@ def on_watch_bookmark(data):
 def on_prediction_create(data):
     """Mod creates a prediction poll."""
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     viewer = room.viewers.get(request.sid, {})
@@ -5331,7 +5373,7 @@ def on_prediction_create(data):
 def on_prediction_vote(data):
     """User votes on a prediction."""
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room or not hasattr(room, "prediction") or not room.prediction:
         return
     if room.prediction.get("resolved"):
@@ -5353,7 +5395,7 @@ def on_prediction_vote(data):
 def on_prediction_resolve(data):
     """Mod resolves a prediction with the winning option."""
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room or not hasattr(room, "prediction") or not room.prediction:
         return
     viewer = room.viewers.get(request.sid, {})
@@ -5375,7 +5417,7 @@ def on_prediction_resolve(data):
 def on_watch_rating(data):
     """User submits a star rating for the movie."""
     room_id = data.get("room_id")
-    room = _watch_rooms.get(room_id)
+    room = _resolve_watch_room(room_id)
     if not room:
         return
     if not hasattr(room, "ratings"):

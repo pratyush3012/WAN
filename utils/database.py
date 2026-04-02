@@ -2,8 +2,13 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, BigInteger, String, Integer, Boolean, DateTime, JSON, Index, UniqueConstraint
 import datetime
+from datetime import timezone
 import os
 import logging
+
+
+def _utcnow():
+    return datetime.datetime.now(timezone.utc)
 
 logger = logging.getLogger('discord_bot.database')
 
@@ -37,7 +42,7 @@ class UserXP(Base):
     xp = Column(Integer, default=0)
     level = Column(Integer, default=1)
     voice_time = Column(Integer, default=0)
-    last_xp_time = Column(DateTime, default=datetime.datetime.utcnow)
+    last_xp_time = Column(DateTime, default=_utcnow)
     
     __table_args__ = (
         UniqueConstraint('guild_id', 'user_id', name='uix_guild_user'),
@@ -54,7 +59,7 @@ class ModAction(Base):
     moderator_id = Column(BigInteger, nullable=False)
     action_type = Column(String, nullable=False)
     reason = Column(String, nullable=True)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=_utcnow)
     
     __table_args__ = (
         Index('idx_guild_timestamp', 'guild_id', 'timestamp'),
@@ -113,19 +118,30 @@ class Database:
             'pool_pre_ping': True,
         }
         
-        # SQLite doesn't support pool_size
-        if 'sqlite' in db_url:
+        try:
+            if 'sqlite' in db_url:
+                self.engine = create_async_engine(
+                    db_url,
+                    echo=False,
+                    connect_args={'check_same_thread': False}
+                )
+            else:
+                self.engine = create_async_engine(db_url, echo=False, **pool_config)
+        except (ImportError, ModuleNotFoundError, OSError) as e:
+            logger.warning(
+                "PostgreSQL async engine init failed (%s) — falling back to SQLite",
+                e,
+            )
+            db_url = 'sqlite+aiosqlite:///bot.db'
             self.engine = create_async_engine(
-                db_url, 
+                db_url,
                 echo=False,
                 connect_args={'check_same_thread': False}
             )
-        else:
-            self.engine = create_async_engine(db_url, echo=False, **pool_config)
-        
+
         self.async_session = async_sessionmaker(
-            self.engine, 
-            class_=AsyncSession, 
+            self.engine,
+            class_=AsyncSession,
             expire_on_commit=False
         )
         self._initialized = True
