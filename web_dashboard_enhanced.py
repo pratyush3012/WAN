@@ -4476,6 +4476,9 @@ def _resolve_watch_room(room_id: str):
                     matches = _glob.glob(os.path.join(UPLOAD_FOLDER, f"{room_id}.*"))
                     if matches:
                         room.file_path = matches[0]
+            # Restore external_url for proxy streaming
+            if saved.get("external_url"):
+                room.external_url = saved["external_url"]
             _watch_rooms[room_id] = room
             logger.info(f"Restored watch room {room_id} from WatchPartyDB")
             return room
@@ -4789,6 +4792,9 @@ def watch_proxy_stream(room_id):
             ext_url = saved.get("external_url") if saved else None
         except Exception:
             pass
+    # Fallback: if video_url itself is an external URL, proxy that
+    if not ext_url and room.video_url and room.video_url.startswith("http"):
+        ext_url = room.video_url
     if not ext_url:
         return "No external URL configured for this room", 404
 
