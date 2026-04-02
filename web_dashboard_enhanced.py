@@ -4587,19 +4587,31 @@ def watch_create_room(server_id):
         return jsonify({"error": "video_url is required"}), 400
 
     room_id = secrets.token_urlsafe(8)
+
+    # For external URLs (not local streams), use our proxy so CORS is never an issue
+    if video_url.startswith("http") and "/watch/stream/" not in video_url:
+        proxy_url = f"/watch/proxy/{room_id}"
+        stored_url = video_url  # keep original for proxy to fetch
+    else:
+        proxy_url = video_url
+        stored_url = video_url
+
     room = WatchRoom(
         room_id=room_id,
         guild_id=server_id,
         title=title,
-        video_url=video_url,
+        video_url=proxy_url,
         host_id=session.get("user_id", "unknown"),
         host_name=session.get("username", "Host"),
         required_role_id=role_id,
     )
+    room.external_url = stored_url  # store original URL for proxy
     _watch_rooms[room_id] = room
     try:
         from watch_party_db import WatchPartyDB
-        WatchPartyDB.save_room_data(room_id, room.to_dict())
+        d = room.to_dict()
+        d["external_url"] = stored_url
+        WatchPartyDB.save_room_data(room_id, d)
     except Exception as _e:
         logger.warning(f"Could not persist watch room {room_id}: {_e}")
     logger.info(f"Watch room created: {room_id} by {session.get('username')} in guild {server_id}")
@@ -4755,6 +4767,65 @@ def watch_stream_file(room_id):
     resp = send_file(room.file_path, mimetype=mime)
     resp.headers["Accept-Ranges"] = "bytes"
     resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
+
+
+@app.route("/watch/proxy/<room_id>")
+def watch_proxy_stream(room_id):
+    """Proxy an external video URL through Render so CORS is never an issue.
+    Supports HTTP Range requests for seeking."""
+    import urllib.request as _ur
+
+    room = _resolve_watch_room(room_id)
+    if not room:
+        return "Room not found", 404
+
+    ext_url = getattr(room, "external_url", None)
+    if not ext_url:
+        # Try to get from DB
+        try:
+            from watch_party_db import WatchPartyDB
+            saved = WatchPartyDB.get_room_data(room_id)
+            ext_url = saved.get("external_url") if saved else None
+        except Exception:
+            pass
+    if not ext_url:
+        return "No external URL configured for this room", 404
+
+    # Follow archive.org redirects to get the real CDN URL
+    try:
+        req = _ur.Request(ext_url, headers={
+            "User-Agent": "Mozilla/5.0",
+            "Range": request.headers.get("Range", "bytes=0-"),
+        })
+        upstream = _ur.urlopen(req, timeout=10)
+    except Exception as e:
+        logger.error(f"Proxy fetch error for {ext_url}: {e}")
+        return f"Could not fetch video: {e}", 502
+
+    status = upstream.status
+    content_type = upstream.headers.get("Content-Type", "video/mp4")
+    content_range = upstream.headers.get("Content-Range", "")
+    content_length = upstream.headers.get("Content-Length", "")
+
+    def generate():
+        try:
+            while True:
+                chunk = upstream.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            upstream.close()
+
+    from flask import Response
+    resp = Response(generate(), status=status, mimetype=content_type, direct_passthrough=True)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Accept-Ranges"] = "bytes"
+    if content_range:
+        resp.headers["Content-Range"] = content_range
+    if content_length:
+        resp.headers["Content-Length"] = content_length
     return resp
 
 
