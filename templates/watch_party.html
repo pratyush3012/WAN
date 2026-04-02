@@ -249,9 +249,19 @@ function switchTab(name, el) {
   document.getElementById("pane-" + name).classList.add("active");
 }
 
+function fixVideoUrl(url) {
+  if (!url) return url;
+  // Google Drive: convert share URL to direct stream URL
+  var gdMatch = url.match(/drive\.google\.com\/file\/d\/([^\/]+)/);
+  if (gdMatch) return 'https://drive.google.com/uc?export=download&id=' + gdMatch[1];
+  // Dropbox: ensure direct download
+  if (url.includes('dropbox.com') && url.includes('dl=0')) return url.replace('dl=0', 'dl=1');
+  return url;
+}
+
 function initVideo() {
   if (VIDEO_URL && !vid.src) {
-    vid.src = VIDEO_URL;
+    vid.src = fixVideoUrl(VIDEO_URL);
     vid.load();
   }
 }
@@ -472,7 +482,7 @@ socket.on("watch_state", function(d) {
   // Update video source if server provides a different URL
   if (d.video_url && d.video_url !== VIDEO_URL) {
     VIDEO_URL = d.video_url;
-    vid.src = VIDEO_URL;
+    vid.src = fixVideoUrl(VIDEO_URL);
     vid.load();
   } else {
     initVideo();

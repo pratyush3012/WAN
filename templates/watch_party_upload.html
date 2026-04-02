@@ -118,10 +118,14 @@
 
         <!-- URL Mode -->
         <div id="urlMode" style="display:none">
-          <input type="url" class="form-input" id="videoUrl" placeholder="YouTube, direct MP4, or any video URL...">
+          <input type="url" class="form-input" id="videoUrl" placeholder="Paste a direct video URL (Google Drive, Dropbox, direct .mp4 link)...">
           <div class="info-box">
             <i class="fas fa-info-circle"></i>
-            <span>Paste a YouTube link, direct MP4/WebM URL, or any supported video link — WAN Bot will resolve it automatically</span>
+            <span><strong>Use a direct video URL so everyone can watch.</strong><br>
+            • Google Drive: Share → "Anyone with link" → copy link<br>
+            • Dropbox: Share → copy direct link (change ?dl=0 to ?dl=1)<br>
+            • Any direct .mp4/.webm/.mkv URL works<br>
+            • YouTube links do NOT work on the server</span>
           </div>
         </div>
 
@@ -432,41 +436,14 @@ async function uploadFile(title) {
 async function uploadURL(title, url) {
   try {
     const serverId = new URLSearchParams(window.location.search).get('server_id') || '0';
-
-    // Show resolving state for YouTube/external links
-    const isYouTube = url.includes('youtube.com') || url.includes('youtu.be') || url.includes('youtu');
-    const isDirect  = /\.(mp4|webm|mkv|m3u8)$/i.test(url);
-    let finalUrl = url;
-    let finalTitle = title;
-
-    if (!isDirect) {
-      showValidation('🔍 Resolving video URL...', 'info');
-      try {
-        const res = await fetch('/api/watch/resolve-url', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ url })
-        });
-        const resolved = await res.json();
-        if (resolved.stream_url) {
-          finalUrl = resolved.stream_url;
-          if (!title && resolved.title) finalTitle = resolved.title;
-        } else {
-          showValidation('❌ Could not resolve URL: ' + (resolved.error || 'Unknown error'), 'error');
-          return;
-        }
-      } catch (e) {
-        showValidation('❌ Failed to resolve URL', 'error');
-        return;
-      }
-    }
+    const finalTitle = title || url.split('/').pop().split('?')[0] || 'Watch Party';
 
     const response = await fetch(`/api/watch/create/${serverId}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
-        title: finalTitle || url,
-        video_url: finalUrl,
+        title: finalTitle,
+        video_url: url,
         required_role_id: document.getElementById('roleRestriction').value || null
       })
     });
@@ -475,7 +452,8 @@ async function uploadURL(title, url) {
       const data = await response.json();
       showSuccess(data.room_id);
     } else {
-      showValidation('❌ Failed to create watch party', 'error');
+      const err = await response.json().catch(() => ({}));
+      showValidation('❌ ' + (err.error || 'Failed to create watch party'), 'error');
     }
   } catch (error) {
     showValidation('❌ ' + error.message, 'error');
@@ -506,8 +484,8 @@ function showSuccess(roomId) {
   document.getElementById('watchLink').href = `/watch/${roomId}`;
 }
 
-// Initialize
-switchMode('file');
+// Initialize — default to URL mode (file uploads only work on Render disk)
+switchMode('url');
 
 // Load movies on page load
 document.addEventListener('DOMContentLoaded', loadMovies);
