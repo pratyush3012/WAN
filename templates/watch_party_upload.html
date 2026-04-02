@@ -118,15 +118,25 @@
 
         <!-- URL Mode -->
         <div id="urlMode" style="display:none">
-          <input type="url" class="form-input" id="videoUrl" placeholder="Paste a direct video URL (Google Drive, Dropbox, direct .mp4 link)...">
-          <div class="info-box">
+          <input type="url" class="form-input" id="videoUrl" placeholder="Paste a direct .mp4 video URL..." oninput="clearTestResult()">
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <button type="button" class="btn btn-secondary" style="flex:0;padding:8px 16px;font-size:12px" onclick="testUrl()">
+              <i class="fas fa-play-circle"></i> Test URL
+            </button>
+            <span id="testResult" style="font-size:12px;align-self:center;color:var(--muted)"></span>
+          </div>
+          <div class="info-box" style="margin-top:12px">
             <i class="fas fa-info-circle"></i>
-            <span><strong>✅ Recommended: Google Drive</strong><br>
-            1. Upload movie to Google Drive<br>
-            2. Right-click → Share → <strong>"Anyone with the link"</strong><br>
-            3. Copy link and paste above<br><br>
-            Also works: Dropbox links, any direct .mp4/.webm URL<br>
-            ❌ YouTube links do not work</span>
+            <div>
+              <strong>✅ What works (direct .mp4 URL with CORS):</strong><br>
+              • <strong>Archive.org</strong> — upload free at archive.org, get direct URL<br>
+              • <strong>Bunny.net CDN</strong> — ~$1/mo, best for movies<br>
+              • <strong>Backblaze B2</strong> — free 10GB, enable public bucket<br>
+              • Any direct <code>.mp4</code> / <code>.webm</code> URL that allows embedding<br><br>
+              <strong>❌ Does NOT work:</strong><br>
+              • YouTube, Google Drive, Dropbox (block embedding/CORS)<br>
+              • Local files from your computer
+            </div>
           </div>
         </div>
 
@@ -244,6 +254,32 @@ const ALLOWED_FORMATS = ['.mp4', '.webm', '.mkv', '.mov', '.avi', '.m4v'];
 
 let selectedFile = null;
 let uploadMode = 'file';
+
+function clearTestResult() {
+  document.getElementById('testResult').textContent = '';
+}
+
+async function testUrl() {
+  const url = document.getElementById('videoUrl').value.trim();
+  if (!url) { showValidation('Enter a URL first', 'error'); return; }
+  const res = document.getElementById('testResult');
+  res.textContent = '⏳ Testing...';
+  res.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(url, {method:'HEAD', mode:'cors'});
+    const ct = r.headers.get('content-type') || '';
+    if (ct.startsWith('video/') || /\.(mp4|webm|mkv|m3u8)/i.test(url)) {
+      res.textContent = '✅ URL works!';
+      res.style.color = 'var(--success)';
+    } else {
+      res.textContent = '⚠️ URL reachable but may not be a video (' + ct + ')';
+      res.style.color = 'var(--warn)';
+    }
+  } catch(e) {
+    res.textContent = '❌ CORS blocked or unreachable — try a different host';
+    res.style.color = 'var(--danger)';
+  }
+}
 
 function switchMode(mode) {
   uploadMode = mode;
