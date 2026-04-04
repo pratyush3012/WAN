@@ -452,6 +452,7 @@ class GuildPlayer:
         self.dash_message_id: int = None   # message ID to edit
         self._played_songs: set = set()    # Track played songs for autoplay
         self._skip_requested: bool = False # Flag to prevent double-skip
+        self._autoplay_in_progress: bool = False  # Flag to prevent autoplay race
 
 
 # ── Persistent Controls View ────────────────────────────────────────────────────
@@ -823,10 +824,11 @@ class Music(commands.Cog):
 
         # ── AUTOPLAY: Get recommendations when queue is empty ────────────────────
         # Only autoplay after a song SUCCESSFULLY finished (gp.current exists, vc_playing just turned False)
-        if gp.autoplay and gp.current:
+        if gp.autoplay and gp.current and not gp._autoplay_in_progress:
             last = gp.current
             gp.current = None
             gp.vc_playing = False
+            gp._autoplay_in_progress = True
             asyncio.run_coroutine_threadsafe(
                 self._autoplay(channel, guild, gp, last), self.bot.loop)
             return
@@ -893,7 +895,7 @@ class Music(commands.Cog):
                 gp.vc_playing = False
                 # Only call _play_next if vc is still connected
                 vc_check = guild.voice_client
-                if vc_check and (vc_check.is_connected() or True):
+                if vc_check and vc_check.is_connected():
                     self._play_next(channel, guild, gp)
 
         vc.play(source, after=_after)
@@ -965,13 +967,17 @@ class Music(commands.Cog):
     async def _loop_song(self, channel, guild, gp: GuildPlayer, last: Song):
         """Re-fetch and replay the same song (stream URLs expire)."""
         loop = asyncio.get_running_loop()
+        # Always re-fetch — never reuse expired stream URL
         data = await loop.run_in_executor(None, lambda: _sc_search(last.title) or _yt_search(last.title))
         if data:
             song = Song(data, last.requester)
-            self._start_song(channel, guild, gp, song)
-        else:
-            # Fallback: try original stream URL
-            self._start_song(channel, guild, gp, last)
+            if song.stream_url:
+                self._start_song(channel, guild, gp, song)
+                return
+        # If re-fetch failed, skip to next song instead of playing silence
+        logger.warning(f"⚠️ Loop re-fetch failed for '{last.title}' — skipping")
+        gp.loop = False  # Disable loop to avoid infinite failure loop
+        self._play_next(channel, guild, gp)
 
     async def _autoplay(self, channel, guild, gp: GuildPlayer, last: Song):
         """Fetch language-aware recommendations and queue them (no repeats)."""
@@ -979,6 +985,9 @@ class Music(commands.Cog):
         
         # Add current song to played songs BEFORE fetching recommendations
         gp._played_songs.add(last.title.lower())
+        # Prevent memory leak — keep only last 200 played songs
+        if len(gp._played_songs) > 200:
+            gp._played_songs = set(list(gp._played_songs)[-100:])
         
         # Try to get recommendations that haven't been played
         max_attempts = 3
@@ -1005,6 +1014,7 @@ class Music(commands.Cog):
                 break
             await asyncio.sleep(0.5)
 
+        gp._autoplay_in_progress = False
         if not songs_data:
             if not gp.mode_247:
                 await channel.send("✅ Queue finished — no new recommendations found.")
@@ -1017,7 +1027,10 @@ class Music(commands.Cog):
         for s in songs:
             gp.queue.append(s)
 
-        self._play_next(channel, guild, gp)
+        # Only call _play_next if nothing is currently playing (avoid race condition)
+        vc = guild.voice_client
+        if vc and not vc.is_playing() and not vc.is_paused():
+            self._play_next(channel, guild, gp)
 
         lang = "🎵 Hindi/Desi" if _is_hindi(last.title) else "🎵 Similar"
         titles = "\n".join(f"• {s.title}" for s in songs)

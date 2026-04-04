@@ -992,6 +992,8 @@ select.form-control option{background:var(--surface2);}
                     <button onclick="mqAddToPlaylist()" title="Add to Playlist" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s"><i class="fas fa-plus-circle"></i></button>
                     <button onclick="toggleSleepTimer()" title="Sleep Timer" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s"><i class="fas fa-moon"></i></button>
                     <button onclick="musicControl('stop')" style="background:none;border:none;color:#ff4757;cursor:pointer;font-size:14px;padding:6px;border-radius:50%;transition:.2s;margin-left:auto"><i class="fas fa-stop"></i></button>
+                  <button id="mq-autoplay-btn" onclick="musicControl('autoplay')" title="Toggle Autoplay" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:11px;font-weight:700;padding:5px 8px;border-radius:12px;border:1px solid rgba(255,255,255,.15);transition:.2s">✨ Auto</button>
+                  <button id="mq-247-btn" onclick="musicControl('247')" title="Toggle 24/7 Mode" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:11px;font-weight:700;padding:5px 8px;border-radius:12px;border:1px solid rgba(255,255,255,.15);transition:.2s">🌙 24/7</button>
                     <div style="display:flex;align-items:center;gap:5px">
                       <i class="fas fa-volume-down" style="font-size:12px;color:#717171"></i>
                       <input type="range" id="mq-vol" min="1" max="100" value="50" style="-webkit-appearance:none;width:70px;height:3px;border-radius:2px;background:rgba(255,255,255,.2);outline:none;cursor:pointer" oninput="document.getElementById('volumeVal').textContent=this.value" onchange="musicControl('volume',this.value)">
@@ -3639,7 +3641,13 @@ function updateMusicUI(d){
 
   // Loop button
   const loopBtn=document.getElementById('mq-loop-btn');
-  if(loopBtn)loopBtn.style.color=d.loop?'#fff':'#aaa';
+  if(loopBtn)loopBtn.style.color=d.loop?'#1DB954':'#aaa';
+  // Autoplay button
+  const apBtn=document.getElementById('mq-autoplay-btn');
+  if(apBtn){apBtn.style.color=d.autoplay?'#1DB954':'#aaa';apBtn.style.borderColor=d.autoplay?'#1DB954':'rgba(255,255,255,.15)';}
+  // 24/7 button
+  const btn247=document.getElementById('mq-247-btn');
+  if(btn247){btn247.style.color=d.mode_247?'#7c3aed':'#aaa';btn247.style.borderColor=d.mode_247?'#7c3aed':'rgba(255,255,255,.15)';}
 
   // Play/pause icon
   const playIcon=document.getElementById('mq-play-icon');

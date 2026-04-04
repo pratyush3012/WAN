@@ -1801,6 +1801,12 @@ def music_control(server_id):
             gp.queue = deque(q)
         elif action == 'loop':
             gp.loop = not gp.loop
+        elif action == 'autoplay':
+            gp.autoplay = not gp.autoplay
+        elif action == '247':
+            gp.mode_247 = not gp.mode_247
+            if gp.mode_247 and vc:
+                gp.vc_channel_id = vc.channel.id
         elif action == 'volume':
             vol = int(data.get('value', 50))
             vol = max(1, min(100, vol))
