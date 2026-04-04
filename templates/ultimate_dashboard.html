@@ -1182,7 +1182,7 @@ select.form-control option{background:var(--surface2);}
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">🎭 Active Watch Rooms</h3>
-        <button class="btn btn-ghost btn-sm" onclick="loadWatchRooms()"><i class="fas fa-sync"></i></button>
+        <button class="btn btn-ghost btn-sm" onclick=""><i class="fas fa-sync"></i></button>
       </div>
       <div id="wpRoomsList" style="padding:8px 0">
         <p style="color:var(--text-muted);font-size:13px;padding:8px">No active watch parties.</p>
@@ -2067,7 +2067,7 @@ function show(name,el){
   if(name==='audit'&&currentServer)loadAuditLog();
   if(name==='music'&&currentServer){loadMusicStatus();mqLoadSuggestions();_startMqRefresh();}
   if(name!=='music')_stopMqRefresh();
-  if(name==='watchparty'&&currentServer){loadWatchRooms();loadCinemaSchedule();initCinemaDate();}
+  
   if(name==='announce'&&currentServer)loadTextChannels();
   if(name==='welcome'&&currentServer)populateWelcomeChannels();
   if(name==='verification'&&currentServer)populateVerifySelects();
@@ -2196,14 +2196,7 @@ function populateChannelDropdowns(channels){
 }
 
 function populateAllRoleDropdowns(){
-  // Watch Party role restriction
-  const wpRole=document.getElementById('wpRole');
-  if(wpRole){
-    const cur=wpRole.value;
-    wpRole.innerHTML='<option value="">Everyone can join</option>'+
-      allRoles.filter(r=>r.name!=='@everyone').map(r=>`<option value="${r.id}">${escHtml(r.name)}</option>`).join('');
-    if(cur)wpRole.value=cur;
-  }
+  
   // Welcome auto-role
   const wAutoRole=document.getElementById('wAutoRole');
   if(wAutoRole){
@@ -3750,7 +3743,7 @@ const SLOT_LABELS = ['12AM–3AM','3AM–6AM','6AM–9AM','9AM–12PM','12PM–3
 const SLOT_ICONS  = ['🌙','🌙','🌅','☀️','☀️','🌤️','🌆','🌙'];
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-function initCinemaDate(){
+function {
   const today = new Date();
   const d = document.getElementById('wpDate');
   // Use local date (not UTC) to avoid timezone off-by-one
@@ -3760,7 +3753,7 @@ function initCinemaDate(){
   if(d) d.value = `${yyyy}-${mm}-${dd}`;
 }
 
-function loadCinemaSchedule(){
+function {
   if(!currentServer) return;
   const key = `cinema_schedule_${currentServer}`;
   try{ cinemaSchedule = JSON.parse(localStorage.getItem(key)||'[]'); }
@@ -4113,11 +4106,11 @@ async function createWatchParty(){
     }
     notify('Watch party created! Opening...','success');
     setTimeout(()=>window.open(`/watch/${roomId}`,'_blank'),500);
-    loadWatchRooms();
+    
   }catch(e){notify('Error: '+e.message,'danger');}
 }
 
-async function loadWatchRooms(){
+async function {
   if(!currentServer)return;
   try{
     const res=await apiFetch(`/api/server/${currentServer}/watch/rooms`);

@@ -16,9 +16,9 @@
       },
       "prefixes": [],
       "slash_commands": [],
-      "message_count": 156,
+      "message_count": 160,
       "first_seen": "2026-04-01T06:21:27.840193+00:00",
-      "last_seen": "2026-04-01T18:22:38.926936+00:00"
+      "last_seen": "2026-04-02T08:22:36.915191+00:00"
     },
     "394019914157129728": {
       "id": "394019914157129728",
@@ -57,6 +57,38 @@
       "message_count": 15,
       "first_seen": "2026-04-01T09:21:49.221916+00:00",
       "last_seen": "2026-04-01T18:29:32.869702+00:00"
+    },
+    "270904126974590976": {
+      "id": "270904126974590976",
+      "name": "Dank Memer",
+      "display_name": "BALENCIAGA",
+      "avatar": "https://cdn.discordapp.com/avatars/270904126974590976/cdf4f2cfaf99b4fc6bdbf050f917f6b2.png?size=1024",
+      "commands": {
+        "lottery buy": {
+          "count": 1,
+          "last_used": "2026-04-02T04:08:12.910122+00:00",
+          "example_trigger": "/lottery buy",
+          "example_response": "",
+          "is_slash": true
+        }
+      },
+      "prefixes": [],
+      "slash_commands": [],
+      "message_count": 7,
+      "first_seen": "2026-04-02T04:07:23.283433+00:00",
+      "last_seen": "2026-04-02T04:25:39.721006+00:00"
+    },
+    "235148962103951360": {
+      "id": "235148962103951360",
+      "name": "Carl-bot",
+      "display_name": "GUCCI",
+      "avatar": "https://cdn.discordapp.com/avatars/235148962103951360/ed3dac3b6e7a851df781632a4295fcb9.png?size=1024",
+      "commands": {},
+      "prefixes": [],
+      "slash_commands": [],
+      "message_count": 2,
+      "first_seen": "2026-04-02T04:09:01.693279+00:00",
+      "last_seen": "2026-04-02T04:09:13.242352+00:00"
     }
   },
   "1485648537558585436": {
@@ -67,8 +99,8 @@
       "avatar": "https://cdn.discordapp.com/avatars/944016826751389717/bed9c32e0163818549e7abcd3f2221f2.png?size=1024",
       "commands": {
         "play": {
-          "count": 21,
-          "last_used": "2026-04-01T16:55:41.336852+00:00",
+          "count": 23,
+          "last_used": "2026-04-02T04:08:07.590378+00:00",
           "example_trigger": "/play",
           "example_response": "",
           "is_slash": true
@@ -83,9 +115,9 @@
       },
       "prefixes": [],
       "slash_commands": [],
-      "message_count": 48,
+      "message_count": 53,
       "first_seen": "2026-04-01T15:04:17.090036+00:00",
-      "last_seen": "2026-04-01T16:59:19.409063+00:00"
+      "last_seen": "2026-04-02T04:27:49.411094+00:00"
     }
   }
 }

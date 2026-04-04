@@ -1,0 +1,395 @@
+{
+  "1488733315921088632": {
+    "users": {
+      "1023249972428292168": {
+        "xp": 2735,
+        "messages": 13,
+        "voice_minutes": 237,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-02"
+      },
+      "1469295545838211227": {
+        "xp": 801,
+        "messages": 8,
+        "voice_minutes": 58,
+        "reactions": 2,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1465922723602628718": {
+        "xp": 251,
+        "messages": 3,
+        "voice_minutes": 9,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-02"
+      }
+    },
+    "config": {
+      "level_roles": {},
+      "announce_channel": null,
+      "announce": true,
+      "xp_multiplier": 1.0,
+      "no_xp_channels": [],
+      "no_xp_roles": []
+    }
+  },
+  "1414641264657432669": {
+    "users": {
+      "1233713452220944445": {
+        "xp": 8045,
+        "messages": 1,
+        "voice_minutes": 798,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "934754071989063681": {
+        "xp": 3910,
+        "messages": 16,
+        "voice_minutes": 344,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "1395761632180703272": {
+        "xp": 2710,
+        "messages": 6,
+        "voice_minutes": 254,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1423716826637930506": {
+        "xp": 443,
+        "messages": 4,
+        "voice_minutes": 31,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1038830092161384478": {
+        "xp": 689,
+        "messages": 12,
+        "voice_minutes": 40,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1470850425887653918": {
+        "xp": 67,
+        "messages": 1,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1023249972428292168": {
+        "xp": 206,
+        "messages": 3,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "1366770537468002305": {
+        "xp": 66,
+        "messages": 1,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-02"
+      }
+    },
+    "config": {
+      "level_roles": {},
+      "announce_channel": null,
+      "announce": true,
+      "xp_multiplier": 1.0,
+      "no_xp_channels": [],
+      "no_xp_roles": []
+    }
+  },
+  "1462688504436752489": {
+    "users": {
+      "793687712510509096": {
+        "xp": 91,
+        "messages": 2,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1456387336274186315": {
+        "xp": 1275,
+        "messages": 40,
+        "voice_minutes": 30,
+        "reactions": 1,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "1481121641961623572": {
+        "xp": 333,
+        "messages": 12,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-02"
+      },
+      "1469295545838211227": {
+        "xp": 1116,
+        "messages": 49,
+        "voice_minutes": 0,
+        "reactions": 2,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "934754071989063681": {
+        "xp": 330,
+        "messages": 12,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-02"
+      },
+      "1023249972428292168": {
+        "xp": 1487,
+        "messages": 34,
+        "voice_minutes": 64,
+        "reactions": 3,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "1465922723602628718": {
+        "xp": 940,
+        "messages": 41,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "797982054037585981": {
+        "xp": 74,
+        "messages": 1,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1242542811652423700": {
+        "xp": 489,
+        "messages": 19,
+        "voice_minutes": 0,
+        "reactions": 3,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-02"
+      },
+      "962272481098477588": {
+        "xp": 302,
+        "messages": 7,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "1282520969411432521": {
+        "xp": 653,
+        "messages": 25,
+        "voice_minutes": 0,
+        "reactions": 1,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "1417118926126452796": {
+        "xp": 95,
+        "messages": 1,
+        "voice_minutes": 0,
+        "reactions": 3,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1199394639510253652": {
+        "xp": 156,
+        "messages": 3,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "824148698370932737": {
+        "xp": 98,
+        "messages": 3,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "688829732287938767": {
+        "xp": 281,
+        "messages": 9,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "883035147803459585": {
+        "xp": 96,
+        "messages": 2,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-02"
+      },
+      "1318001431420207206": {
+        "xp": 66,
+        "messages": 1,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-02"
+      },
+      "480790685293871114": {
+        "xp": 90,
+        "messages": 2,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "767424404874723348": {
+        "xp": 66,
+        "messages": 1,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      }
+    },
+    "config": {
+      "level_roles": {},
+      "announce_channel": null,
+      "announce": true,
+      "xp_multiplier": 1.0,
+      "no_xp_channels": [],
+      "no_xp_roles": []
+    }
+  },
+  "1435256111908520057": {
+    "users": {
+      "1136036612178972692": {
+        "xp": 1320,
+        "messages": 13,
+        "voice_minutes": 89,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "988439048047722587": {
+        "xp": 158,
+        "messages": 3,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "1414787033037013143": {
+        "xp": 413,
+        "messages": 13,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-04"
+      },
+      "1282520969411432521": {
+        "xp": 297,
+        "messages": 10,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      },
+      "1023249972428292168": {
+        "xp": 69,
+        "messages": 1,
+        "voice_minutes": 0,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      }
+    },
+    "config": {
+      "level_roles": {},
+      "announce_channel": null,
+      "announce": true,
+      "xp_multiplier": 1.0,
+      "no_xp_channels": [],
+      "no_xp_roles": []
+    }
+  },
+  "1485648537558585436": {
+    "users": {
+      "1417118926126452796": {
+        "xp": 2134,
+        "messages": 9,
+        "voice_minutes": 190,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-01"
+      },
+      "1023249972428292168": {
+        "xp": 1787,
+        "messages": 4,
+        "voice_minutes": 160,
+        "reactions": 0,
+        "streak": 0,
+        "last_daily": null,
+        "last_msg_day": "2026-04-03"
+      }
+    },
+    "config": {
+      "level_roles": {},
+      "announce_channel": null,
+      "announce": true,
+      "xp_multiplier": 1.0,
+      "no_xp_channels": [],
+      "no_xp_roles": []
+    }
+  }
+}
